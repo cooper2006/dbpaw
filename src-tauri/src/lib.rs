@@ -1,6 +1,6 @@
-use tauri::Manager;
-use crate::state::AppState;
 use crate::db::local::LocalDb;
+use crate::state::AppState;
+use tauri::Manager;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -15,7 +15,7 @@ pub fn run() {
         .manage(AppState::new())
         .setup(|app| {
             let handle = app.handle().clone();
-            
+
             // Initialize local database
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<AppState>();

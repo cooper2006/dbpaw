@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    quickdb_lib::run()
+    dbpaw_lib::run()
 }

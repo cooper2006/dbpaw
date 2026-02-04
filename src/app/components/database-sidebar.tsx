@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 import {
   Database,
   ChevronRight,
@@ -10,27 +10,27 @@ import {
   Settings,
   Trash2,
   Play,
-} from 'lucide-react';
-import { Button } from '@/app/components/ui/button';
+} from "lucide-react";
+import { Button } from "@/app/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/app/components/ui/dialog';
-import { Input } from '@/app/components/ui/input';
-import { Label } from '@/app/components/ui/label';
-import { Alert, AlertTitle, AlertDescription } from '@/app/components/ui/alert';
+} from "@/app/components/ui/dialog";
+import { Input } from "@/app/components/ui/input";
+import { Label } from "@/app/components/ui/label";
+import { Alert, AlertTitle, AlertDescription } from "@/app/components/ui/alert";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/app/components/ui/select';
-import { api } from '@/lib/api';
-import type { ConnectionForm, Driver } from '@/lib/api';
+} from "@/app/components/ui/select";
+import { api } from "@/lib/api";
+import type { ConnectionForm, Driver } from "@/lib/api";
 
 interface Column {
   name: string;
@@ -51,7 +51,7 @@ interface DatabaseInfo {
 interface Connection {
   id: string;
   name: string;
-  type: 'postgresql' | 'mysql' | 'mongodb' | 'sqlite';
+  type: "postgresql" | "mysql" | "mongodb" | "sqlite";
   host: string;
   port: string;
   username: string;
@@ -59,7 +59,7 @@ interface Connection {
   isConnected: boolean;
 }
 
-const DEFAULT_UUID = 'quickdb-default';
+const DEFAULT_UUID = "dbpaw-default";
 
 interface TreeNodeProps {
   level: number;
@@ -71,7 +71,15 @@ interface TreeNodeProps {
   actions?: React.ReactNode;
 }
 
-const TreeNode = ({ level, children, icon, label, isExpanded, onToggle, actions }: TreeNodeProps) => {
+const TreeNode = ({
+  level,
+  children,
+  icon,
+  label,
+  isExpanded,
+  onToggle,
+  actions,
+}: TreeNodeProps) => {
   const hasChildren = children !== null && children !== undefined;
 
   return (
@@ -83,13 +91,19 @@ const TreeNode = ({ level, children, icon, label, isExpanded, onToggle, actions 
       >
         {hasChildren && (
           <span className="text-gray-500">
-            {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {isExpanded ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
           </span>
         )}
         {!hasChildren && <span className="w-4" />}
         <span className="text-gray-600">{icon}</span>
         <span className="flex-1 text-sm truncate">{label}</span>
-        {actions && <span className="opacity-0 group-hover:opacity-100">{actions}</span>}
+        {actions && (
+          <span className="opacity-0 group-hover:opacity-100">{actions}</span>
+        )}
       </div>
       {isExpanded && children}
     </div>
@@ -97,31 +111,48 @@ const TreeNode = ({ level, children, icon, label, isExpanded, onToggle, actions 
 };
 
 interface DatabaseSidebarProps {
-  onTableSelect?: (connection: string, database: string, table: string, form: ConnectionForm) => void;
+  onTableSelect?: (
+    connection: string,
+    database: string,
+    table: string,
+    form: ConnectionForm,
+  ) => void;
   onConnect?: (form: ConnectionForm) => void;
 }
 
-export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarProps) {
+export function DatabaseSidebar({
+  onTableSelect,
+  onConnect,
+}: DatabaseSidebarProps) {
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [expandedConnections, setExpandedConnections] = useState<Set<string>>(new Set(['1']));
-  const [expandedDatabases, setExpandedDatabases] = useState<Set<string>>(new Set());
+  const [expandedConnections, setExpandedConnections] = useState<Set<string>>(
+    new Set(["1"]),
+  );
+  const [expandedDatabases, setExpandedDatabases] = useState<Set<string>>(
+    new Set(),
+  );
   const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string; latency?: number } | null>(null);
+  const [testMsg, setTestMsg] = useState<{
+    ok: boolean;
+    text: string;
+    latency?: number;
+  } | null>(null);
   const [validationMsg, setValidationMsg] = useState<string | null>(null);
   const [form, setForm] = useState<ConnectionForm>({
-    driver: 'postgres',
-    host: 'localhost',
+    driver: "postgres",
+    name: "My Database",
+    host: "localhost",
     port: 5432,
-    database: '',
-    schema: 'public',
-    username: '',
-    password: '',
+    database: "",
+    schema: "public",
+    username: "",
+    password: "",
     ssl: false,
   });
-  const isSqlite = form.driver === 'sqlite';
+  const isSqlite = form.driver === "sqlite";
   const requiredOk = useMemo(() => {
     if (isSqlite) return !!form.filePath;
     // Database 不再必填，允许连接服务器后列出所有库
@@ -134,19 +165,19 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
         // 初始不自动连接；等待用户点击“Test & Connect”
         const tables: { schema: string; name: string; type: string }[] = [];
         const db: DatabaseInfo = {
-          name: 'public',
+          name: "public",
           tables: tables.map((t) => ({
             name: t.name,
             columns: [],
           })),
         };
         const conn: Connection = {
-          id: '1',
-          name: 'Default',
-          type: 'postgresql',
-          host: 'localhost',
-          port: '5432',
-          username: 'user',
+          id: "1",
+          name: "Default",
+          type: "postgresql",
+          host: "localhost",
+          port: "5432",
+          username: "user",
           isConnected: false,
           databases: [db],
         };
@@ -154,7 +185,7 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
         setExpandedConnections(new Set());
         setExpandedDatabases(new Set());
       } catch (e) {
-        console.error('listTables failed', e);
+        console.error("listTables failed", e);
       }
     })();
   }, []);
@@ -169,7 +200,10 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
     setExpandedConnections(newExpanded);
   };
 
-  const fetchAndSetTables = async (connectionId: string, databaseName: string) => {
+  const fetchAndSetTables = async (
+    connectionId: string,
+    databaseName: string,
+  ) => {
     try {
       // 构造临时的 form，指定当前 database
       const tempForm = { ...form, database: databaseName };
@@ -189,10 +223,10 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
               };
             }),
           };
-        })
+        }),
       );
     } catch (e) {
-      console.error('listTablesByConn failed', e);
+      console.error("listTablesByConn failed", e);
     }
   };
 
@@ -204,12 +238,12 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
       newExpanded.add(key);
       // 展开时，尝试加载表（如果未加载）
       // key 格式为 "connectionId-dbName"
-      const [connId, ...dbNameParts] = key.split('-');
-      const dbName = dbNameParts.join('-');
+      const [connId, ...dbNameParts] = key.split("-");
+      const dbName = dbNameParts.join("-");
       // 找到对应的 connection 和 database
-      const conn = connections.find(c => c.id === connId);
+      const conn = connections.find((c) => c.id === connId);
       if (conn) {
-        const db = conn.databases.find(d => d.name === dbName);
+        const db = conn.databases.find((d) => d.name === dbName);
         if (db && db.tables.length === 0) {
           fetchAndSetTables(connId, dbName);
         }
@@ -228,9 +262,17 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
     setExpandedTables(newExpanded);
   };
 
-  const fetchAndSetTableColumns = async (connectionId: string, databaseName: string, tableName: string) => {
+  const fetchAndSetTableColumns = async (
+    connectionId: string,
+    databaseName: string,
+    tableName: string,
+  ) => {
     try {
-      const structure = await api.metadata.getTableStructure(form.driver === 'postgres' ? 'unused' : 'unused', databaseName, tableName);
+      const structure = await api.metadata.getTableStructure(
+        form.driver === "postgres" ? "unused" : "unused",
+        databaseName,
+        tableName,
+      );
       setConnections((prev) =>
         prev.map((conn) => {
           if (conn.id !== connectionId) return conn;
@@ -254,13 +296,17 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
               };
             }),
           };
-        })
+        }),
       );
     } catch (e) {
-      console.error('getTableStructure failed', e);
+      console.error("getTableStructure failed", e);
     }
   };
-  const handleTableClick = (connection: Connection, database: DatabaseInfo, table: TableInfo) => {
+  const handleTableClick = (
+    connection: Connection,
+    database: DatabaseInfo,
+    table: TableInfo,
+  ) => {
     if (onTableSelect) {
       onTableSelect(connection.name, database.name, table.name, form);
     }
@@ -277,18 +323,21 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
       // 如果未指定 Database，则列出所有数据库
       if (!form.database) {
         const dbs = await api.metadata.listDatabases(form);
-        dbInfos = dbs.map(dbName => ({
+        dbInfos = dbs.map((dbName) => ({
           name: dbName,
           tables: [], // 懒加载：初始时不加载表
         }));
       } else {
         // 如果指定了 Database，直接加载该库的表
         const tables = await api.metadata.listTablesByConn(form);
-        const dbName = form.driver === 'mysql' ? form.database : (form.schema || 'public');
-        dbInfos = [{
-          name: dbName,
-          tables: tables.map((t) => ({ name: t.name, columns: [] })),
-        }];
+        const dbName =
+          form.driver === "mysql" ? form.database : form.schema || "public";
+        dbInfos = [
+          {
+            name: dbName,
+            tables: tables.map((t) => ({ name: t.name, columns: [] })),
+          },
+        ];
       }
 
       setConnections((prev) =>
@@ -296,19 +345,19 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
           ...conn,
           isConnected: true,
           databases: dbInfos,
-        }))
+        })),
       );
-      setExpandedConnections(new Set(['1']));
+      setExpandedConnections(new Set(["1"]));
       // 如果只有一个库，默认展开
       if (dbInfos.length === 1) {
-        setExpandedDatabases(new Set(['1-' + dbInfos[0].name]));
+        setExpandedDatabases(new Set(["1-" + dbInfos[0].name]));
       } else {
         setExpandedDatabases(new Set());
       }
       setIsDialogOpen(false);
       if (onConnect) onConnect(form);
     } catch (e) {
-      console.error('connect failed', e);
+      console.error("connect failed", e);
     }
   };
 
@@ -333,11 +382,32 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="name">Connection Name</Label>
-                  <Input id="name" placeholder="My Database" defaultValue="Default" />
+                  <Input
+                    id="name"
+                    placeholder="My Database"
+                    value={form.name || ""}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, name: e.target.value }))
+                    }
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="type">Database Type</Label>
-                  <Select value={form.driver} onValueChange={(v: Driver) => setForm((f) => ({ ...f, driver: v, port: v === 'postgres' ? 5432 : v === 'mysql' ? 3306 : f.port }))}>
+                  <Select
+                    value={form.driver}
+                    onValueChange={(v: Driver) =>
+                      setForm((f) => ({
+                        ...f,
+                        driver: v,
+                        port:
+                          v === "postgres"
+                            ? 5432
+                            : v === "mysql"
+                              ? 3306
+                              : f.port,
+                      }))
+                    }
+                  >
                     <SelectTrigger id="type">
                       <SelectValue placeholder="Select database type" />
                     </SelectTrigger>
@@ -352,96 +422,194 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
                   <>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="grid gap-2">
-                        <Label htmlFor="host">Host <span className="text-red-600">*</span></Label>
-                        <Input id="host" placeholder="localhost" value={form.host || ''} onChange={(e) => setForm((f) => ({ ...f, host: e.target.value }))} />
+                        <Label htmlFor="host">
+                          Host <span className="text-red-600">*</span>
+                        </Label>
+                        <Input
+                          id="host"
+                          placeholder="localhost"
+                          value={form.host || ""}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, host: e.target.value }))
+                          }
+                        />
                       </div>
                       <div className="grid gap-2">
-                        <Label htmlFor="port">Port <span className="text-red-600">*</span></Label>
-                        <Input id="port" placeholder={form.driver === 'postgres' ? '5432' : '3306'} value={String(form.port || '')} onChange={(e) => setForm((f) => ({ ...f, port: Number(e.target.value) || undefined }))} />
+                        <Label htmlFor="port">
+                          Port <span className="text-red-600">*</span>
+                        </Label>
+                        <Input
+                          id="port"
+                          placeholder={
+                            form.driver === "postgres" ? "5432" : "3306"
+                          }
+                          value={String(form.port || "")}
+                          onChange={(e) =>
+                            setForm((f) => ({
+                              ...f,
+                              port: Number(e.target.value) || undefined,
+                            }))
+                          }
+                        />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="grid gap-2">
-                        <Label htmlFor="username">Username <span className="text-red-600">*</span></Label>
-                        <Input id="username" placeholder="postgres" value={form.username || ''} onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} />
+                        <Label htmlFor="username">
+                          Username <span className="text-red-600">*</span>
+                        </Label>
+                        <Input
+                          id="username"
+                          placeholder="postgres"
+                          value={form.username || ""}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, username: e.target.value }))
+                          }
+                        />
                       </div>
                       <div className="grid gap-2">
-                        <Label htmlFor="password">Password <span className="text-red-600">*</span></Label>
-                        <Input id="password" type="password" value={form.password || ''} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
+                        <Label htmlFor="password">
+                          Password <span className="text-red-600">*</span>
+                        </Label>
+                        <Input
+                          id="password"
+                          type="password"
+                          value={form.password || ""}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, password: e.target.value }))
+                          }
+                        />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="grid gap-2">
-                        <Label htmlFor="database">Database <span className="text-red-600">*</span></Label>
-                        <Input id="database" placeholder="mydb（必填）" value={form.database || ''} onChange={(e) => setForm((f) => ({ ...f, database: e.target.value }))} />
+                        <Label htmlFor="database">
+                          Database <span className="text-red-600">*</span>
+                        </Label>
+                        <Input
+                          id="database"
+                          placeholder="mydb（必填）"
+                          value={form.database || ""}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, database: e.target.value }))
+                          }
+                        />
                       </div>
                       <div className="grid gap-2">
                         <Label htmlFor="schema">Schema</Label>
-                        <Input id="schema" placeholder="public" value={form.schema || ''} onChange={(e) => setForm((f) => ({ ...f, schema: e.target.value }))} />
+                        <Input
+                          id="schema"
+                          placeholder="public"
+                          value={form.schema || ""}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, schema: e.target.value }))
+                          }
+                        />
                       </div>
                     </div>
                   </>
                 )}
                 {isSqlite && (
                   <div className="grid gap-2">
-                    <Label htmlFor="filePath">SQLite File Path <span className="text-red-600">*</span></Label>
-                    <Input id="filePath" placeholder="/path/to/db.sqlite" value={form.filePath || ''} onChange={(e) => setForm((f) => ({ ...f, filePath: e.target.value }))} />
+                    <Label htmlFor="filePath">
+                      SQLite File Path <span className="text-red-600">*</span>
+                    </Label>
+                    <Input
+                      id="filePath"
+                      placeholder="/path/to/db.sqlite"
+                      value={form.filePath || ""}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, filePath: e.target.value }))
+                      }
+                    />
                   </div>
                 )}
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsDialogOpen(false)}
+                >
                   Cancel
                 </Button>
-                <Button variant="outline" onClick={async () => {
-                  try {
-                    setValidationMsg(null);
-                    setIsTesting(true);
-                    setTestMsg(null);
-                    const res = await api.connections.testEphemeral(form);
-                    setTestMsg({ ok: res.success, text: res.message, latency: res.latencyMs });
-                  } catch (e: any) {
-                    setTestMsg({ ok: false, text: String(e?.message || e) });
-                  } finally {
-                    setIsTesting(false);
-                  }
-                }} disabled={isTesting}>{isTesting ? 'Testing…' : 'Test'}</Button>
-                <Button onClick={async () => {
-                  if (!requiredOk) {
-                    setValidationMsg('请填写必填项：Host、Port、Username、Password、Database');
-                    return;
-                  }
-                  setValidationMsg(null);
-                  setIsConnecting(true);
-                  try {
-                    const test = await api.connections.testEphemeral(form);
-                    if (!test.success) {
-                      setTestMsg({ ok: false, text: test.message, latency: test.latencyMs });
-                      setIsConnecting(false);
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      setValidationMsg(null);
+                      setIsTesting(true);
+                      setTestMsg(null);
+                      const res = await api.connections.testEphemeral(form);
+                      setTestMsg({
+                        ok: res.success,
+                        text: res.message,
+                        latency: res.latencyMs,
+                      });
+                    } catch (e: any) {
+                      setTestMsg({ ok: false, text: String(e?.message || e) });
+                    } finally {
+                      setIsTesting(false);
+                    }
+                  }}
+                  disabled={isTesting}
+                >
+                  {isTesting ? "Testing…" : "Test"}
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (!requiredOk) {
+                      setValidationMsg(
+                        "请填写必填项：Host、Port、Username、Password、Database",
+                      );
                       return;
                     }
-                    const tables = await api.metadata.listTablesByConn(form);
-                    const dbName = form.driver === 'mysql' ? (form.database || '') : (form.schema || 'public');
-                    setConnections((prev) =>
-                      prev.map((conn) => ({
-                        ...conn,
-                        isConnected: true,
-                        databases: [{
-                          name: dbName,
-                          tables: tables.map((t) => ({ name: t.name, columns: [] })),
-                        }],
-                      }))
-                    );
-                    setExpandedConnections(new Set(['1']));
-                    setExpandedDatabases(new Set(['1-' + dbName]));
-                    setIsDialogOpen(false);
-                    if (onConnect) onConnect(form);
-                  } catch (e: any) {
-                    setTestMsg({ ok: false, text: String(e?.message || e) });
-                  } finally {
-                    setIsConnecting(false);
-                  }
-                }} disabled={isConnecting || !requiredOk}>{isConnecting ? 'Connecting…' : 'Connect'}</Button>
+                    setValidationMsg(null);
+                    setIsConnecting(true);
+                    try {
+                      const test = await api.connections.testEphemeral(form);
+                      if (!test.success) {
+                        setTestMsg({
+                          ok: false,
+                          text: test.message,
+                          latency: test.latencyMs,
+                        });
+                        setIsConnecting(false);
+                        return;
+                      }
+                      const tables = await api.metadata.listTablesByConn(form);
+                      const dbName =
+                        form.driver === "mysql"
+                          ? form.database || ""
+                          : form.schema || "public";
+                      setConnections((prev) =>
+                        prev.map((conn) => ({
+                          ...conn,
+                          isConnected: true,
+                          databases: [
+                            {
+                              name: dbName,
+                              tables: tables.map((t) => ({
+                                name: t.name,
+                                columns: [],
+                              })),
+                            },
+                          ],
+                        })),
+                      );
+                      setExpandedConnections(new Set(["1"]));
+                      setExpandedDatabases(new Set(["1-" + dbName]));
+                      setIsDialogOpen(false);
+                      if (onConnect) onConnect(form);
+                    } catch (e: any) {
+                      setTestMsg({ ok: false, text: String(e?.message || e) });
+                    } finally {
+                      setIsConnecting(false);
+                    }
+                  }}
+                  disabled={isConnecting || !requiredOk}
+                >
+                  {isConnecting ? "Connecting…" : "Connect"}
+                </Button>
               </div>
               {validationMsg && (
                 <div className="mt-3">
@@ -453,10 +621,13 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
               )}
               {testMsg && (
                 <div className="mt-3">
-                  <Alert variant={testMsg.ok ? 'default' : 'destructive'}>
-                    <AlertTitle>{testMsg.ok ? '连接测试成功' : '连接测试失败'}</AlertTitle>
+                  <Alert variant={testMsg.ok ? "default" : "destructive"}>
+                    <AlertTitle>
+                      {testMsg.ok ? "连接测试成功" : "连接测试失败"}
+                    </AlertTitle>
                     <AlertDescription>
-                      {testMsg.text}{testMsg.latency ? `（${testMsg.latency}ms）` : ''}
+                      {testMsg.text}
+                      {testMsg.latency ? `（${testMsg.latency}ms）` : ""}
                     </AlertDescription>
                   </Alert>
                 </div>
@@ -511,7 +682,11 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
                             onToggle={() => {
                               toggleTable(tableKey);
                               handleTableClick(connection, database, table);
-                              fetchAndSetTableColumns(connection.id, database.name, table.name);
+                              fetchAndSetTableColumns(
+                                connection.id,
+                                database.name,
+                                table.name,
+                              );
                             }}
                             actions={
                               <div onClick={(e) => e.stopPropagation()}>
@@ -519,7 +694,13 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
                                   variant="ghost"
                                   size="sm"
                                   className="h-6 w-6 p-0"
-                                  onClick={() => handleTableClick(connection, database, table)}
+                                  onClick={() =>
+                                    handleTableClick(
+                                      connection,
+                                      database,
+                                      table,
+                                    )
+                                  }
                                 >
                                   <Play className="w-3 h-3" />
                                 </Button>
@@ -536,9 +717,15 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
                                 {column.isPrimaryKey && (
                                   <Key className="w-3 h-3 text-yellow-600" />
                                 )}
-                                {!column.isPrimaryKey && <span className="w-3" />}
-                                <span className="flex-1 truncate text-gray-700">{column.name}</span>
-                                <span className="text-gray-500 text-xs">{column.type}</span>
+                                {!column.isPrimaryKey && (
+                                  <span className="w-3" />
+                                )}
+                                <span className="flex-1 truncate text-gray-700">
+                                  {column.name}
+                                </span>
+                                <span className="text-gray-500 text-xs">
+                                  {column.type}
+                                </span>
                               </div>
                             ))}
                           </TreeNode>
@@ -549,7 +736,10 @@ export function DatabaseSidebar({ onTableSelect, onConnect }: DatabaseSidebarPro
                 })}
               </>
             ) : (
-              <div className="px-2 py-1 text-xs text-gray-500" style={{ paddingLeft: '32px' }}>
+              <div
+                className="px-2 py-1 text-xs text-gray-500"
+                style={{ paddingLeft: "32px" }}
+              >
                 Not connected
               </div>
             )}

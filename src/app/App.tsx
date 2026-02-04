@@ -1,12 +1,30 @@
-import { useEffect, useState } from 'react';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/app/components/ui/resizable';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
-import { DatabaseSidebar } from '@/app/components/database-sidebar';
-import { SqlEditor } from '@/app/components/sql-editor';
-import { TableView } from '@/app/components/table-view';
-import { AISidebar } from '@/app/components/ai-sidebar';
-import { FileCode, Table, X, Settings, User, Bell, LogOut, Sparkles } from 'lucide-react';
-import { Button } from '@/app/components/ui/button';
+import { useEffect, useState } from "react";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/app/components/ui/resizable";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/app/components/ui/tabs";
+import { DatabaseSidebar } from "@/app/components/database-sidebar";
+import { SqlEditor } from "@/app/components/sql-editor";
+import { TableView } from "@/app/components/table-view";
+import { AISidebar } from "@/app/components/ai-sidebar";
+import {
+  FileCode,
+  Table,
+  X,
+  Settings,
+  User,
+  Bell,
+  LogOut,
+  Sparkles,
+} from "lucide-react";
+import { Button } from "@/app/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,15 +32,19 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/app/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar';
-import { api } from '@/lib/api';
-import type { ConnectionForm } from '@/lib/api';
-import { listen } from '@tauri-apps/api/event';
+} from "@/app/components/ui/dropdown-menu";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/app/components/ui/avatar";
+import { api } from "@/lib/api";
+import type { ConnectionForm } from "@/lib/api";
+import { listen } from "@tauri-apps/api/event";
 
 interface TabItem {
   id: string;
-  type: 'editor' | 'table';
+  type: "editor" | "table";
   title: string;
   connection?: string;
   database?: string;
@@ -33,9 +55,9 @@ interface TabItem {
 
 export default function App() {
   const [tabs, setTabs] = useState<TabItem[]>([
-    { id: 'editor', type: 'editor', title: 'SQL Editor' }
+    { id: "editor", type: "editor", title: "SQL Editor" },
   ]);
-  const [activeTab, setActiveTab] = useState('editor');
+  const [activeTab, setActiveTab] = useState("editor");
   const [aiVisible, setAiVisible] = useState(true);
   const [queryResults, setQueryResults] = useState<{
     data: any[];
@@ -44,54 +66,71 @@ export default function App() {
   } | null>(null);
   const [activeConn, setActiveConn] = useState<ConnectionForm | null>(null);
   useEffect(() => {
-    listen('query.chunk', (evt: any) => {
+    listen("query.chunk", (evt: any) => {
       const rows = (evt?.payload?.rows ?? []) as any[];
       setQueryResults((prev) => {
         if (!prev) {
-          return { data: rows, columns: rows.length ? Object.keys(rows[0]) : [], executionTime: 'streaming' };
+          return {
+            data: rows,
+            columns: rows.length ? Object.keys(rows[0]) : [],
+            executionTime: "streaming",
+          };
         }
         const merged = [...prev.data, ...rows];
         return { ...prev, data: merged };
       });
     });
-    listen('query.progress', () => { });
-    listen('query.done', () => { });
+    listen("query.progress", () => {});
+    listen("query.done", () => {});
   }, []);
 
   const handleExecuteQuery = async (sql: string) => {
     const start = performance.now();
     try {
-      const result = await api.query.execute('unused', sql);
+      const result = await api.query.execute("unused", sql);
       const columns = (result.columns || []).map((c) => c.name);
-      const execMs = Math.round(result.timeTakenMs ?? (performance.now() - start));
+      const execMs = Math.round(
+        result.timeTakenMs ?? performance.now() - start,
+      );
       setQueryResults({
         data: result.data || [],
         columns,
         executionTime: `${execMs}ms`,
       });
     } catch (e) {
-      console.error('execute_query failed', e);
+      console.error("execute_query failed", e);
       setQueryResults({
         data: [],
         columns: [],
-        executionTime: '0ms',
+        executionTime: "0ms",
       });
     }
   };
 
-  const handleTableSelect = async (connection: string, database: string, table: string, form: ConnectionForm) => {
+  const handleTableSelect = async (
+    connection: string,
+    database: string,
+    table: string,
+    form: ConnectionForm,
+  ) => {
     const tabId = `${connection}-${database}-${table}`;
-    const existingTab = tabs.find(t => t.id === tabId);
+    const existingTab = tabs.find((t) => t.id === tabId);
     if (existingTab) {
       setActiveTab(tabId);
       return;
     }
     try {
-      const resp = await api.tableData.getByConn(form, form.schema || 'public', table, 1, 50);
+      const resp = await api.tableData.getByConn(
+        form,
+        form.schema || "public",
+        table,
+        1,
+        50,
+      );
       const columns = resp.data.length > 0 ? Object.keys(resp.data[0]) : [];
       const newTab: TabItem = {
         id: tabId,
-        type: 'table',
+        type: "table",
         title: table,
         connection,
         database,
@@ -103,18 +142,18 @@ export default function App() {
       setActiveTab(tabId);
       setActiveConn(form);
     } catch (e) {
-      console.error('get_table_data failed', e);
+      console.error("get_table_data failed", e);
     }
   };
 
   const handleCloseTab = (tabId: string) => {
-    if (tabId === 'editor') return; // Don't close SQL Editor tab
+    if (tabId === "editor") return; // Don't close SQL Editor tab
 
-    const newTabs = tabs.filter(t => t.id !== tabId);
+    const newTabs = tabs.filter((t) => t.id !== tabId);
     setTabs(newTabs);
 
     if (activeTab === tabId) {
-      setActiveTab(newTabs[newTabs.length - 1]?.id || 'editor');
+      setActiveTab(newTabs[newTabs.length - 1]?.id || "editor");
     }
   };
 
@@ -126,7 +165,7 @@ export default function App() {
           <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
             <span className="text-white font-bold text-sm">DB</span>
           </div>
-          <h1 className="font-semibold text-lg">Database Manager</h1>
+          <h1 className="font-semibold text-lg">DbPaw</h1>
         </div>
 
         <div className="flex items-center gap-2">
@@ -183,35 +222,48 @@ export default function App() {
         <ResizablePanelGroup direction="horizontal">
           {/* Left Sidebar - Database Connections */}
           <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
-            <DatabaseSidebar onTableSelect={handleTableSelect} onConnect={setActiveConn} />
+            <DatabaseSidebar
+              onTableSelect={handleTableSelect}
+              onConnect={setActiveConn}
+            />
           </ResizablePanel>
 
           <ResizableHandle withHandle />
 
           {/* Main Panel - SQL Editor & Results */}
           <ResizablePanel defaultSize={60} minSize={40}>
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+            <Tabs
+              value={activeTab}
+              onValueChange={setActiveTab}
+              className="h-full flex flex-col"
+            >
               <div className="bg-muted/30 border-b border-gray-200 px-2">
                 <TabsList className="h-10">
                   <TabsTrigger value="editor" className="gap-2">
                     <FileCode className="w-4 h-4" />
                     SQL Editor
                   </TabsTrigger>
-                  {tabs.filter(t => t.type === 'table').map(tab => (
-                    <TabsTrigger key={tab.id} value={tab.id} className="gap-2 group">
-                      <Table className="w-3 h-3" />
-                      {tab.title}
-                      <button
-                        className="ml-2 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded p-0.5"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCloseTab(tab.id);
-                        }}
+                  {tabs
+                    .filter((t) => t.type === "table")
+                    .map((tab) => (
+                      <TabsTrigger
+                        key={tab.id}
+                        value={tab.id}
+                        className="gap-2 group"
                       >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </TabsTrigger>
-                  ))}
+                        <Table className="w-3 h-3" />
+                        {tab.title}
+                        <button
+                          className="ml-2 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded p-0.5"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCloseTab(tab.id);
+                          }}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </TabsTrigger>
+                    ))}
                 </TabsList>
               </div>
 
@@ -220,27 +272,38 @@ export default function App() {
                   <SqlEditor
                     onExecute={(sql) => {
                       if (!activeConn) return handleExecuteQuery(sql);
-                      api.query.executeByConn(activeConn, sql).then((result) => {
-                        const cols = (result.columns || []).map((c) => c.name);
-                        setQueryResults({
-                          data: result.data || [],
-                          columns: cols,
-                          executionTime: `${result.timeTakenMs || 0}ms`,
+                      api.query
+                        .executeByConn(activeConn, sql)
+                        .then((result) => {
+                          const cols = (result.columns || []).map(
+                            (c) => c.name,
+                          );
+                          setQueryResults({
+                            data: result.data || [],
+                            columns: cols,
+                            executionTime: `${result.timeTakenMs || 0}ms`,
+                          });
+                        })
+                        .catch((e) => {
+                          console.error(e);
                         });
-                      }).catch((e) => {
-                        console.error(e);
-                      });
                     }}
-                    onCancel={() => api.query.cancel('unused', 'q-1')}
+                    onCancel={() => api.query.cancel("unused", "q-1")}
                     queryResults={queryResults}
                   />
                 </TabsContent>
 
-                {tabs.filter(t => t.type === 'table').map(tab => (
-                  <TabsContent key={tab.id} value={tab.id} className="h-full m-0">
-                    <TableView data={tab.data} columns={tab.columns} />
-                  </TabsContent>
-                ))}
+                {tabs
+                  .filter((t) => t.type === "table")
+                  .map((tab) => (
+                    <TabsContent
+                      key={tab.id}
+                      value={tab.id}
+                      className="h-full m-0"
+                    >
+                      <TableView data={tab.data} columns={tab.columns} />
+                    </TabsContent>
+                  ))}
               </div>
             </Tabs>
           </ResizablePanel>

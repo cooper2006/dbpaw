@@ -14,9 +14,10 @@ export interface QueryResult {
   error?: string;
 }
 
-export type Driver = 'postgres' | 'sqlite' | 'mysql';
+export type Driver = "postgres" | "sqlite" | "mysql";
 export interface ConnectionForm {
   driver: Driver;
+  name?: string;
   host?: string;
   port?: number;
   database?: string;
@@ -42,12 +43,22 @@ export const api = {
       invoke<QueryResult>("execute_by_conn", { form, sql }),
   },
   metadata: {
-    listTables: (uuid: string) => invoke<{ schema: string; name: string; type: string }[]>("list_tables", { uuid }),
+    listTables: (uuid: string) =>
+      invoke<{ schema: string; name: string; type: string }[]>("list_tables", {
+        uuid,
+      }),
     getTableStructure: (uuid: string, schema: string, table: string) =>
-      invoke<{ columns: { name: string; type: string; nullable: boolean }[] }>("get_table_structure", { uuid, schema, table }),
+      invoke<{ columns: { name: string; type: string; nullable: boolean }[] }>(
+        "get_table_structure",
+        { uuid, schema, table },
+      ),
     listTablesByConn: (form: ConnectionForm) =>
-      invoke<{ schema: string; name: string; type: string }[]>("list_tables_by_conn", { form }),
-    listDatabases: (form: ConnectionForm) => invoke<string[]>("list_databases", { form }),
+      invoke<{ schema: string; name: string; type: string }[]>(
+        "list_tables_by_conn",
+        { form },
+      ),
+    listDatabases: (form: ConnectionForm) =>
+      invoke<string[]>("list_databases", { form }),
   },
   tableData: {
     get: (params: {
@@ -59,12 +70,26 @@ export const api = {
       filter?: string;
       sortColumn?: string;
       sortDirection?: "asc" | "desc";
-    }) => invoke<{ data: any[]; total: number; page: number; limit: number }>("get_table_data", params),
-    getByConn: (form: ConnectionForm, schema: string, table: string, page: number, limit: number) =>
-      invoke<{ data: any[]; total: number; page: number; limit: number }>("get_table_data_by_conn", { form, schema, table, page, limit }),
+    }) =>
+      invoke<{ data: any[]; total: number; page: number; limit: number }>(
+        "get_table_data",
+        params,
+      ),
+    getByConn: (
+      form: ConnectionForm,
+      schema: string,
+      table: string,
+      page: number,
+      limit: number,
+    ) =>
+      invoke<{ data: any[]; total: number; page: number; limit: number }>(
+        "get_table_data_by_conn",
+        { form, schema, table, page, limit },
+      ),
   },
   connections: {
     list: () => invoke<any[]>("get_connections"),
-    testEphemeral: (form: ConnectionForm) => invoke<TestConnectionResult>("test_connection_ephemeral", { form }),
+    testEphemeral: (form: ConnectionForm) =>
+      invoke<TestConnectionResult>("test_connection_ephemeral", { form }),
   },
 };

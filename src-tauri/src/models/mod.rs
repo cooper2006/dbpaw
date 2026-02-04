@@ -73,6 +73,7 @@ pub struct TableDataResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionForm {
     pub driver: String, // "postgres" | "mysql" | "sqlite"
+    pub name: Option<String>,
     pub host: Option<String>,
     pub port: Option<i64>,
     pub database: Option<String>,

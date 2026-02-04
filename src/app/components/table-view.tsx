@@ -1,7 +1,13 @@
-import { useState } from 'react';
-import { Download, Filter, Search, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Button } from '@/app/components/ui/button';
-import { Input } from '@/app/components/ui/input';
+import { useState } from "react";
+import {
+  Download,
+  Filter,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+import { Button } from "@/app/components/ui/button";
+import { Input } from "@/app/components/ui/input";
 
 interface TableViewProps {
   data?: any[];
@@ -9,15 +15,19 @@ interface TableViewProps {
   hideHeader?: boolean;
 }
 
-export function TableView({ data = [], columns = [], hideHeader = false }: TableViewProps) {
-  const [searchTerm, setSearchTerm] = useState('');
+export function TableView({
+  data = [],
+  columns = [],
+  hideHeader = false,
+}: TableViewProps) {
+  const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 50;
 
   const filteredData = data.filter((row) =>
     Object.values(row).some((value) =>
-      String(value).toLowerCase().includes(searchTerm.toLowerCase())
-    )
+      String(value).toLowerCase().includes(searchTerm.toLowerCase()),
+    ),
   );
 
   const totalPages = Math.ceil(filteredData.length / rowsPerPage);
@@ -47,7 +57,8 @@ export function TableView({ data = [], columns = [], hideHeader = false }: Table
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">
-              Showing {startIndex + 1}-{Math.min(endIndex, filteredData.length)} of {filteredData.length} rows
+              Showing {startIndex + 1}-{Math.min(endIndex, filteredData.length)}{" "}
+              of {filteredData.length} rows
             </span>
             <Button variant="outline" size="sm" className="gap-2">
               <Download className="w-4 h-4" />
@@ -88,9 +99,11 @@ export function TableView({ data = [], columns = [], hideHeader = false }: Table
                     key={column}
                     className="px-4 py-2 text-sm text-gray-700 font-mono"
                   >
-                    {row[column] !== null && row[column] !== undefined
-                      ? String(row[column])
-                      : <span className="text-gray-400 italic">NULL</span>}
+                    {row[column] !== null && row[column] !== undefined ? (
+                      String(row[column])
+                    ) : (
+                      <span className="text-gray-400 italic">NULL</span>
+                    )}
                   </td>
                 ))}
               </tr>

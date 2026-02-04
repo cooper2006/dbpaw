@@ -1,7 +1,10 @@
-use async_trait::async_trait;
-use sqlx::{mysql::MySqlPoolOptions, Row, Column};
-use crate::models::{ConnectionForm, QueryResult, TableInfo, TableStructure, TableDataResponse, ColumnInfo, QueryColumn};
 use super::DatabaseDriver;
+use crate::models::{
+    ColumnInfo, ConnectionForm, QueryColumn, QueryResult, TableDataResponse, TableInfo,
+    TableStructure,
+};
+use async_trait::async_trait;
+use sqlx::{mysql::MySqlPoolOptions, Column, Row};
 
 pub struct MysqlDriver {
     pub form: ConnectionForm,
@@ -9,22 +12,44 @@ pub struct MysqlDriver {
 
 impl MysqlDriver {
     fn conn_string(&self) -> Result<String, String> {
-        let host = self.form.host.clone().ok_or("[VALIDATION_ERROR] host 不能为空")?;
+        let host = self
+            .form
+            .host
+            .clone()
+            .ok_or("[VALIDATION_ERROR] host 不能为空")?;
         let port = self.form.port.unwrap_or(3306);
         // 允许 database 为空
-        let username = self.form.username.clone().ok_or("[VALIDATION_ERROR] username 不能为空")?;
-        let password = self.form.password.clone().ok_or("[VALIDATION_ERROR] password 不能为空")?;
+        let username = self
+            .form
+            .username
+            .clone()
+            .ok_or("[VALIDATION_ERROR] username 不能为空")?;
+        let password = self
+            .form
+            .password
+            .clone()
+            .ok_or("[VALIDATION_ERROR] password 不能为空")?;
         if let Some(db) = &self.form.database {
             if !db.is_empty() {
-                return Ok(format!("mysql://{}:{}@{}:{}/{}", username, password, host, port, db));
+                return Ok(format!(
+                    "mysql://{}:{}@{}:{}/{}",
+                    username, password, host, port, db
+                ));
             }
         }
-        Ok(format!("mysql://{}:{}@{}:{}", username, password, host, port))
+        Ok(format!(
+            "mysql://{}:{}@{}:{}",
+            username, password, host, port
+        ))
     }
 
     async fn get_pool(&self) -> Result<sqlx::MySqlPool, String> {
         let dsn = self.conn_string()?;
-        MySqlPoolOptions::new().max_connections(1).connect(&dsn).await.map_err(|e| format!("[CONN_FAILED] {e}"))
+        MySqlPoolOptions::new()
+            .max_connections(1)
+            .connect(&dsn)
+            .await
+            .map_err(|e| format!("[CONN_FAILED] {e}"))
     }
 }
 
@@ -32,7 +57,10 @@ impl MysqlDriver {
 impl DatabaseDriver for MysqlDriver {
     async fn test_connection(&self) -> Result<(), String> {
         let pool = self.get_pool().await?;
-        sqlx::query("SELECT 1").execute(&pool).await.map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+        sqlx::query("SELECT 1")
+            .execute(&pool)
+            .await
+            .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
         Ok(())
     }
 
@@ -47,7 +75,11 @@ impl DatabaseDriver for MysqlDriver {
 
     async fn list_tables(&self, schema: Option<String>) -> Result<Vec<TableInfo>, String> {
         let pool = self.get_pool().await?;
-        let db = self.form.database.clone().ok_or("[VALIDATION_ERROR] database 不能为空")?;
+        let db = self
+            .form
+            .database
+            .clone()
+            .ok_or("[VALIDATION_ERROR] database 不能为空")?;
         let schema = schema.unwrap_or(db.clone());
         let rows = sqlx::query(
             "SELECT table_schema, table_name, table_type \
@@ -59,19 +91,27 @@ impl DatabaseDriver for MysqlDriver {
         .fetch_all(&pool)
         .await
         .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
-        
+
         let mut res = Vec::new();
         for row in rows {
             res.push(TableInfo {
-                schema: row.try_get::<String, _>("table_schema").unwrap_or(schema.clone()),
+                schema: row
+                    .try_get::<String, _>("table_schema")
+                    .unwrap_or(schema.clone()),
                 name: row.try_get::<String, _>("table_name").unwrap_or_default(),
-                r#type: row.try_get::<String, _>("table_type").unwrap_or_else(|_| "table".to_string()),
+                r#type: row
+                    .try_get::<String, _>("table_type")
+                    .unwrap_or_else(|_| "table".to_string()),
             });
         }
         Ok(res)
     }
 
-    async fn get_table_structure(&self, schema: String, table: String) -> Result<TableStructure, String> {
+    async fn get_table_structure(
+        &self,
+        schema: String,
+        table: String,
+    ) -> Result<TableStructure, String> {
         let pool = self.get_pool().await?;
         let rows = sqlx::query(
             "SELECT column_name, data_type, is_nullable, column_default \
@@ -99,10 +139,20 @@ impl DatabaseDriver for MysqlDriver {
         Ok(TableStructure { columns })
     }
 
-    async fn get_table_data(&self, schema: String, table: String, page: i64, limit: i64) -> Result<TableDataResponse, String> {
+    async fn get_table_data(
+        &self,
+        schema: String,
+        table: String,
+        page: i64,
+        limit: i64,
+    ) -> Result<TableDataResponse, String> {
         let pool = self.get_pool().await?;
         let offset = (page - 1) * limit;
-        let qualified = if schema.is_empty() { format!("`{}`", table) } else { format!("`{}`.`{}`", schema, table) };
+        let qualified = if schema.is_empty() {
+            format!("`{}`", table)
+        } else {
+            format!("`{}`.`{}`", schema, table)
+        };
         let query = format!("SELECT * FROM {} LIMIT ? OFFSET ?", qualified);
         let rows = sqlx::query(&query)
             .bind(limit)
@@ -117,21 +167,36 @@ impl DatabaseDriver for MysqlDriver {
             for col in row.columns() {
                 let name = col.name();
                 // 简化处理
-                let v_str: Option<String> = row.try_get::<String, _>(name).ok()
+                let v_str: Option<String> = row
+                    .try_get::<String, _>(name)
+                    .ok()
                     .or_else(|| row.try_get::<i64, _>(name).ok().map(|v| v.to_string()))
                     .or_else(|| row.try_get::<bool, _>(name).ok().map(|v| v.to_string()));
-                
-                obj.insert(name.to_string(), v_str.map(serde_json::Value::String).unwrap_or(serde_json::Value::Null));
+
+                obj.insert(
+                    name.to_string(),
+                    v_str
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                );
             }
             data.push(serde_json::Value::Object(obj));
         }
-        Ok(TableDataResponse { data, total: -1, page, limit })
+        Ok(TableDataResponse {
+            data,
+            total: -1,
+            page,
+            limit,
+        })
     }
 
     async fn execute_query(&self, sql: String) -> Result<QueryResult, String> {
         let pool = self.get_pool().await?;
-        let rows = sqlx::query(&sql).fetch_all(&pool).await.map_err(|e| format!("[QUERY_ERROR] {e}"))?;
-        
+        let rows = sqlx::query(&sql)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+
         let mut data = Vec::new();
         let mut columns = Vec::new();
 
@@ -149,10 +214,17 @@ impl DatabaseDriver for MysqlDriver {
             for col in row.columns() {
                 let name = col.name();
                 // 简化处理
-                let v_str: Option<String> = row.try_get::<String, _>(name).ok()
+                let v_str: Option<String> = row
+                    .try_get::<String, _>(name)
+                    .ok()
                     .or_else(|| row.try_get::<i64, _>(name).ok().map(|v| v.to_string()))
                     .or_else(|| row.try_get::<bool, _>(name).ok().map(|v| v.to_string()));
-                obj.insert(name.to_string(), v_str.map(serde_json::Value::String).unwrap_or(serde_json::Value::Null));
+                obj.insert(
+                    name.to_string(),
+                    v_str
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                );
             }
             data.push(serde_json::Value::Object(obj));
         }
@@ -165,5 +237,61 @@ impl DatabaseDriver for MysqlDriver {
             success: true,
             error: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::ConnectionForm;
+
+    #[test]
+    fn test_conn_string_generation() {
+        let form = ConnectionForm {
+            driver: "mysql".to_string(),
+            host: Some("localhost".to_string()),
+            port: Some(3306),
+            username: Some("root".to_string()),
+            password: Some("password".to_string()),
+            database: Some("test_db".to_string()),
+            ..Default::default()
+        };
+
+        let driver = MysqlDriver { form };
+        let conn_str = driver.conn_string().unwrap();
+        assert_eq!(conn_str, "mysql://root:password@localhost:3306/test_db");
+    }
+
+    #[test]
+    fn test_conn_string_without_db() {
+        let form = ConnectionForm {
+            driver: "mysql".to_string(),
+            host: Some("127.0.0.1".to_string()),
+            port: Some(3307),
+            username: Some("user".to_string()),
+            password: Some("pass".to_string()),
+            database: None,
+            ..Default::default()
+        };
+
+        let driver = MysqlDriver { form };
+        let conn_str = driver.conn_string().unwrap();
+        assert_eq!(conn_str, "mysql://user:pass@127.0.0.1:3307");
+    }
+
+    #[test]
+    fn test_conn_string_missing_fields() {
+        let form = ConnectionForm {
+            driver: "mysql".to_string(),
+            host: None, // Missing host
+            port: Some(3306),
+            username: Some("root".to_string()),
+            password: Some("password".to_string()),
+            database: Some("test".to_string()),
+            ..Default::default()
+        };
+
+        let driver = MysqlDriver { form };
+        assert!(driver.conn_string().is_err());
     }
 }

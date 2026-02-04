@@ -1,28 +1,29 @@
-import { useState } from 'react';
-import { Send, Sparkles, Copy, ThumbsUp, ThumbsDown } from 'lucide-react';
-import { Button } from '@/app/components/ui/button';
-import { Textarea } from '@/app/components/ui/textarea';
-import { ScrollArea } from '@/app/components/ui/scroll-area';
+import { useState } from "react";
+import { Send, Sparkles, Copy, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Button } from "@/app/components/ui/button";
+import { Textarea } from "@/app/components/ui/textarea";
+import { ScrollArea } from "@/app/components/ui/scroll-area";
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   timestamp: Date;
 }
 
 const initialMessages: Message[] = [
   {
-    id: '1',
-    role: 'assistant',
-    content: "Hi! I'm your SQL assistant. I can help you write queries, optimize your database schema, explain query results, and answer questions about your data. What can I help you with?",
+    id: "1",
+    role: "assistant",
+    content:
+      "Hi! I'm your SQL assistant. I can help you write queries, optimize your database schema, explain query results, and answer questions about your data. What can I help you with?",
     timestamp: new Date(),
   },
 ];
 
 export function AISidebar() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSend = async () => {
@@ -30,20 +31,20 @@ export function AISidebar() {
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      role: 'user',
+      role: "user",
       content: input,
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInput('');
+    setInput("");
     setIsLoading(true);
 
     // Simulate AI response
     setTimeout(() => {
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        role: 'assistant',
+        role: "assistant",
         content: generateMockResponse(input),
         timestamp: new Date(),
       };
@@ -54,24 +55,28 @@ export function AISidebar() {
 
   const generateMockResponse = (query: string): string => {
     const lowerQuery = query.toLowerCase();
-    
-    if (lowerQuery.includes('join') || lowerQuery.includes('query')) {
+
+    if (lowerQuery.includes("join") || lowerQuery.includes("query")) {
       return "Here's a SQL query that might help:\n\n```sql\nSELECT u.name, COUNT(o.id) as order_count\nFROM users u\nLEFT JOIN orders o ON u.id = o.user_id\nGROUP BY u.id, u.name\nORDER BY order_count DESC;\n```\n\nThis query joins the users and orders tables to count how many orders each user has made.";
     }
-    
-    if (lowerQuery.includes('optimize') || lowerQuery.includes('performance')) {
+
+    if (lowerQuery.includes("optimize") || lowerQuery.includes("performance")) {
       return "To optimize query performance, consider:\n\n1. Add indexes on frequently queried columns\n2. Use EXPLAIN to analyze query execution\n3. Avoid SELECT * and specify needed columns\n4. Use JOINs instead of subqueries when possible\n5. Consider partitioning large tables\n\nWould you like me to help with any specific query?";
     }
-    
-    if (lowerQuery.includes('index')) {
+
+    if (lowerQuery.includes("index")) {
       return "Here's how to create an index:\n\n```sql\nCREATE INDEX idx_users_email ON users(email);\n```\n\nIndexes speed up SELECT queries but can slow down INSERT/UPDATE operations. Use them on columns frequently used in WHERE, JOIN, or ORDER BY clauses.";
     }
-    
-    return "I understand you're asking about: " + query + "\n\nI can help you with:\n• Writing SQL queries\n• Optimizing performance\n• Understanding query results\n• Database design best practices\n\nCould you provide more details about what you'd like to accomplish?";
+
+    return (
+      "I understand you're asking about: " +
+      query +
+      "\n\nI can help you with:\n• Writing SQL queries\n• Optimizing performance\n• Understanding query results\n• Database design best practices\n\nCould you provide more details about what you'd like to accomplish?"
+    );
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -89,19 +94,25 @@ export function AISidebar() {
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
                 className={`max-w-[85%] rounded-lg px-4 py-2 ${
-                  message.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-900'
+                  message.role === "user"
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-900"
                 }`}
               >
-                <div className="text-sm whitespace-pre-wrap">{message.content}</div>
-                {message.role === 'assistant' && (
+                <div className="text-sm whitespace-pre-wrap">
+                  {message.content}
+                </div>
+                {message.role === "assistant" && (
                   <div className="flex gap-2 mt-2 pt-2 border-t border-gray-200">
-                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                    >
                       <Copy className="w-3 h-3 mr-1" />
                       Copy
                     </Button>
@@ -140,7 +151,11 @@ export function AISidebar() {
             className="resize-none"
             rows={3}
           />
-          <Button onClick={handleSend} disabled={!input.trim() || isLoading} className="self-end">
+          <Button
+            onClick={handleSend}
+            disabled={!input.trim() || isLoading}
+            className="self-end"
+          >
             <Send className="w-4 h-4" />
           </Button>
         </div>
