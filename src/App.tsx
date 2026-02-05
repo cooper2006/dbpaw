@@ -51,6 +51,12 @@ interface TabItem {
   tableName?: string;
   data?: any[];
   columns?: string[];
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  executionTimeMs?: number;
+  connectionId?: number;
+  driver?: string;
 }
 
 export default function App() {
@@ -58,7 +64,7 @@ export default function App() {
     { id: "editor", type: "editor", title: "SQL Editor" },
   ]);
   const [activeTab, setActiveTab] = useState("editor");
-  const [aiVisible, setAiVisible] = useState(true);
+  const [aiVisible, setAiVisible] = useState(false);
   const [queryResults, setQueryResults] = useState<{
     data: any[];
     columns: string[];
@@ -83,8 +89,8 @@ export default function App() {
       });
     });
 
-    const unlistenProgress = listen("query.progress", () => {});
-    const unlistenDone = listen("query.done", () => {});
+    const unlistenProgress = listen("query.progress", () => { });
+    const unlistenDone = listen("query.done", () => { });
 
     // Cleanup function
     return () => {
@@ -121,7 +127,8 @@ export default function App() {
     connection: string,
     database: string,
     table: string,
-    form: ConnectionForm,
+    connectionId: number,
+    driver: string,
   ) => {
     const tabId = `${connection}-${database}-${table}`;
     const existingTab = tabs.find((t) => t.id === tabId);
@@ -130,13 +137,17 @@ export default function App() {
       return;
     }
     try {
-      const resp = await api.tableData.getByConn(
-        form,
-        form.schema || "public",
+      // For MySQL, the database concept maps to schema in the driver
+      // For PostgreSQL, we currently default to "public" schema
+      const schema = driver === "mysql" ? database : "public";
+
+      const resp = await api.tableData.get({
+        id: connectionId,
+        schema,
         table,
-        1,
-        50,
-      );
+        page: 1,
+        limit: 50,
+      });
       const columns = resp.data.length > 0 ? Object.keys(resp.data[0]) : [];
       const newTab: TabItem = {
         id: tabId,
@@ -147,13 +158,49 @@ export default function App() {
         tableName: table,
         data: resp.data,
         columns,
-        columns,
+        total: resp.total,
+        page: resp.page,
+        pageSize: resp.limit,
+        executionTimeMs: resp.executionTimeMs,
+        connectionId,
+        driver,
       };
       setTabs([...tabs, newTab]);
       setActiveTab(tabId);
-      setActiveConn(form);
+      // setActiveConn(form); // 不需要设置 activeConn，或者需要根据 id 获取 conn
     } catch (e) {
       console.error("get_table_data failed", e);
+    }
+  };
+
+  const handlePageChange = async (tabId: string, page: number) => {
+    const tab = tabs.find((t) => t.id === tabId);
+    if (!tab || !tab.connectionId || !tab.driver || !tab.tableName) return;
+
+    try {
+      const schema = tab.driver === "mysql" ? tab.database : "public";
+      const resp = await api.tableData.get({
+        id: tab.connectionId,
+        schema: schema || "public",
+        table: tab.tableName,
+        page,
+        limit: tab.pageSize || 50,
+      });
+
+      setTabs((prev) =>
+        prev.map((t) => {
+          if (t.id !== tabId) return t;
+          return {
+            ...t,
+            data: resp.data,
+            total: resp.total,
+            page: resp.page,
+            executionTimeMs: resp.executionTimeMs,
+          };
+        }),
+      );
+    } catch (e) {
+      console.error("handlePageChange failed", e);
     }
   };
 
@@ -314,7 +361,15 @@ export default function App() {
                       value={tab.id}
                       className="h-full m-0"
                     >
-                      <TableView data={tab.data} columns={tab.columns} />
+                      <TableView
+                        data={tab.data}
+                        columns={tab.columns}
+                        total={tab.total}
+                        page={tab.page}
+                        pageSize={tab.pageSize}
+                        executionTimeMs={tab.executionTimeMs}
+                        onPageChange={(p) => handlePageChange(tab.id, p)}
+                      />
                     </TabsContent>
                   ))}
               </div>

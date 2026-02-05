@@ -80,7 +80,7 @@ export const api = {
   },
   tableData: {
     get: (params: {
-      uuid: string;
+      id: number;
       schema: string;
       table: string;
       page: number;
@@ -89,10 +89,13 @@ export const api = {
       sortColumn?: string;
       sortDirection?: "asc" | "desc";
     }) =>
-      invoke<{ data: any[]; total: number; page: number; limit: number }>(
-        "get_table_data",
-        params,
-      ),
+      invoke<{
+        data: any[];
+        total: number;
+        page: number;
+        limit: number;
+        executionTimeMs: number;
+      }>("get_table_data", params),
     getByConn: (
       form: ConnectionForm,
       schema: string,
@@ -100,10 +103,13 @@ export const api = {
       page: number,
       limit: number,
     ) =>
-      invoke<{ data: any[]; total: number; page: number; limit: number }>(
-        "get_table_data_by_conn",
-        { form, schema, table, page, limit },
-      ),
+      invoke<{
+        data: any[];
+        total: number;
+        page: number;
+        limit: number;
+        executionTimeMs: number;
+      }>("get_table_data_by_conn", { form, schema, table, page, limit }),
   },
   connections: {
     list: () => invoke<any[]>("get_connections"),

@@ -4,7 +4,9 @@ use crate::models::{
     TableStructure,
 };
 use async_trait::async_trait;
-use sqlx::{mysql::MySqlPoolOptions, Column, Row};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use rust_decimal::Decimal;
+use sqlx::{mysql::MySqlPoolOptions, Column, Row, TypeInfo};
 
 pub struct MysqlDriver {
     pub form: ConnectionForm,
@@ -46,7 +48,8 @@ impl MysqlDriver {
     async fn get_pool(&self) -> Result<sqlx::MySqlPool, String> {
         let dsn = self.conn_string()?;
         MySqlPoolOptions::new()
-            .max_connections(1)
+            .max_connections(5)
+            .acquire_timeout(std::time::Duration::from_secs(5))
             .connect(&dsn)
             .await
             .map_err(|e| format!("[CONN_FAILED] {e}"))
@@ -146,6 +149,7 @@ impl DatabaseDriver for MysqlDriver {
         page: i64,
         limit: i64,
     ) -> Result<TableDataResponse, String> {
+        let start = std::time::Instant::now();
         let pool = self.get_pool().await?;
         let offset = (page - 1) * limit;
         let qualified = if schema.is_empty() {
@@ -153,6 +157,14 @@ impl DatabaseDriver for MysqlDriver {
         } else {
             format!("`{}`.`{}`", schema, table)
         };
+
+        // Get total count
+        let count_query = format!("SELECT COUNT(*) FROM {}", qualified);
+        let total: i64 = sqlx::query_scalar(&count_query)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+
         let query = format!("SELECT * FROM {} LIMIT ? OFFSET ?", qualified);
         let rows = sqlx::query(&query)
             .bind(limit)
@@ -166,27 +178,79 @@ impl DatabaseDriver for MysqlDriver {
             let mut obj = serde_json::Map::new();
             for col in row.columns() {
                 let name = col.name();
-                // 简化处理
-                let v_str: Option<String> = row
-                    .try_get::<String, _>(name)
-                    .ok()
-                    .or_else(|| row.try_get::<i64, _>(name).ok().map(|v| v.to_string()))
-                    .or_else(|| row.try_get::<bool, _>(name).ok().map(|v| v.to_string()));
+                let type_name = col.type_info().name();
 
-                obj.insert(
-                    name.to_string(),
-                    v_str
+                let value = match type_name {
+                    "TINYINT" | "SMALLINT" | "INT" | "INTEGER" | "MEDIUMINT" | "BIGINT"
+                    | "YEAR" => row
+                        .try_get::<i64, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "FLOAT" | "DOUBLE" | "REAL" => row
+                        .try_get::<f64, _>(name)
+                        .ok()
+                        .map(serde_json::Value::from)
+                        .unwrap_or(serde_json::Value::Null),
+                    "DECIMAL" | "NEWDECIMAL" => row
+                        .try_get::<Decimal, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "BOOL" | "BOOLEAN" => row
+                        .try_get::<bool, _>(name)
+                        .ok()
+                        .map(serde_json::Value::Bool)
+                        .or_else(|| {
+                            row.try_get::<i64, _>(name)
+                                .ok()
+                                .map(|v| serde_json::Value::Bool(v != 0))
+                        })
+                        .unwrap_or(serde_json::Value::Null),
+                    "DATE" => row
+                        .try_get::<NaiveDate, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "TIME" => row
+                        .try_get::<NaiveTime, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "DATETIME" | "TIMESTAMP" => row
+                        .try_get::<NaiveDateTime, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "JSON" => row
+                        .try_get::<sqlx::types::Json<serde_json::Value>, _>(name)
+                        .ok()
+                        .map(|v| v.0)
+                        .unwrap_or(serde_json::Value::Null),
+                    "BIT" => row
+                        .try_get::<u64, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::Number(v.into()))
+                        .unwrap_or(serde_json::Value::Null),
+                    _ => row
+                        .try_get::<String, _>(name)
+                        .ok()
                         .map(serde_json::Value::String)
                         .unwrap_or(serde_json::Value::Null),
-                );
+                };
+
+                obj.insert(name.to_string(), value);
             }
             data.push(serde_json::Value::Object(obj));
         }
+
+        let duration = start.elapsed();
         Ok(TableDataResponse {
             data,
-            total: -1,
+            total,
             page,
             limit,
+            execution_time_ms: duration.as_millis() as i64,
         })
     }
 
@@ -213,18 +277,67 @@ impl DatabaseDriver for MysqlDriver {
             let mut obj = serde_json::Map::new();
             for col in row.columns() {
                 let name = col.name();
-                // 简化处理
-                let v_str: Option<String> = row
-                    .try_get::<String, _>(name)
-                    .ok()
-                    .or_else(|| row.try_get::<i64, _>(name).ok().map(|v| v.to_string()))
-                    .or_else(|| row.try_get::<bool, _>(name).ok().map(|v| v.to_string()));
-                obj.insert(
-                    name.to_string(),
-                    v_str
+                let type_name = col.type_info().name();
+
+                let value = match type_name {
+                    "TINYINT" | "SMALLINT" | "INT" | "INTEGER" | "MEDIUMINT" | "BIGINT"
+                    | "YEAR" => row
+                        .try_get::<i64, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "FLOAT" | "DOUBLE" | "REAL" => row
+                        .try_get::<f64, _>(name)
+                        .ok()
+                        .map(serde_json::Value::from)
+                        .unwrap_or(serde_json::Value::Null),
+                    "DECIMAL" | "NEWDECIMAL" => row
+                        .try_get::<Decimal, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "BOOL" | "BOOLEAN" => row
+                        .try_get::<bool, _>(name)
+                        .ok()
+                        .map(serde_json::Value::Bool)
+                        .or_else(|| {
+                            row.try_get::<i64, _>(name)
+                                .ok()
+                                .map(|v| serde_json::Value::Bool(v != 0))
+                        })
+                        .unwrap_or(serde_json::Value::Null),
+                    "DATE" => row
+                        .try_get::<NaiveDate, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "TIME" => row
+                        .try_get::<NaiveTime, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "DATETIME" | "TIMESTAMP" => row
+                        .try_get::<NaiveDateTime, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "JSON" => row
+                        .try_get::<sqlx::types::Json<serde_json::Value>, _>(name)
+                        .ok()
+                        .map(|v| v.0)
+                        .unwrap_or(serde_json::Value::Null),
+                    "BIT" => row
+                        .try_get::<u64, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::Number(v.into()))
+                        .unwrap_or(serde_json::Value::Null),
+                    _ => row
+                        .try_get::<String, _>(name)
+                        .ok()
                         .map(serde_json::Value::String)
                         .unwrap_or(serde_json::Value::Null),
-                );
+                };
+                obj.insert(name.to_string(), value);
             }
             data.push(serde_json::Value::Object(obj));
         }

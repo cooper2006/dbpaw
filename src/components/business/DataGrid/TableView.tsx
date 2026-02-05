@@ -22,16 +22,24 @@ interface TableViewProps {
   data?: any[];
   columns?: string[];
   hideHeader?: boolean;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  executionTimeMs?: number;
+  onPageChange?: (page: number) => void;
 }
 
 export function TableView({
   data = [],
   columns = [],
   hideHeader = false,
+  total = 0,
+  page = 1,
+  pageSize = 50,
+  executionTimeMs = 0,
+  onPageChange,
 }: TableViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const rowsPerPage = 50;
 
   const filteredData = data.filter((row) =>
     Object.values(row).some((value) =>
@@ -39,10 +47,28 @@ export function TableView({
     ),
   );
 
-  const totalPages = Math.ceil(filteredData.length / rowsPerPage);
-  const startIndex = (currentPage - 1) * rowsPerPage;
-  const endIndex = startIndex + rowsPerPage;
-  const currentData = filteredData.slice(startIndex, endIndex);
+  // If using external pagination, totalPages is based on total count
+  // Otherwise fallback to filtered data length
+  const totalPages = Math.ceil((total || filteredData.length) / pageSize);
+
+  // If external pagination is used (onPageChange provided), we assume data is already the current page
+  // Otherwise we slice locally
+  const currentData = onPageChange ? filteredData : filteredData.slice((page - 1) * pageSize, page * pageSize);
+
+  // Correctly calculate start index for display
+  const startIndex = (page - 1) * pageSize;
+
+  const handlePrevPage = () => {
+    if (page > 1) {
+      onPageChange?.(page - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (page < totalPages) {
+      onPageChange?.(page + 1);
+    }
+  };
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -61,17 +87,15 @@ export function TableView({
             </div>
             <Button variant="outline" size="sm" className="gap-2">
               <Filter className="w-4 h-4" />
-              Filter
             </Button>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">
-              Showing {startIndex + 1}-{Math.min(endIndex, filteredData.length)}{" "}
-              of {filteredData.length} rows
+              Showing {startIndex + 1}-{startIndex + currentData.length}{" "}
+              of {total || filteredData.length} rows
             </span>
             <Button variant="outline" size="sm" className="gap-2">
               <Download className="w-4 h-4" />
-              Export
             </Button>
           </div>
         </div>
@@ -123,27 +147,27 @@ export function TableView({
 
       <div className="flex items-center justify-between px-4 py-1 border-t border-gray-200 bg-gray-50">
         <div className="text-sm text-gray-600">
-          Query executed in 0.023s • {filteredData.length} rows returned
+          Query executed in {executionTimeMs ? (executionTimeMs / 1000).toFixed(3) : "0.000"}s • {filteredData.length} rows returned
         </div>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             className="h-7"
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
+            onClick={handlePrevPage}
+            disabled={page <= 1}
           >
             <ChevronLeft className="w-4 h-4" />
           </Button>
           <span className="text-sm text-gray-600">
-            Page {currentPage} of {totalPages}
+            Page {page} of {totalPages || 1}
           </span>
           <Button
             variant="outline"
             size="sm"
             className="h-7"
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
+            onClick={handleNextPage}
+            disabled={page >= totalPages}
           >
             <ChevronRight className="w-4 h-4" />
           </Button>

@@ -1,7 +1,11 @@
-use async_trait::async_trait;
-use sqlx::{postgres::PgPoolOptions, Row, Column};
-use crate::models::{ConnectionForm, QueryResult, TableInfo, TableStructure, TableDataResponse, ColumnInfo, QueryColumn};
 use super::DatabaseDriver;
+use crate::models::{
+    ColumnInfo, ConnectionForm, QueryColumn, QueryResult, TableDataResponse, TableInfo,
+    TableStructure,
+};
+use async_trait::async_trait;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use sqlx::{postgres::PgPoolOptions, Column, Row, TypeInfo};
 
 pub struct PostgresDriver {
     pub form: ConnectionForm,
@@ -9,18 +13,42 @@ pub struct PostgresDriver {
 
 impl PostgresDriver {
     fn conn_string(&self) -> Result<String, String> {
-        let host = self.form.host.clone().ok_or("[VALIDATION_ERROR] host 不能为空")?;
+        let host = self
+            .form
+            .host
+            .clone()
+            .ok_or("[VALIDATION_ERROR] host 不能为空")?;
         let port = self.form.port.unwrap_or(5432);
         // 允许 database 为空，默认为 postgres
-        let database = self.form.database.clone().unwrap_or_else(|| "postgres".to_string());
-        let username = self.form.username.clone().ok_or("[VALIDATION_ERROR] username 不能为空")?;
-        let password = self.form.password.clone().ok_or("[VALIDATION_ERROR] password 不能为空")?;
-        Ok(format!("postgres://{}:{}@{}:{}/{}", username, password, host, port, database))
+        let database = self
+            .form
+            .database
+            .clone()
+            .unwrap_or_else(|| "postgres".to_string());
+        let username = self
+            .form
+            .username
+            .clone()
+            .ok_or("[VALIDATION_ERROR] username 不能为空")?;
+        let password = self
+            .form
+            .password
+            .clone()
+            .ok_or("[VALIDATION_ERROR] password 不能为空")?;
+        Ok(format!(
+            "postgres://{}:{}@{}:{}/{}",
+            username, password, host, port, database
+        ))
     }
 
     async fn get_pool(&self) -> Result<sqlx::PgPool, String> {
         let dsn = self.conn_string()?;
-        PgPoolOptions::new().max_connections(1).connect(&dsn).await.map_err(|e| format!("[CONN_FAILED] {e}"))
+        PgPoolOptions::new()
+            .max_connections(5)
+            .acquire_timeout(std::time::Duration::from_secs(5))
+            .connect(&dsn)
+            .await
+            .map_err(|e| format!("[CONN_FAILED] {e}"))
     }
 }
 
@@ -28,16 +56,21 @@ impl PostgresDriver {
 impl DatabaseDriver for PostgresDriver {
     async fn test_connection(&self) -> Result<(), String> {
         let pool = self.get_pool().await?;
-        sqlx::query("SELECT 1").execute(&pool).await.map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+        sqlx::query("SELECT 1")
+            .execute(&pool)
+            .await
+            .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
         Ok(())
     }
 
     async fn list_databases(&self) -> Result<Vec<String>, String> {
         let pool = self.get_pool().await?;
-        let rows: Vec<(String,)> = sqlx::query_as("SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname")
-            .fetch_all(&pool)
-            .await
-            .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname",
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
         Ok(rows.into_iter().map(|r| r.0).collect())
     }
 
@@ -54,19 +87,27 @@ impl DatabaseDriver for PostgresDriver {
         .fetch_all(&pool)
         .await
         .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
-        
+
         let mut res = Vec::new();
         for row in rows {
             res.push(TableInfo {
-                schema: row.try_get::<String, _>("table_schema").unwrap_or(schema.clone()),
+                schema: row
+                    .try_get::<String, _>("table_schema")
+                    .unwrap_or(schema.clone()),
                 name: row.try_get::<String, _>("table_name").unwrap_or_default(),
-                r#type: row.try_get::<String, _>("table_type").unwrap_or_else(|_| "table".to_string()),
+                r#type: row
+                    .try_get::<String, _>("table_type")
+                    .unwrap_or_else(|_| "table".to_string()),
             });
         }
         Ok(res)
     }
 
-    async fn get_table_structure(&self, schema: String, table: String) -> Result<TableStructure, String> {
+    async fn get_table_structure(
+        &self,
+        schema: String,
+        table: String,
+    ) -> Result<TableStructure, String> {
         let pool = self.get_pool().await?;
         let rows = sqlx::query(
             "SELECT column_name, data_type, is_nullable, column_default \
@@ -94,9 +135,24 @@ impl DatabaseDriver for PostgresDriver {
         Ok(TableStructure { columns })
     }
 
-    async fn get_table_data(&self, schema: String, table: String, page: i64, limit: i64) -> Result<TableDataResponse, String> {
+    async fn get_table_data(
+        &self,
+        schema: String,
+        table: String,
+        page: i64,
+        limit: i64,
+    ) -> Result<TableDataResponse, String> {
+        let start = std::time::Instant::now();
         let pool = self.get_pool().await?;
         let offset = (page - 1) * limit;
+
+        // Get total count
+        let count_query = format!("SELECT COUNT(*) FROM {}.{}", schema, table);
+        let total: i64 = sqlx::query_scalar(&count_query)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+
         let query = format!("SELECT * FROM {}.{} LIMIT $1 OFFSET $2", schema, table);
         let rows = sqlx::query(&query)
             .bind(limit)
@@ -110,22 +166,87 @@ impl DatabaseDriver for PostgresDriver {
             let mut obj = serde_json::Map::new();
             for col in row.columns() {
                 let name = col.name();
-                // 简化处理，实际应根据类型转换
-                let v_str: Option<String> = row.try_get::<String, _>(name).ok()
-                    .or_else(|| row.try_get::<i64, _>(name).ok().map(|v| v.to_string()))
-                    .or_else(|| row.try_get::<bool, _>(name).ok().map(|v| v.to_string()));
-                
-                obj.insert(name.to_string(), v_str.map(serde_json::Value::String).unwrap_or(serde_json::Value::Null));
+                let type_name = col.type_info().name();
+                let value = match type_name {
+                    "BOOL" => row
+                        .try_get::<bool, _>(name)
+                        .ok()
+                        .map(serde_json::Value::Bool)
+                        .unwrap_or(serde_json::Value::Null),
+                    "INT2" | "INT4" | "INT8" => row
+                        .try_get::<i64, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "FLOAT4" | "FLOAT8" => row
+                        .try_get::<f64, _>(name)
+                        .ok()
+                        .map(serde_json::Value::from)
+                        .unwrap_or(serde_json::Value::Null),
+                    "NUMERIC" | "MONEY" => row
+                        .try_get::<String, _>(name)
+                        .ok()
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                    "TEXT" | "VARCHAR" | "CHAR" | "BPCHAR" | "NAME" | "UUID" => row
+                        .try_get::<String, _>(name)
+                        .ok()
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                    "DATE" => row
+                        .try_get::<NaiveDate, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "TIME" => row
+                        .try_get::<NaiveTime, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "TIMESTAMP" => row
+                        .try_get::<NaiveDateTime, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "TIMESTAMPTZ" => row
+                        .try_get::<DateTime<Utc>, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "JSON" | "JSONB" => row
+                        .try_get::<sqlx::types::Json<serde_json::Value>, _>(name)
+                        .ok()
+                        .map(|v| v.0)
+                        .unwrap_or(serde_json::Value::Null),
+                    _ => row
+                        .try_get::<String, _>(name)
+                        .ok()
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                };
+
+                obj.insert(name.to_string(), value);
             }
             data.push(serde_json::Value::Object(obj));
         }
-        Ok(TableDataResponse { data, total: -1, page, limit })
+
+        let duration = start.elapsed();
+        Ok(TableDataResponse {
+            data,
+            total,
+            page,
+            limit,
+            execution_time_ms: duration.as_millis() as i64,
+        })
     }
 
     async fn execute_query(&self, sql: String) -> Result<QueryResult, String> {
         let pool = self.get_pool().await?;
-        let rows = sqlx::query(&sql).fetch_all(&pool).await.map_err(|e| format!("[QUERY_ERROR] {e}"))?;
-        
+        let rows = sqlx::query(&sql)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+
         let mut data = Vec::new();
         let mut columns = Vec::new();
 
@@ -142,11 +263,65 @@ impl DatabaseDriver for PostgresDriver {
             let mut obj = serde_json::Map::new();
             for col in row.columns() {
                 let name = col.name();
-                 // 简化处理，实际应根据类型转换
-                let v_str: Option<String> = row.try_get::<String, _>(name).ok()
-                    .or_else(|| row.try_get::<i64, _>(name).ok().map(|v| v.to_string()))
-                    .or_else(|| row.try_get::<bool, _>(name).ok().map(|v| v.to_string()));
-                obj.insert(name.to_string(), v_str.map(serde_json::Value::String).unwrap_or(serde_json::Value::Null));
+                let type_name = col.type_info().name();
+                let value = match type_name {
+                    "BOOL" => row
+                        .try_get::<bool, _>(name)
+                        .ok()
+                        .map(serde_json::Value::Bool)
+                        .unwrap_or(serde_json::Value::Null),
+                    "INT2" | "INT4" | "INT8" => row
+                        .try_get::<i64, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "FLOAT4" | "FLOAT8" => row
+                        .try_get::<f64, _>(name)
+                        .ok()
+                        .map(serde_json::Value::from)
+                        .unwrap_or(serde_json::Value::Null),
+                    "NUMERIC" | "MONEY" => row
+                        .try_get::<String, _>(name)
+                        .ok()
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                    "TEXT" | "VARCHAR" | "CHAR" | "BPCHAR" | "NAME" | "UUID" => row
+                        .try_get::<String, _>(name)
+                        .ok()
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                    "DATE" => row
+                        .try_get::<NaiveDate, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "TIME" => row
+                        .try_get::<NaiveTime, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "TIMESTAMP" => row
+                        .try_get::<NaiveDateTime, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "TIMESTAMPTZ" => row
+                        .try_get::<DateTime<Utc>, _>(name)
+                        .ok()
+                        .map(|v| serde_json::Value::String(v.to_string()))
+                        .unwrap_or(serde_json::Value::Null),
+                    "JSON" | "JSONB" => row
+                        .try_get::<sqlx::types::Json<serde_json::Value>, _>(name)
+                        .ok()
+                        .map(|v| v.0)
+                        .unwrap_or(serde_json::Value::Null),
+                    _ => row
+                        .try_get::<String, _>(name)
+                        .ok()
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                };
+                obj.insert(name.to_string(), value);
             }
             data.push(serde_json::Value::Object(obj));
         }

@@ -67,6 +67,7 @@ pub struct TableDataResponse {
     pub total: i64,
     pub page: i64,
     pub limit: i64,
+    pub execution_time_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

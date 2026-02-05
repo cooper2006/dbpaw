@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Database,
+  Server,
   ChevronRight,
   ChevronDown,
   Table,
@@ -69,6 +70,7 @@ interface TreeNodeProps {
   label: string;
   isExpanded?: boolean;
   onToggle?: () => void;
+  onDoubleClick?: () => void;
   actions?: React.ReactNode;
 }
 
@@ -79,6 +81,7 @@ const TreeNode = ({
   label,
   isExpanded,
   onToggle,
+  onDoubleClick,
   actions,
 }: TreeNodeProps) => {
   const hasChildren = children !== null && children !== undefined;
@@ -89,6 +92,7 @@ const TreeNode = ({
         className="flex items-center gap-1 px-2 py-1 hover:bg-gray-100 cursor-pointer group"
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={onToggle}
+        onDoubleClick={onDoubleClick}
       >
         {hasChildren && (
           <span className="text-gray-500">
@@ -116,7 +120,8 @@ interface DatabaseSidebarProps {
     connection: string,
     database: string,
     table: string,
-    form: ConnectionForm,
+    connectionId: number,
+    driver: string,
   ) => void;
   onConnect?: (form: ConnectionForm) => void;
 }
@@ -334,7 +339,13 @@ export function DatabaseSidebar({
     table: TableInfo,
   ) => {
     if (onTableSelect) {
-      onTableSelect(connection.name, database.name, table.name, form);
+      onTableSelect(
+        connection.name,
+        database.name,
+        table.name,
+        Number(connection.id),
+        connection.type,
+      );
     }
   };
 
@@ -390,7 +401,7 @@ export function DatabaseSidebar({
   return (
     <div className="h-full flex flex-col bg-white border-r border-gray-200">
       <div className="p-3 border-b border-gray-200 flex items-center justify-between">
-        <h2 className="font-semibold text-sm">Database Connections</h2>
+        <h2 className="font-semibold text-sm">Connections</h2>
         <div className="flex gap-1">
           <Button
             variant="ghost"
@@ -669,7 +680,7 @@ export function DatabaseSidebar({
           <TreeNode
             key={connection.id}
             level={0}
-            icon={<Database className="w-4 h-4" />}
+            icon={<Server className="w-4 h-4" />}
             label={`${connection.name} (${connection.type})`}
             isExpanded={expandedConnections.has(connection.id)}
             onToggle={() => toggleConnection(connection.id)}
@@ -708,13 +719,16 @@ export function DatabaseSidebar({
                             isExpanded={expandedTables.has(tableKey)}
                             onToggle={() => {
                               // toggleTable(tableKey); // 禁用表展开/折叠
-                              handleTableClick(connection, database, table);
+                              // handleTableClick(connection, database, table); // 单击不再触发打开
                               // 不再加载列信息
                               /* fetchAndSetTableColumns(
                                 connection.id,
                                 database.name,
                                 table.name,
                               ); */
+                            }}
+                            onDoubleClick={() => {
+                              handleTableClick(connection, database, table);
                             }}
                             actions={
                               <div onClick={(e) => e.stopPropagation()}>
@@ -735,7 +749,8 @@ export function DatabaseSidebar({
                               </div>
                             }
                           >
-                            /* {table.columns.map((column) => (
+                            /*{" "}
+                            {table.columns.map((column) => (
                               <div
                                 key={column.name}
                                 className="flex items-center gap-1 px-2 py-1 hover:bg-gray-50 text-xs"
@@ -755,7 +770,8 @@ export function DatabaseSidebar({
                                   {column.type}
                                 </span>
                               </div>
-                            ))} */
+                            ))}{" "}
+                            */
                           </TreeNode>
                         );
                       })}
