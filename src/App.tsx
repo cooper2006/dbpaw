@@ -80,8 +80,8 @@ export default function App() {
       });
     });
 
-    const unlistenProgress = listen("query.progress", () => {});
-    const unlistenDone = listen("query.done", () => {});
+    const unlistenProgress = listen("query.progress", () => { });
+    const unlistenDone = listen("query.done", () => { });
 
     // Cleanup function
     return () => {
@@ -288,9 +288,12 @@ export default function App() {
               onValueChange={setActiveTab}
               className="h-full flex flex-col"
             >
-              <div className="bg-muted/30 border-b border-gray-200 px-2">
-                <TabsList className="h-10">
-                  <TabsTrigger value="editor" className="gap-2">
+              <div className="bg-white border-b border-gray-200">
+                <TabsList className="h-10 w-full justify-start gap-0 bg-transparent border-none p-0">
+                  <TabsTrigger
+                    value="editor"
+                    className="gap-2 data-[state=active]:border-t-0 data-[state=active]:border-b-2 border-transparent"
+                  >
                     <FileCode className="w-4 h-4" />
                     SQL Editor
                   </TabsTrigger>
@@ -300,7 +303,7 @@ export default function App() {
                       <TabsTrigger
                         key={tab.id}
                         value={tab.id}
-                        className="gap-2 group"
+                        className="gap-2 group relative pr-8 data-[state=active]:border-t-0 data-[state=active]:border-b-2 border-transparent"
                         onMouseDown={(e) => {
                           if (e.button === 1) {
                             e.preventDefault();
@@ -308,17 +311,19 @@ export default function App() {
                           }
                         }}
                       >
-                        <Table className="w-3 h-3" />
-                        {tab.title}
-                        <button
-                          className="ml-2 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded p-0.5"
+                        <Table className="w-4 h-4 text-blue-500" />
+                        <span className="truncate max-w-[120px]">
+                          {tab.title}
+                        </span>
+                        <div
+                          className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded-sm cursor-pointer transition-opacity"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleCloseTab(tab.id);
                           }}
                         >
-                          <X className="w-3 h-3" />
-                        </button>
+                          <X className="w-3 h-3 text-gray-500" />
+                        </div>
                       </TabsTrigger>
                     ))}
                 </TabsList>

@@ -89,7 +89,7 @@ const TreeNode = ({
   return (
     <div>
       <div
-        className="flex items-center gap-1 px-2 py-1 hover:bg-gray-100 cursor-pointer group"
+        className="flex items-center gap-1 px-2 py-1 hover:bg-gray-100 cursor-pointer group select-none"
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={onToggle}
         onDoubleClick={onDoubleClick}
