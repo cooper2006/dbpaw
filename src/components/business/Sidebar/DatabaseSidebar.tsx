@@ -129,11 +129,13 @@ interface DatabaseSidebarProps {
     driver: string,
   ) => void;
   onConnect?: (form: ConnectionForm) => void;
+  onCreateQuery?: (connectionId: number, databaseName: string) => void;
 }
 
 export function DatabaseSidebar({
   onTableSelect,
   onConnect,
+  onCreateQuery,
 }: DatabaseSidebarProps) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [expandedConnections, setExpandedConnections] = useState<Set<string>>(
@@ -861,11 +863,16 @@ export function DatabaseSidebar({
             <button
               className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
               onClick={() => {
-                console.log(
-                  "新建查询",
-                  contextMenu.connectionId,
-                  contextMenu.databaseName,
-                );
+                if (
+                  onCreateQuery &&
+                  contextMenu.connectionId &&
+                  contextMenu.databaseName
+                ) {
+                  onCreateQuery(
+                    Number(contextMenu.connectionId),
+                    contextMenu.databaseName,
+                  );
+                }
                 setContextMenu((prev) => ({ ...prev, visible: false }));
               }}
             >
