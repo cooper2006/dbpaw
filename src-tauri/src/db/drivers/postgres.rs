@@ -397,28 +397,27 @@ impl DatabaseDriver for PostgresDriver {
             .await
         };
 
-        let rows = rows.map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+        let rows = rows.map_err(|e| {
+            eprintln!("[QUERY_ERROR] Raw error: {}", e);
+            "[QUERY_ERROR] Failed to fetch schema overview".to_string()
+        })?;
 
         let mut tables_map: std::collections::HashMap<(String, String), Vec<ColumnSchema>> =
             std::collections::HashMap::new();
 
         for row in rows {
-            let schema_name: String = row.try_get(0).unwrap_or_else(|e| {
-                eprintln!("[ERROR] Postgres table_schema: {}", e);
-                String::default()
-            });
-            let table_name: String = row.try_get(1).unwrap_or_else(|e| {
-                eprintln!("[ERROR] Postgres table_name: {}", e);
-                String::default()
-            });
-            let col_name: String = row.try_get(2).unwrap_or_else(|e| {
-                eprintln!("[ERROR] Postgres column_name: {}", e);
-                String::default()
-            });
-            let data_type: String = row.try_get(3).unwrap_or_else(|e| {
-                eprintln!("[ERROR] Postgres data_type: {}", e);
-                String::default()
-            });
+            let schema_name: String = row
+                .try_get(0)
+                .map_err(|e| format!("[PARSE_ERROR] Postgres table_schema: {}", e))?;
+            let table_name: String = row
+                .try_get(1)
+                .map_err(|e| format!("[PARSE_ERROR] Postgres table_name: {}", e))?;
+            let col_name: String = row
+                .try_get(2)
+                .map_err(|e| format!("[PARSE_ERROR] Postgres column_name: {}", e))?;
+            let data_type: String = row
+                .try_get(3)
+                .map_err(|e| format!("[PARSE_ERROR] Postgres data_type: {}", e))?;
 
             let key = (schema_name, table_name);
             tables_map.entry(key).or_default().push(ColumnSchema {

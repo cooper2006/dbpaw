@@ -121,11 +121,9 @@ export function SqlEditor({
   // Build Schema for CodeMirror
   const sqlSchema = useMemo(() => {
     if (!schemaOverview) {
-      console.log("SqlEditor: schemaOverview is missing or empty");
       return {};
     }
     
-    console.log("SqlEditor: building schema map from", schemaOverview);
     const schemaMap: SQLNamespace = {};
     
     schemaOverview.tables.forEach(t => {
@@ -138,7 +136,6 @@ export function SqlEditor({
        }
     });
     
-    console.log("SqlEditor: built schemaMap", schemaMap);
     return schemaMap;
   }, [schemaOverview]);
 
