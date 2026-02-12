@@ -25,24 +25,6 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import Editor from "@monaco-editor/react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { api } from "@/services/api";
-
 interface TableViewProps {
   data?: any[];
   columns?: string[];
@@ -55,6 +37,12 @@ interface TableViewProps {
   sortColumn?: string;
   sortDirection?: "asc" | "desc";
   onSortChange?: (column: string, direction: "asc" | "desc") => void;
+  onOpenDDL?: (ctx: {
+    connectionId: number;
+    database: string;
+    schema: string;
+    table: string;
+  }) => void;
   tableContext?: {
     connectionId: number;
     database: string;
@@ -75,13 +63,11 @@ export function TableView({
   sortColumn: controlledSortColumn,
   sortDirection: controlledSortDirection,
   onSortChange,
+  onOpenDDL,
   tableContext,
 }: TableViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
-  const [isDDLModalOpen, setIsDDLModalOpen] = useState(false);
-  const [ddlContent, setDDLContent] = useState("");
-  const [isLoadingDDL, setIsLoadingDDL] = useState(false);
 
   // Sort state: controlled (via props) or uncontrolled (internal state for client-side sorting)
   const [internalSortColumn, setInternalSortColumn] = useState<string | undefined>();
@@ -115,25 +101,9 @@ export function TableView({
   // Refs for table header cells to measure actual width
   const thRefs = useRef<Record<string, HTMLTableCellElement | null>>({});
 
-  const handleShowDDL = async () => {
+  const handleShowDDL = () => {
     if (!tableContext) return;
-    setIsDDLModalOpen(true);
-    if (!ddlContent || ddlContent.startsWith("-- Error")) {
-      setIsLoadingDDL(true);
-      try {
-        const ddl = await api.metadata.getTableDDL(
-          tableContext.connectionId,
-          tableContext.database,
-          tableContext.schema,
-          tableContext.table,
-        );
-        setDDLContent(ddl);
-      } catch (error) {
-        setDDLContent(`-- Error fetching DDL\n-- ${error}`);
-      } finally {
-        setIsLoadingDDL(false);
-      }
-    }
+    onOpenDDL?.(tableContext);
   };
 
   const resizingRef = useRef<{
@@ -444,27 +414,6 @@ export function TableView({
           </Button>
         </div>
       </div>
-      <Dialog open={isDDLModalOpen} onOpenChange={setIsDDLModalOpen}>
-        <DialogContent className="max-w-4xl h-[80vh] flex flex-col p-0 gap-0">
-          <DialogHeader className="px-4 py-3 border-b border-border">
-            <DialogTitle>Table Structure: {tableContext?.table}</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 min-h-0 relative">
-            <Editor
-              height="100%"
-              defaultLanguage="sql"
-              value={isLoadingDDL ? "-- Loading..." : ddlContent}
-              options={{
-                readOnly: true,
-                minimap: { enabled: false },
-                fontSize: 13,
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-              }}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DatabaseSidebar } from "@/components/business/Sidebar/DatabaseSidebar";
 import { SqlEditor } from "@/components/business/Editor/SqlEditor";
 import { TableView } from "@/components/business/DataGrid/TableView";
+import { TableMetadataView } from "@/components/business/Metadata/TableMetadataView";
 import { AISidebar } from "@/components/business/Sidebar/AISidebar";
 import {
   FileCode,
@@ -35,10 +36,11 @@ import { SettingsDialog } from "@/components/settings/SettingsDialog";
 
 interface TabItem {
   id: string;
-  type: "editor" | "table";
+  type: "editor" | "table" | "ddl";
   title: string;
   connection?: string;
   database?: string;
+  schema?: string;
   tableName?: string;
   data?: any[];
   columns?: string[];
@@ -71,7 +73,7 @@ export default function App() {
     // Remove global connections fetching as it's handled by Sidebar
     // api.connections.list().then(setConnections).catch(console.error);
 
-    const unlistenChunk = listen("query.chunk", (evt: any) => {
+    const unlistenChunk = listen("query.chunk", (_evt: any) => {
       // TODO: Handle streaming chunks for specific tabs if backend supports session/request ID
       // For now, simple execute returns full result, so this might not be needed for basic execution
       // If needed, we'd need to map evt to a specific tab
@@ -213,6 +215,32 @@ export default function App() {
     } catch (e) {
       console.error("get_table_data failed", e);
     }
+  };
+
+  const handleOpenTableDDL = (ctx: {
+    connectionId: number;
+    database: string;
+    schema: string;
+    table: string;
+  }) => {
+    const tabId = `ddl-${ctx.connectionId}-${ctx.database}-${ctx.schema}-${ctx.table}`;
+    const existingTab = tabs.find((t) => t.id === tabId);
+    if (existingTab) {
+      setActiveTab(tabId);
+      return;
+    }
+
+    const newTab: TabItem = {
+      id: tabId,
+      type: "ddl",
+      title: `DDL: ${ctx.table}`,
+      connectionId: ctx.connectionId,
+      database: ctx.database,
+      schema: ctx.schema,
+      tableName: ctx.table,
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTab(tabId);
   };
 
   const handlePageChange = async (tabId: string, page: number) => {
@@ -405,10 +433,10 @@ export default function App() {
                           }
                         }}
                       >
-                        {tab.type === "editor" ? (
-                          <FileCode className="w-4 h-4 text-primary" />
-                        ) : (
+                        {tab.type === "table" ? (
                           <Table className="w-4 h-4 text-primary" />
+                        ) : (
+                          <FileCode className="w-4 h-4 text-primary" />
                         )}
                         <span className="truncate max-w-[120px]">
                           {tab.title}
@@ -438,7 +466,9 @@ export default function App() {
                         <SqlEditor
                           databaseName={tab.database}
                           onExecute={(sql) => handleExecuteQuery(tab.id, sql)}
-                          onCancel={() => api.query.cancel(tab.id, `q-${tab.connectionId}`)}
+                          onCancel={() =>
+                            api.query.cancel(tab.id, `q-${tab.connectionId}`)
+                          }
                           queryResults={tab.queryResults}
                           value={tab.sqlContent}
                           onChange={(sql) => handleSqlChange(tab.id, sql)}
@@ -446,7 +476,7 @@ export default function App() {
                           driver={tab.driver}
                           schemaOverview={tab.schemaOverview}
                         />
-                      ) : (
+                      ) : tab.type === "table" ? (
                         <TableView
                           data={tab.data}
                           columns={tab.columns}
@@ -457,7 +487,10 @@ export default function App() {
                           onPageChange={(p) => handlePageChange(tab.id, p)}
                           sortColumn={tab.sortColumn}
                           sortDirection={tab.sortDirection}
-                          onSortChange={(col, dir) => handleSortChange(tab.id, col, dir)}
+                          onSortChange={(col, dir) =>
+                            handleSortChange(tab.id, col, dir)
+                          }
+                          onOpenDDL={handleOpenTableDDL}
                           tableContext={
                             tab.connectionId && tab.database && tab.tableName
                               ? {
@@ -472,7 +505,17 @@ export default function App() {
                               : undefined
                           }
                         />
-                      )}
+                      ) : tab.connectionId &&
+                        tab.database &&
+                        tab.schema &&
+                        tab.tableName ? (
+                        <TableMetadataView
+                          connectionId={tab.connectionId}
+                          database={tab.database}
+                          schema={tab.schema}
+                          table={tab.tableName}
+                        />
+                      ) : null}
                     </TabsContent>
                   ))}
                 </div>
