@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Download,
+  RefreshCw,
   Filter,
   ChevronLeft,
   ChevronRight,
@@ -596,7 +597,6 @@ export function TableView({
           className="border-collapse table-fixed"
           style={{
             width: tableWidthPx,
-            minWidth: "100%",
           }}
         >
           <colgroup>
