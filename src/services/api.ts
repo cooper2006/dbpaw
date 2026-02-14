@@ -150,6 +150,7 @@ export const api = {
       filter?: string;
       sortColumn?: string;
       sortDirection?: "asc" | "desc";
+      orderBy?: string;
     }) =>
       invoke<{
         data: any[];

@@ -321,6 +321,8 @@ impl DatabaseDriver for MysqlDriver {
         limit: i64,
         sort_column: Option<String>,
         sort_direction: Option<String>,
+        filter: Option<String>,
+        order_by: Option<String>,
     ) -> Result<TableDataResponse, String> {
         let start = std::time::Instant::now();
         let pool = self.get_pool().await?;
@@ -331,15 +333,31 @@ impl DatabaseDriver for MysqlDriver {
             format!("`{}`.`{}`", schema, table)
         };
 
-        // Get total count
-        let count_query = format!("SELECT COUNT(*) FROM {}", qualified);
+        // Normalize smart quotes from macOS input
+        let filter = filter.map(|f| super::normalize_quotes(&f));
+        let order_by = order_by.map(|f| super::normalize_quotes(&f));
+
+        // Build WHERE clause from filter
+        let where_clause = match &filter {
+            Some(f) if !f.trim().is_empty() => format!(" WHERE {}", f.trim()),
+            _ => String::new(),
+        };
+
+        // Get total count (with filter applied)
+        let count_query = format!("SELECT COUNT(*) FROM {}{}", qualified, where_clause);
         let total: i64 = sqlx::query_scalar(&count_query)
             .fetch_one(&pool)
             .await
-            .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+            .map_err(|e| format!("[QUERY_ERROR] SQL: {} | {}", count_query, e))?;
 
-        // Build ORDER BY clause if sort parameters are provided
-        let order_clause = if let Some(ref col) = sort_column {
+        // Build ORDER BY clause: order_by (raw) takes priority over sort_column/sort_direction
+        let order_clause = if let Some(ref ob) = order_by {
+            if !ob.trim().is_empty() {
+                format!(" ORDER BY {}", ob.trim())
+            } else {
+                String::new()
+            }
+        } else if let Some(ref col) = sort_column {
             // Validate column name to prevent SQL injection
             if !col.chars().all(|c| c.is_alphanumeric() || c == '_') {
                 return Err("[VALIDATION_ERROR] Invalid sort column name".to_string());
@@ -353,13 +371,13 @@ impl DatabaseDriver for MysqlDriver {
             String::new()
         };
 
-        let query = format!("SELECT * FROM {}{} LIMIT ? OFFSET ?", qualified, order_clause);
+        let query = format!("SELECT * FROM {}{}{} LIMIT ? OFFSET ?", qualified, where_clause, order_clause);
         let rows = sqlx::query(&query)
             .bind(limit)
             .bind(offset)
             .fetch_all(&pool)
             .await
-            .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+            .map_err(|e| format!("[QUERY_ERROR] SQL: {} | {}", query, e))?;
 
         let mut data = Vec::new();
         for row in &rows {

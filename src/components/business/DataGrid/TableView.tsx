@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Download,
   Filter,
-  Search,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -49,6 +48,9 @@ interface TableViewProps {
   sortColumn?: string;
   sortDirection?: "asc" | "desc";
   onSortChange?: (column: string, direction: "asc" | "desc") => void;
+  filter?: string;
+  orderBy?: string;
+  onFilterChange?: (filter: string, orderBy: string) => void;
   onOpenDDL?: (ctx: {
     connectionId: number;
     database: string;
@@ -77,11 +79,15 @@ export function TableView({
   sortColumn: controlledSortColumn,
   sortDirection: controlledSortDirection,
   onSortChange,
+  filter: controlledFilter,
+  orderBy: controlledOrderBy,
+  onFilterChange,
   onOpenDDL,
   onDataRefresh,
   tableContext,
 }: TableViewProps) {
-  const [searchTerm, setSearchTerm] = useState("");
+  const [whereInput, setWhereInput] = useState(controlledFilter || "");
+  const [orderByInput, setOrderByInput] = useState(controlledOrderBy || "");
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
 
   // --- Cell selection & editing state ---
@@ -394,20 +400,14 @@ export function TableView({
     INDEX_COL_WIDTH +
     columns.reduce((sum, c) => sum + getColWidth(c), 0);
 
-  const filteredData = data.filter((row) =>
-    Object.values(row).some((value) =>
-      String(value).toLowerCase().includes(searchTerm.toLowerCase()),
-    ),
-  );
-
   // Client-side sorting (used in uncontrolled mode, e.g. SQL query results)
   const sortedData = useMemo(() => {
     if (isControlledSort || !activeSortColumn || !activeSortDirection) {
-      return filteredData;
+      return data;
     }
     const col = activeSortColumn;
     const dir = activeSortDirection;
-    return [...filteredData].sort((a, b) => {
+    return [...data].sort((a, b) => {
       const va = a[col];
       const vb = b[col];
       // NULL/undefined always goes to the end
@@ -426,7 +426,7 @@ export function TableView({
       const cmp = strA.localeCompare(strB);
       return dir === "asc" ? cmp : -cmp;
     });
-  }, [filteredData, isControlledSort, activeSortColumn, activeSortDirection]);
+  }, [data, isControlledSort, activeSortColumn, activeSortDirection]);
 
   // If using external pagination, totalPages is based on total count
   // Otherwise fallback to filtered data length
@@ -496,19 +496,40 @@ export function TableView({
       {!hideHeader && (
         <div className="flex items-center justify-between px-4 py-2 border-b border-border">
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="Search..."
-                className="pl-8 h-8 w-64"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <Button variant="outline" size="sm" className="gap-2">
-              <Filter className="w-4 h-4" />
-            </Button>
+            {tableContext && onFilterChange ? (
+              <>
+                <div className="relative">
+                  <Filter className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="WHERE  username='test'"
+                    className="pl-8 h-8 w-64 font-mono text-xs"
+                    value={whereInput}
+                    onChange={(e) => setWhereInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        onFilterChange(whereInput, orderByInput);
+                      }
+                    }}
+                  />
+                </div>
+                <div className="relative">
+                  <ArrowUpDown className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="ORDER BY  id desc"
+                    className="pl-8 h-8 w-48 font-mono text-xs"
+                    value={orderByInput}
+                    onChange={(e) => setOrderByInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        onFilterChange(whereInput, orderByInput);
+                      }
+                    }}
+                  />
+                </div>
+              </>
+            ) : null}
             {tableContext && (
               <Button
                 variant="outline"

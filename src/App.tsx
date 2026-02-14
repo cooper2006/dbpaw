@@ -53,6 +53,8 @@ interface TabItem {
   sqlContent?: string;
   sortColumn?: string;
   sortDirection?: "asc" | "desc";
+  filter?: string;
+  orderBy?: string;
   queryResults?: {
     data: any[];
     columns: string[];
@@ -255,8 +257,10 @@ export default function App() {
         table: tab.tableName,
         page,
         limit: tab.pageSize || 50,
+        filter: tab.filter,
         sortColumn: tab.sortColumn,
         sortDirection: tab.sortDirection,
+        orderBy: tab.orderBy,
       });
 
       setTabs((prev) =>
@@ -296,8 +300,10 @@ export default function App() {
         table: tab.tableName,
         page: 1, // Reset to first page on sort change
         limit: tab.pageSize || 50,
+        filter: tab.filter,
         sortColumn: column,
         sortDirection: direction,
+        orderBy: tab.orderBy,
       });
 
       setTabs((prev) =>
@@ -316,6 +322,53 @@ export default function App() {
       );
     } catch (e) {
       console.error("handleSortChange failed", e);
+    }
+  };
+
+  const handleFilterChange = async (tabId: string, filter: string, orderBy: string) => {
+    const tab = tabs.find((t) => t.id === tabId);
+    if (!tab || !tab.connectionId || !tab.driver || !tab.tableName) return;
+
+    // Optimistically update filter/orderBy state
+    setTabs((prev) =>
+      prev.map((t) => {
+        if (t.id !== tabId) return t;
+        return { ...t, filter, orderBy };
+      }),
+    );
+
+    try {
+      const schema = tab.driver === "mysql" ? tab.database : "public";
+      const resp = await api.tableData.get({
+        id: tab.connectionId,
+        schema: schema || "public",
+        table: tab.tableName,
+        page: 1, // Reset to first page on filter change
+        limit: tab.pageSize || 50,
+        filter: filter || undefined,
+        sortColumn: tab.sortColumn,
+        sortDirection: tab.sortDirection,
+        orderBy: orderBy || undefined,
+      });
+
+      const columns = resp.data.length > 0 ? Object.keys(resp.data[0]) : tab.columns;
+      setTabs((prev) =>
+        prev.map((t) => {
+          if (t.id !== tabId) return t;
+          return {
+            ...t,
+            data: resp.data,
+            columns,
+            total: resp.total,
+            page: resp.page,
+            executionTimeMs: resp.executionTimeMs,
+            filter,
+            orderBy,
+          };
+        }),
+      );
+    } catch (e) {
+      console.error("handleFilterChange failed", e);
     }
   };
 
@@ -489,6 +542,11 @@ export default function App() {
                           sortDirection={tab.sortDirection}
                           onSortChange={(col, dir) =>
                             handleSortChange(tab.id, col, dir)
+                          }
+                          filter={tab.filter}
+                          orderBy={tab.orderBy}
+                          onFilterChange={(f, ob) =>
+                            handleFilterChange(tab.id, f, ob)
                           }
                           onOpenDDL={handleOpenTableDDL}
                           onDataRefresh={() => handlePageChange(tab.id, tab.page || 1)}
