@@ -32,18 +32,20 @@ impl MysqlDriver {
             .password
             .clone()
             .ok_or("[VALIDATION_ERROR] password 不能为空")?;
+        let mut dsn = format!("mysql://{}:{}@{}:{}", username, password, host, port);
+
         if let Some(db) = &self.form.database {
             if !db.is_empty() {
-                return Ok(format!(
-                    "mysql://{}:{}@{}:{}/{}",
-                    username, password, host, port, db
-                ));
+                dsn.push('/');
+                dsn.push_str(db);
             }
         }
-        Ok(format!(
-            "mysql://{}:{}@{}:{}",
-            username, password, host, port
-        ))
+
+        if self.form.ssl.unwrap_or(false) {
+            dsn.push_str("?ssl-mode=REQUIRED");
+        }
+
+        Ok(dsn)
     }
 
     async fn get_pool(&self) -> Result<sqlx::MySqlPool, String> {
@@ -224,11 +226,15 @@ impl DatabaseDriver for MysqlDriver {
             let index_type: Option<String> = row.try_get::<Option<String>, _>(2).unwrap_or(None);
             let seq: i64 = row.try_get(3).unwrap_or(0);
             let column_name: Option<String> = row.try_get::<Option<String>, _>(4).unwrap_or(None);
-            let Some(column_name) = column_name else { continue };
+            let Some(column_name) = column_name else {
+                continue;
+            };
 
-            let entry = index_map
-                .entry(index_name)
-                .or_insert((non_unique == 0, index_type.clone(), Vec::new()));
+            let entry = index_map.entry(index_name).or_insert((
+                non_unique == 0,
+                index_type.clone(),
+                Vec::new(),
+            ));
             entry.0 = non_unique == 0;
             if entry.1.is_none() {
                 entry.1 = index_type;
@@ -371,7 +377,10 @@ impl DatabaseDriver for MysqlDriver {
             String::new()
         };
 
-        let query = format!("SELECT * FROM {}{}{} LIMIT ? OFFSET ?", qualified, where_clause, order_clause);
+        let query = format!(
+            "SELECT * FROM {}{}{} LIMIT ? OFFSET ?",
+            qualified, where_clause, order_clause
+        );
         let rows = sqlx::query(&query)
             .bind(limit)
             .bind(offset)
@@ -689,5 +698,26 @@ mod tests {
 
         let driver = MysqlDriver { form };
         assert!(driver.conn_string().is_err());
+    }
+
+    #[test]
+    fn test_conn_string_with_ssl() {
+        let form = ConnectionForm {
+            driver: "mysql".to_string(),
+            host: Some("localhost".to_string()),
+            port: Some(3306),
+            username: Some("root".to_string()),
+            password: Some("password".to_string()),
+            database: Some("test_db".to_string()),
+            ssl: Some(true),
+            ..Default::default()
+        };
+
+        let driver = MysqlDriver { form };
+        let conn_str = driver.conn_string().unwrap();
+        assert_eq!(
+            conn_str,
+            "mysql://root:password@localhost:3306/test_db?ssl-mode=REQUIRED"
+        );
     }
 }

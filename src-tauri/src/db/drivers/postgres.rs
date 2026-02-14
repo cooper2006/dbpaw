@@ -36,10 +36,16 @@ impl PostgresDriver {
             .password
             .clone()
             .ok_or("[VALIDATION_ERROR] password 不能为空")?;
-        Ok(format!(
+        let mut dsn = format!(
             "postgres://{}:{}@{}:{}/{}",
             username, password, host, port, database
-        ))
+        );
+
+        if self.form.ssl.unwrap_or(false) {
+            dsn.push_str("?sslmode=require");
+        }
+
+        Ok(dsn)
     }
 
     async fn get_pool(&self) -> Result<sqlx::PgPool, String> {
@@ -704,5 +710,25 @@ mod tests {
         };
         let driver = PostgresDriver { form };
         assert!(driver.conn_string().is_err());
+    }
+
+    #[test]
+    fn test_conn_string_with_ssl() {
+        let form = ConnectionForm {
+            driver: "postgres".to_string(),
+            host: Some("localhost".to_string()),
+            port: Some(5432),
+            username: Some("postgres".to_string()),
+            password: Some("password".to_string()),
+            database: Some("mydb".to_string()),
+            ssl: Some(true),
+            ..Default::default()
+        };
+        let driver = PostgresDriver { form };
+        let dsn = driver.conn_string().unwrap();
+        assert_eq!(
+            dsn,
+            "postgres://postgres:password@localhost:5432/mydb?sslmode=require"
+        );
     }
 }

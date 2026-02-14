@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/services/api";
 import type { ConnectionForm, Driver } from "@/services/api";
 
@@ -529,6 +530,16 @@ export function DatabaseSidebar({
                           }
                         />
                       </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="ssl"
+                        checked={form.ssl}
+                        onCheckedChange={(checked) =>
+                          setForm((f) => ({ ...f, ssl: checked === true }))
+                        }
+                      />
+                      <Label htmlFor="ssl">Use SSL</Label>
                     </div>
                   </>
                 )}
