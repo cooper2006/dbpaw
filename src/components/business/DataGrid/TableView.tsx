@@ -471,7 +471,7 @@ export function TableView({
   const handleMouseDown = (e: React.MouseEvent, column: string) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     // Get the current actual width from the DOM element
     const currentTh = thRefs.current[column];
     const startWidth = currentTh
@@ -502,7 +502,7 @@ export function TableView({
                   <Filter className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     type="text"
-                    placeholder="WHERE  username='test'"
+                    placeholder="WHERE ..."
                     className="pl-8 h-8 w-64 font-mono text-xs"
                     value={whereInput}
                     onChange={(e) => setWhereInput(e.target.value)}
@@ -517,7 +517,7 @@ export function TableView({
                   <ArrowUpDown className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     type="text"
-                    placeholder="ORDER BY  id desc"
+                    placeholder="ORDER BY ..."
                     className="pl-8 h-8 w-48 font-mono text-xs"
                     value={orderByInput}
                     onChange={(e) => setOrderByInput(e.target.value)}
