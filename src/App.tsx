@@ -29,6 +29,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { api, isTauri, SchemaOverview } from "@/services/api";
 import { listen } from "@tauri-apps/api/event";
@@ -53,6 +59,8 @@ interface TabItem {
   sqlContent?: string;
   sortColumn?: string;
   sortDirection?: "asc" | "desc";
+  filter?: string;
+  orderBy?: string;
   queryResults?: {
     data: any[];
     columns: string[];
@@ -255,8 +263,10 @@ export default function App() {
         table: tab.tableName,
         page,
         limit: tab.pageSize || 50,
+        filter: tab.filter,
         sortColumn: tab.sortColumn,
         sortDirection: tab.sortDirection,
+        orderBy: tab.orderBy,
       });
 
       setTabs((prev) =>
@@ -296,8 +306,10 @@ export default function App() {
         table: tab.tableName,
         page: 1, // Reset to first page on sort change
         limit: tab.pageSize || 50,
+        filter: tab.filter,
         sortColumn: column,
         sortDirection: direction,
+        orderBy: tab.orderBy,
       });
 
       setTabs((prev) =>
@@ -319,6 +331,53 @@ export default function App() {
     }
   };
 
+  const handleFilterChange = async (tabId: string, filter: string, orderBy: string) => {
+    const tab = tabs.find((t) => t.id === tabId);
+    if (!tab || !tab.connectionId || !tab.driver || !tab.tableName) return;
+
+    // Optimistically update filter/orderBy state
+    setTabs((prev) =>
+      prev.map((t) => {
+        if (t.id !== tabId) return t;
+        return { ...t, filter, orderBy };
+      }),
+    );
+
+    try {
+      const schema = tab.driver === "mysql" ? tab.database : "public";
+      const resp = await api.tableData.get({
+        id: tab.connectionId,
+        schema: schema || "public",
+        table: tab.tableName,
+        page: 1, // Reset to first page on filter change
+        limit: tab.pageSize || 50,
+        filter: filter || undefined,
+        sortColumn: tab.sortColumn,
+        sortDirection: tab.sortDirection,
+        orderBy: orderBy || undefined,
+      });
+
+      const columns = resp.data.length > 0 ? Object.keys(resp.data[0]) : tab.columns;
+      setTabs((prev) =>
+        prev.map((t) => {
+          if (t.id !== tabId) return t;
+          return {
+            ...t,
+            data: resp.data,
+            columns,
+            total: resp.total,
+            page: resp.page,
+            executionTimeMs: resp.executionTimeMs,
+            filter,
+            orderBy,
+          };
+        }),
+      );
+    } catch (e) {
+      console.error("handleFilterChange failed", e);
+    }
+  };
+
   const handleCloseTab = (tabId: string) => {
     const newTabs = tabs.filter((t) => t.id !== tabId);
     setTabs(newTabs);
@@ -326,6 +385,11 @@ export default function App() {
     if (activeTab === tabId) {
       setActiveTab(newTabs[newTabs.length - 1]?.id || "");
     }
+  };
+
+  const handleCloseOtherTabs = (tabId: string) => {
+    setTabs((prev) => prev.filter((t) => t.id === tabId));
+    setActiveTab(tabId);
   };
 
   return (
@@ -422,35 +486,46 @@ export default function App() {
                 <div className="bg-muted/30 border-b border-border">
                   <TabsList className="h-10 w-full justify-start gap-0 bg-transparent border-none p-0 overflow-x-auto">
                     {tabs.map((tab) => (
-                      <TabsTrigger
-                        key={tab.id}
-                        value={tab.id}
-                        className="gap-2 group relative pr-8 bg-transparent data-[state=active]:bg-background data-[state=active]:border-b-2 data-[state=active]:border-primary border-transparent rounded-none h-10 hover:bg-muted/50 border-r border-border/40 last:border-r-0"
-                        onMouseDown={(e) => {
-                          if (e.button === 1) {
-                            e.preventDefault();
-                            handleCloseTab(tab.id);
-                          }
-                        }}
-                      >
-                        {tab.type === "table" ? (
-                          <Table className="w-4 h-4 text-primary" />
-                        ) : (
-                          <FileCode className="w-4 h-4 text-primary" />
-                        )}
-                        <span className="truncate max-w-[120px]">
-                          {tab.title}
-                        </span>
-                        <div
-                          className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 hover:bg-accent rounded-sm cursor-pointer transition-opacity"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCloseTab(tab.id);
-                          }}
-                        >
-                          <X className="w-3 h-3 text-muted-foreground" />
-                        </div>
-                      </TabsTrigger>
+                      <ContextMenu key={tab.id}>
+                        <ContextMenuTrigger asChild>
+                          <TabsTrigger
+                            value={tab.id}
+                            className="gap-2 group relative pr-8 bg-transparent data-[state=active]:bg-background data-[state=active]:border-b-2 data-[state=active]:border-primary border-transparent rounded-none h-10 hover:bg-muted/50 border-r border-border/40 last:border-r-0"
+                            onMouseDown={(e) => {
+                              if (e.button === 1) {
+                                e.preventDefault();
+                                handleCloseTab(tab.id);
+                              }
+                            }}
+                          >
+                            {tab.type === "table" ? (
+                              <Table className="w-4 h-4 text-primary" />
+                            ) : (
+                              <FileCode className="w-4 h-4 text-primary" />
+                            )}
+                            <span className="truncate max-w-[120px]">
+                              {tab.title}
+                            </span>
+                            <div
+                              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 hover:bg-accent rounded-sm cursor-pointer transition-opacity"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCloseTab(tab.id);
+                              }}
+                            >
+                              <X className="w-3 h-3 text-muted-foreground" />
+                            </div>
+                          </TabsTrigger>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                          <ContextMenuItem onClick={() => handleCloseTab(tab.id)}>
+                            关闭当前标签
+                          </ContextMenuItem>
+                          <ContextMenuItem onClick={() => handleCloseOtherTabs(tab.id)}>
+                            关闭其他标签
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
                     ))}
                   </TabsList>
                 </div>
@@ -489,6 +564,11 @@ export default function App() {
                           sortDirection={tab.sortDirection}
                           onSortChange={(col, dir) =>
                             handleSortChange(tab.id, col, dir)
+                          }
+                          filter={tab.filter}
+                          orderBy={tab.orderBy}
+                          onFilterChange={(f, ob) =>
+                            handleFilterChange(tab.id, f, ob)
                           }
                           onOpenDDL={handleOpenTableDDL}
                           onDataRefresh={() => handlePageChange(tab.id, tab.page || 1)}

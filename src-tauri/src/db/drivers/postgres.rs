@@ -36,10 +36,16 @@ impl PostgresDriver {
             .password
             .clone()
             .ok_or("[VALIDATION_ERROR] password 不能为空")?;
-        Ok(format!(
+        let mut dsn = format!(
             "postgres://{}:{}@{}:{}/{}",
             username, password, host, port, database
-        ))
+        );
+
+        if self.form.ssl.unwrap_or(false) {
+            dsn.push_str("?sslmode=require");
+        }
+
+        Ok(dsn)
     }
 
     async fn get_pool(&self) -> Result<sqlx::PgPool, String> {
@@ -369,20 +375,38 @@ impl DatabaseDriver for PostgresDriver {
         limit: i64,
         sort_column: Option<String>,
         sort_direction: Option<String>,
+        filter: Option<String>,
+        order_by: Option<String>,
     ) -> Result<TableDataResponse, String> {
         let start = std::time::Instant::now();
         let pool = self.get_pool().await?;
         let offset = (page - 1) * limit;
 
-        // Get total count
-        let count_query = format!("SELECT COUNT(*) FROM {}.{}", schema, table);
+        // Normalize smart quotes from macOS input
+        let filter = filter.map(|f| super::normalize_quotes(&f));
+        let order_by = order_by.map(|f| super::normalize_quotes(&f));
+
+        // Build WHERE clause from filter
+        let where_clause = match &filter {
+            Some(f) if !f.trim().is_empty() => format!(" WHERE {}", f.trim()),
+            _ => String::new(),
+        };
+
+        // Get total count (with filter applied)
+        let count_query = format!("SELECT COUNT(*) FROM {}.{}{}", schema, table, where_clause);
         let total: i64 = sqlx::query_scalar(&count_query)
             .fetch_one(&pool)
             .await
-            .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+            .map_err(|e| format!("[QUERY_ERROR] SQL: {} | {}", count_query, e))?;
 
-        // Build ORDER BY clause if sort parameters are provided
-        let order_clause = if let Some(ref col) = sort_column {
+        // Build ORDER BY clause: order_by (raw) takes priority over sort_column/sort_direction
+        let order_clause = if let Some(ref ob) = order_by {
+            if !ob.trim().is_empty() {
+                format!(" ORDER BY {}", ob.trim())
+            } else {
+                String::new()
+            }
+        } else if let Some(ref col) = sort_column {
             // Validate column name to prevent SQL injection
             if !col.chars().all(|c| c.is_alphanumeric() || c == '_') {
                 return Err("[VALIDATION_ERROR] Invalid sort column name".to_string());
@@ -397,15 +421,15 @@ impl DatabaseDriver for PostgresDriver {
         };
 
         let query = format!(
-            "SELECT * FROM {}.{}{} LIMIT $1 OFFSET $2",
-            schema, table, order_clause
+            "SELECT * FROM {}.{}{}{} LIMIT $1 OFFSET $2",
+            schema, table, where_clause, order_clause
         );
         let rows = sqlx::query(&query)
             .bind(limit)
             .bind(offset)
             .fetch_all(&pool)
             .await
-            .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+            .map_err(|e| format!("[QUERY_ERROR] SQL: {} | {}", query, e))?;
 
         let mut data = Vec::new();
         for row in &rows {
@@ -686,5 +710,25 @@ mod tests {
         };
         let driver = PostgresDriver { form };
         assert!(driver.conn_string().is_err());
+    }
+
+    #[test]
+    fn test_conn_string_with_ssl() {
+        let form = ConnectionForm {
+            driver: "postgres".to_string(),
+            host: Some("localhost".to_string()),
+            port: Some(5432),
+            username: Some("postgres".to_string()),
+            password: Some("password".to_string()),
+            database: Some("mydb".to_string()),
+            ssl: Some(true),
+            ..Default::default()
+        };
+        let driver = PostgresDriver { form };
+        let dsn = driver.conn_string().unwrap();
+        assert_eq!(
+            dsn,
+            "postgres://postgres:password@localhost:5432/mydb?sslmode=require"
+        );
     }
 }
