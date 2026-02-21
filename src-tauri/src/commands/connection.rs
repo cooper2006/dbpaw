@@ -38,8 +38,11 @@ pub async fn test_connection_ephemeral(
 
 #[tauri::command]
 pub async fn get_connections(state: State<'_, AppState>) -> Result<Vec<Connection>, String> {
-    let local_db = state.local_db.lock().await;
-    if let Some(db) = local_db.as_ref() {
+    let local_db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+    if let Some(db) = local_db {
         db.list_connections().await
     } else {
         Err("Local DB not initialized".to_string())
@@ -51,8 +54,11 @@ pub async fn create_connection(
     state: State<'_, AppState>,
     form: ConnectionForm,
 ) -> Result<Connection, String> {
-    let local_db = state.local_db.lock().await;
-    if let Some(db) = local_db.as_ref() {
+    let local_db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+    if let Some(db) = local_db {
         db.create_connection(form).await
     } else {
         Err("Local DB not initialized".to_string())
@@ -65,16 +71,13 @@ pub async fn update_connection(
     id: i64,
     form: ConnectionForm,
 ) -> Result<Connection, String> {
-    let local_db = state.local_db.lock().await;
-    if let Some(db) = local_db.as_ref() {
+    let local_db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+    if let Some(db) = local_db {
         // If connection is updated, we should remove it from pool so next usage reconnects with new config
-        state.pool_manager.remove(&id.to_string()).await;
-        // Also remove any variations like id:db? 
-        // PoolManager doesn't support wildcard remove yet.
-        // But keys are exact strings. If user connects to different DBs, we have multiple entries.
-        // Ideally we should clear all entries starting with "id:".
-        // For now, removing the base one is good enough, or we can iterate.
-        // Let's stick to removing base one. Users might need to reconnect manually if they changed DB-specific settings.
+        state.pool_manager.remove_by_prefix(&id.to_string()).await;
         
         db.update_connection(id, form).await
     } else {
@@ -84,10 +87,13 @@ pub async fn update_connection(
 
 #[tauri::command]
 pub async fn delete_connection(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let local_db = state.local_db.lock().await;
-    if let Some(db) = local_db.as_ref() {
+    let local_db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+    if let Some(db) = local_db {
         // Remove from pool
-        state.pool_manager.remove(&id.to_string()).await;
+        state.pool_manager.remove_by_prefix(&id.to_string()).await;
         
         db.delete_connection(id).await
     } else {

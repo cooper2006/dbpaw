@@ -1,6 +1,7 @@
 use crate::db::local::LocalDb;
 use crate::state::AppState;
 use tauri::Manager;
+use std::sync::Arc;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -23,7 +24,7 @@ pub fn run() {
                 let state = handle.state::<AppState>();
                 match LocalDb::init(&handle).await {
                     Ok(db) => {
-                        *state.local_db.lock().await = Some(db);
+                        *state.local_db.lock().await = Some(Arc::new(db));
                         println!("Local DB initialized successfully");
                     }
                     Err(e) => {
