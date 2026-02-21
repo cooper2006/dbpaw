@@ -29,8 +29,9 @@ impl PoolManager {
     pub async fn get_connection(&self, id: &str) -> Option<Arc<dyn DatabaseDriver>> {
         let pools = self.pools.read().await;
         if let Some(entry) = pools.get(id) {
-            if let Ok(mut last) = entry.last_used.lock() {
-                *last = std::time::Instant::now();
+            match entry.last_used.lock() {
+                Ok(mut last) => *last = std::time::Instant::now(),
+                Err(e) => eprintln!("[POOL_ERROR] Failed to lock last_used timestamp: {}", e),
             }
             return Some(entry.driver.clone());
         }
@@ -79,18 +80,115 @@ impl PoolManager {
 
     /// 移除并关闭连接
     pub async fn remove(&self, id: &str) {
-        let mut pools = self.pools.write().await;
-        if let Some(entry) = pools.remove(id) {
-            // 显式关闭连接
+        let entry = {
+            let mut pools = self.pools.write().await;
+            pools.remove(id)
+        };
+        
+        if let Some(entry) = entry {
+            // 显式关闭连接，此时已释放写锁
+            entry.driver.close().await;
+        }
+    }
+
+    /// 移除并关闭指定 ID 的所有连接（包括不同数据库的连接）
+    pub async fn remove_by_prefix(&self, id: &str) {
+        let entries_to_remove = {
+            let mut pools = self.pools.write().await;
+            let keys_to_remove: Vec<String> = pools
+                .keys()
+                .filter(|k| k == &id || k.starts_with(&format!("{}:", id)))
+                .cloned()
+                .collect();
+            
+            let mut entries = Vec::new();
+            for key in keys_to_remove {
+                if let Some(entry) = pools.remove(&key) {
+                    entries.push(entry);
+                }
+            }
+            entries
+        };
+
+        for entry in entries_to_remove {
             entry.driver.close().await;
         }
     }
 
     /// 关闭所有连接 (用于应用退出)
     pub async fn close_all(&self) {
-        let mut pools = self.pools.write().await;
-        for (_, entry) in pools.drain() {
+        let entries = {
+            let mut pools = self.pools.write().await;
+            pools.drain().map(|(_, e)| e).collect::<Vec<_>>()
+        };
+
+        for entry in entries {
             entry.driver.close().await;
         }
+    }
+
+    #[cfg(test)]
+    pub async fn insert_mock_connection(&self, id: &str, driver: Arc<dyn DatabaseDriver>) {
+        let mut pools = self.pools.write().await;
+        pools.insert(id.to_string(), PoolEntry {
+            driver,
+            last_used: Mutex::new(std::time::Instant::now()),
+        });
+    }
+
+    #[cfg(test)]
+    pub async fn count(&self) -> usize {
+        self.pools.read().await.len()
+    }
+
+    #[cfg(test)]
+    pub async fn contains_key(&self, key: &str) -> bool {
+        self.pools.read().await.contains_key(key)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::drivers::DatabaseDriver;
+    use async_trait::async_trait;
+
+    struct MockDriver;
+
+    #[async_trait]
+    impl DatabaseDriver for MockDriver {
+        async fn close(&self) {}
+        async fn test_connection(&self) -> Result<(), String> { Ok(()) }
+        async fn list_databases(&self) -> Result<Vec<String>, String> { Ok(vec![]) }
+        async fn list_tables(&self, _schema: Option<String>) -> Result<Vec<crate::models::TableInfo>, String> { Ok(vec![]) }
+        async fn get_table_structure(&self, _schema: String, _table: String) -> Result<crate::models::TableStructure, String> { Err("Unimplemented".into()) }
+        async fn get_table_metadata(&self, _schema: String, _table: String) -> Result<crate::models::TableMetadata, String> { Err("Unimplemented".into()) }
+        async fn get_table_ddl(&self, _schema: String, _table: String) -> Result<String, String> { Err("Unimplemented".into()) }
+        async fn get_table_data(&self, _schema: String, _table: String, _page: i64, _limit: i64, _sort_column: Option<String>, _sort_direction: Option<String>, _filter: Option<String>, _order_by: Option<String>) -> Result<crate::models::TableDataResponse, String> { Err("Unimplemented".into()) }
+        async fn execute_query(&self, _sql: String) -> Result<crate::models::QueryResult, String> { Err("Unimplemented".into()) }
+        async fn get_schema_overview(&self, _schema: Option<String>) -> Result<crate::models::SchemaOverview, String> { Err("Unimplemented".into()) }
+    }
+
+    #[tokio::test]
+    async fn test_remove_by_prefix() {
+        let manager = PoolManager::new();
+        let driver = Arc::new(MockDriver);
+
+        manager.insert_mock_connection("1", driver.clone()).await;
+        manager.insert_mock_connection("1:db1", driver.clone()).await;
+        manager.insert_mock_connection("1:db2", driver.clone()).await;
+        manager.insert_mock_connection("2", driver.clone()).await;
+        manager.insert_mock_connection("21", driver.clone()).await; // Should NOT be removed
+
+        assert_eq!(manager.count().await, 5);
+
+        manager.remove_by_prefix("1").await;
+
+        assert_eq!(manager.count().await, 2);
+        assert!(!manager.contains_key("1").await);
+        assert!(!manager.contains_key("1:db1").await);
+        assert!(!manager.contains_key("1:db2").await);
+        assert!(manager.contains_key("2").await);
+        assert!(manager.contains_key("21").await);
     }
 }

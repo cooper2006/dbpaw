@@ -31,7 +31,9 @@ async fn test_mysql_integration_flow() {
         ..Default::default()
     };
 
-    let driver = MysqlDriver { form };
+    let driver: MysqlDriver = MysqlDriver::connect(&form)
+        .await
+        .expect("Failed to connect");
 
     // 1. Test Connection
     // This just runs "SELECT 1"

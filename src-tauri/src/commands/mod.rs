@@ -32,13 +32,28 @@ pub async fn ensure_connection_with_db(
     };
 
     if let Some(driver) = state.pool_manager.get_connection(&key).await {
+        // Harden: Check if connection still exists in LocalDb
+        let local_db = {
+            let lock = state.local_db.lock().await;
+            lock.clone()
+        };
+        
+        if let Some(db) = local_db {
+            if db.get_connection_by_id(id).await.is_err() {
+                state.pool_manager.remove_by_prefix(&id.to_string()).await;
+                return Err(format!("Connection with ID {} no longer exists", id));
+            }
+        }
         return Ok(driver);
     }
 
-    let local_db = state.local_db.lock().await;
-    let db = local_db.as_ref().ok_or("Local DB not initialized")?;
+    let local_db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+    
+    let db = local_db.ok_or("Local DB not initialized")?;
     let mut form = db.get_connection_form_by_id(id).await?;
-    drop(local_db);
 
     if let Some(db_name) = database {
         if !db_name.is_empty() {
@@ -65,7 +80,7 @@ where
         Err(e) => {
             if is_connection_error(&e) {
                 // Retry once
-                println!("[Pool] Connection error detected: {}, retrying...", e);
+                println!("[Pool] Connection error detected, retrying...");
                 let key = if let Some(db) = &database {
                     if !db.is_empty() {
                         format!("{}:{}", id, db)
@@ -78,9 +93,13 @@ where
 
                 state.pool_manager.remove(&key).await;
                 let driver = ensure_connection_with_db(state, id, database).await?;
-                task(driver).await
+                task(driver).await.map_err(|_e| {
+                    println!("[Pool] Retry failed. Error details hidden.");
+                    "Database operation failed after retry. Please check your connection.".to_string()
+                })
             } else {
-                Err(e)
+                println!("[Pool] Operation failed. Error details hidden.");
+                Err("Database operation failed. Please check your query and connection.".to_string())
             }
         }
     }
