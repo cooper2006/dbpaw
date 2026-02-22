@@ -71,7 +71,7 @@ interface TabItem {
 }
 
 const TAB_TRIGGER_CLASS =
-  "gap-2 group relative pr-8 bg-transparent data-[state=active]:bg-background border-b-2 border-b-transparent data-[state=active]:border-b-primary rounded-none h-10 hover:bg-muted/50 border-r border-r-border/40 last:border-r-0";
+  "gap-2 group relative pr-8 bg-transparent data-[state=active]:bg-background border-b-2 border-b-transparent data-[state=active]:border-b-primary rounded-none h-9 hover:bg-muted/50 border-r border-r-border/40 last:border-r-0";
 
 export default function App() {
   const [tabs, setTabs] = useState<TabItem[]>([]);
@@ -596,7 +596,7 @@ export default function App() {
                 className="h-full flex flex-col"
               >
                 <div className="bg-muted/30">
-                  <TabsList className="h-10 w-full justify-start gap-0 bg-transparent border-none border-b-0 p-0 overflow-x-auto">
+                  <TabsList className="h-9 w-full justify-start gap-0 bg-transparent border-none border-b-0 p-0 overflow-x-auto">
                     {tabs.map((tab) => (
                       <ContextMenu key={tab.id}>
                         <ContextMenuTrigger asChild>

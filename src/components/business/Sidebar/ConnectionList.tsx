@@ -427,7 +427,7 @@ export function ConnectionList({
 
   return (
     <div className="h-full flex flex-col bg-background border-r border-border">
-      <div className="p-3 border-b border-border flex items-center justify-between">
+      <div className="p-2 border-b border-border flex items-center justify-between">
         <h2 className="font-semibold text-sm">Connections</h2>
         <div className="flex gap-1">
           <Button
@@ -710,7 +710,7 @@ export function ConnectionList({
         </div>
       </div>
 
-      <div className="p-3 border-b border-border">
+      <div className="p-2 border-b border-border">
         <div className="relative">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input

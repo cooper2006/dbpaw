@@ -65,7 +65,7 @@ export function SavedQueriesList({ onSelectQuery }: SavedQueriesListProps) {
 
   return (
     <div className="h-full flex flex-col bg-background border-r border-border">
-      <div className="p-3 border-b border-border flex items-center justify-between">
+      <div className="p-2 border-b border-border flex items-center justify-between">
         <h2 className="font-semibold text-sm">Saved Queries</h2>
         <Button
           variant="ghost"
@@ -77,7 +77,7 @@ export function SavedQueriesList({ onSelectQuery }: SavedQueriesListProps) {
         </Button>
       </div>
 
-      <div className="p-3 border-b border-border">
+      <div className="p-2 border-b border-border">
         <div className="relative">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -96,7 +96,7 @@ export function SavedQueriesList({ onSelectQuery }: SavedQueriesListProps) {
         {filteredQueries.map((query) => (
           <div
             key={query.id}
-            className="flex items-center gap-2 px-3 py-2 hover:bg-accent cursor-pointer group select-none text-sm"
+            className="flex items-center gap-2 px-3 py-1.5 hover:bg-accent cursor-pointer group select-none text-sm"
             onDoubleClick={() => onSelectQuery(query)}
             onContextMenu={(e) => {
               e.preventDefault();
