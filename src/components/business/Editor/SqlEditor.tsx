@@ -40,6 +40,7 @@ interface SqlEditorProps {
   schemaOverview?: SchemaOverview;
   savedQueryId?: number;
   initialName?: string;
+  initialDescription?: string;
   onSaveSuccess?: (savedQuery: SavedQuery) => void;
 }
 
@@ -55,6 +56,7 @@ export function SqlEditor({
   schemaOverview,
   savedQueryId,
   initialName,
+  initialDescription,
   onSaveSuccess,
 }: SqlEditorProps) {
   const [internalSql, setInternalSql] = useState("-- Enter your SQL query here\n");
@@ -436,6 +438,7 @@ export function SqlEditor({
         onOpenChange={setIsSaveDialogOpen}
         onSave={handleSave}
         initialName={initialName}
+        initialDescription={initialDescription}
       />
     </div>
   );

@@ -69,6 +69,7 @@ interface TabItem {
   } | null;
   schemaOverview?: SchemaOverview;
   savedQueryId?: number;
+  savedQueryDescription?: string;
 }
 
 const TAB_TRIGGER_CLASS =
@@ -185,6 +186,7 @@ export default function App() {
       driver,
       sqlContent: query.query,
       savedQueryId: query.id,
+      savedQueryDescription: query.description || undefined,
       queryResults: null,
     };
     setTabs((prev) => [...prev, newTab]);
@@ -677,6 +679,7 @@ export default function App() {
                           schemaOverview={tab.schemaOverview}
                           savedQueryId={tab.savedQueryId}
                           initialName={tab.title.startsWith("Query (") ? "" : tab.title}
+                          initialDescription={tab.savedQueryDescription}
                           onSaveSuccess={(savedQuery) => {
                             setTabs((prev) =>
                               prev.map((t) => {
@@ -685,6 +688,7 @@ export default function App() {
                                     ...t,
                                     savedQueryId: savedQuery.id,
                                     title: savedQuery.name,
+                                    savedQueryDescription: savedQuery.description || undefined,
                                   };
                                 }
                                 return t;
