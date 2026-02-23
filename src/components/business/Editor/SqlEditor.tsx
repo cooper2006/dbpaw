@@ -23,40 +23,40 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const warmDarkEditorOverrides = EditorView.theme(
+const aiDarkEditorOverrides = EditorView.theme(
   {
     "&": {
-      backgroundColor: "#2e2a26",
-      color: "#f0ebe3",
+      backgroundColor: "#1f2128",
+      color: "#e6eaf2",
     },
     ".cm-content": {
-      caretColor: "#f0ebe3",
+      caretColor: "#e6eaf2",
     },
     ".cm-gutters": {
-      backgroundColor: "#34302b",
-      color: "#b9afa3",
-      borderRight: "1px solid #5f5851",
+      backgroundColor: "#242730",
+      color: "#aab2c0",
+      borderRight: "1px solid #353944",
     },
     ".cm-activeLine": {
-      backgroundColor: "rgba(221, 202, 180, 0.10)",
+      backgroundColor: "rgba(255, 255, 255, 0.04)",
     },
     ".cm-activeLineGutter": {
-      backgroundColor: "rgba(221, 202, 180, 0.12)",
+      backgroundColor: "rgba(255, 255, 255, 0.04)",
     },
     ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
-      backgroundColor: "rgba(221, 202, 180, 0.24)",
+      backgroundColor: "rgba(140, 170, 255, 0.25)",
     },
     ".cm-cursor, .cm-dropCursor": {
-      borderLeftColor: "#f0ebe3",
+      borderLeftColor: "#e6eaf2",
     },
     ".cm-tooltip": {
-      backgroundColor: "#3a342e",
-      color: "#f0ebe3",
-      border: "1px solid #6b6359",
+      backgroundColor: "#2a2f3a",
+      color: "#e6eaf2",
+      border: "1px solid #3b4250",
     },
     ".cm-tooltip-autocomplete ul li[aria-selected]": {
-      backgroundColor: "rgba(221, 202, 180, 0.18)",
-      color: "#fff8ef",
+      backgroundColor: "rgba(140, 170, 255, 0.20)",
+      color: "#f2f5fb",
     },
   },
   { dark: true },
@@ -342,7 +342,7 @@ export function SqlEditor({
   // Theme
   const editorTheme = useMemo(() => {
     const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    return isDark ? [oneDark, warmDarkEditorOverrides] : [];
+    return isDark ? [oneDark, aiDarkEditorOverrides] : [];
   }, [theme]);
 
   return (
