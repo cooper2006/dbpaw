@@ -11,9 +11,9 @@ pub struct PoolEntry {
 }
 
 pub struct PoolManager {
-    // 存储活跃连接，Key 为连接 UUID
+    // Store active connections, Key is connection UUID
     pools: RwLock<HashMap<String, PoolEntry>>,
-    // 连接锁，防止对同一 UUID 并发发起连接
+    // Connection lock to prevent concurrent connection attempts for the same UUID
     connect_locks: RwLock<HashMap<String, Arc<AsyncMutex<()>>>>,
 }
 
@@ -25,7 +25,7 @@ impl PoolManager {
         }
     }
 
-    /// 获取现有连接，如果存在则更新 last_used 时间
+    /// Get existing connection, update last_used time if it exists
     pub async fn get_connection(&self, id: &str) -> Option<Arc<dyn DatabaseDriver>> {
         let pools = self.pools.read().await;
         if let Some(entry) = pools.get(id) {
@@ -38,14 +38,14 @@ impl PoolManager {
         None
     }
 
-    /// 建立新连接并缓存。如果已存在则直接返回。
+    /// Establish new connection and cache it. Return existing one if already present.
     pub async fn connect(&self, id: &str, form: &ConnectionForm) -> Result<Arc<dyn DatabaseDriver>, String> {
-        // 1. 快速检查 (Fast path)
+        // 1. Fast path check
         if let Some(driver) = self.get_connection(id).await {
             return Ok(driver);
         }
 
-        // 2. 获取连接锁 (Get lock for this specific ID)
+        // 2. Get lock for this specific ID
         let lock = {
             let mut locks = self.connect_locks.write().await;
             locks
@@ -53,20 +53,20 @@ impl PoolManager {
                 .or_insert_with(|| Arc::new(AsyncMutex::new(())))
                 .clone()
         };
-        // 锁定，确保同一时间只有一个线程在建立该 ID 的连接
+        // Lock to ensure only one thread establishes connection for this ID at a time
         let _guard = lock.lock().await;
 
-        // 3. 再次检查 (Double check)
+        // 3. Double check
         if let Some(driver) = self.get_connection(id).await {
             return Ok(driver);
         }
 
-        // 4. 创建新连接
-        // 注意：此处 connect 返回 Box<dyn DatabaseDriver>，我们需要转为 Arc
+        // 4. Create new connection
+        // Note: connect returns Box<dyn DatabaseDriver>, we need to convert to Arc
         let driver_box = drivers::connect(form).await.map_err(|e| format!("[POOL_CONNECT_ERROR] {}", e))?;
         let driver: Arc<dyn DatabaseDriver> = Arc::from(driver_box);
 
-        // 5. 存入池中
+        // 5. Store in pool
         {
             let mut pools = self.pools.write().await;
             pools.insert(id.to_string(), PoolEntry {
@@ -78,7 +78,7 @@ impl PoolManager {
         Ok(driver)
     }
 
-    /// 移除并关闭连接
+    /// Remove and close connection
     pub async fn remove(&self, id: &str) {
         let entry = {
             let mut pools = self.pools.write().await;
@@ -86,12 +86,12 @@ impl PoolManager {
         };
         
         if let Some(entry) = entry {
-            // 显式关闭连接，此时已释放写锁
+            // Explicitly close connection, write lock is released at this point
             entry.driver.close().await;
         }
     }
 
-    /// 移除并关闭指定 ID 的所有连接（包括不同数据库的连接）
+    /// Remove and close all connections for a given ID (including different databases)
     pub async fn remove_by_prefix(&self, id: &str) {
         let entries_to_remove = {
             let mut pools = self.pools.write().await;
@@ -115,7 +115,7 @@ impl PoolManager {
         }
     }
 
-    /// 关闭所有连接 (用于应用退出)
+    /// Close all connections (used when application exits)
     pub async fn close_all(&self) {
         let entries = {
             let mut pools = self.pools.write().await;

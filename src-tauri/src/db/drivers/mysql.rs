@@ -17,17 +17,17 @@ pub struct MysqlDriver {
 }
 
 fn build_dsn(form: &ConnectionForm) -> Result<String, String> {
-    let host = form.host.clone().ok_or("[VALIDATION_ERROR] host 不能为空")?;
+    let host = form.host.clone().ok_or("[VALIDATION_ERROR] host cannot be empty")?;
     let port = form.port.unwrap_or(3306);
-    // 允许 database 为空
+    // Allow database to be empty
     let username = form
         .username
         .clone()
-        .ok_or("[VALIDATION_ERROR] username 不能为空")?;
+        .ok_or("[VALIDATION_ERROR] username cannot be empty")?;
     let password = form
         .password
         .clone()
-        .ok_or("[VALIDATION_ERROR] password 不能为空")?;
+        .ok_or("[VALIDATION_ERROR] password cannot be empty")?;
     let mut dsn = format!("mysql://{}:{}@{}:{}", username, password, host, port);
 
     if let Some(db) = &form.database {

@@ -227,7 +227,7 @@ export function ConnectionList({
   const isSqlite = form.driver === "sqlite";
   const requiredOk = useMemo(() => {
     if (isSqlite) return !!form.filePath;
-    // Database 不再必填，允许连接服务器后列出所有库
+    // Database is no longer required, allowing listing all databases after connecting to server
     return !!form.host && !!form.port && !!form.username && !!form.password;
   }, [form, isSqlite]);
 
@@ -299,9 +299,9 @@ export function ConnectionList({
     databaseName: string,
   ) => {
     try {
-      // 使用 listTables 通过 ID 获取表列表，传入当前选中的 database
-      // 对于 Postgres，databaseName 通常对应 database 字段，schema 可能是 public 或其他
-      // 这里简化处理：将 databaseName 传给 database 参数
+      // Use listTables to get table list by ID, passing the currently selected database
+      // For Postgres, databaseName usually corresponds to database field, schema might be public or others
+      // Simplified handling: pass databaseName to database parameter
       const tables = await api.metadata.listTables(
         Number(connectionId),
         databaseName,
@@ -333,8 +333,8 @@ export function ConnectionList({
       newExpanded.delete(key);
     } else {
       newExpanded.add(key);
-      // 展开时，尝试加载表（如果未加载）
-      // key 格式为 "connectionId-dbName"
+      // When expanding, try to load tables (if not loaded)
+      // Key format is "connectionId-dbName"
       const [connId, ...dbNameParts] = key.split("-");
       const dbName = dbNameParts.join("-");
       // 找到对应的 connection 和 database
@@ -404,7 +404,7 @@ export function ConnectionList({
       newExpanded.delete(tableKey);
     } else {
       newExpanded.add(tableKey);
-      // 首次展开时加载列信息
+      // Load column info on first expand
       if (table.columns.length === 0) {
         fetchAndSetTableColumns(connectionId, databaseName, table.schema, table.name);
       }

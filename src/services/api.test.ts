@@ -1,15 +1,15 @@
 /**
- * Mock 模式测试文件
- * 用于验证各个 API 端点在 Mock 模式下正常返回数据
+ * Mock mode test file
+ * Used to verify that each API endpoint returns data normally in Mock mode
  * 
- * 使用方式：
- * 1. 启动 Mock 模式：bun dev:mock
- * 2. 在浏览器控制台运行此文件中的测试函数
+ * Usage:
+ * 1. Start Mock mode: bun dev:mock
+ * 2. Run test functions in this file from the browser console
  */
 
 import { api } from "./api";
 
-// 设置日志颜色
+// Set log colors
 const log = {
   success: (msg: string) => console.log(`%c✓ ${msg}`, "color: green; font-weight: bold"),
   error: (msg: string) => console.error(`%c✗ ${msg}`, "color: red; font-weight: bold"),
@@ -17,7 +17,7 @@ const log = {
 };
 
 /**
- * 测试查询功能
+ * Test query functionality
  */
 export async function testQuery() {
   log.info("Testing query.execute...");
@@ -31,7 +31,7 @@ export async function testQuery() {
 }
 
 /**
- * 测试元数据功能
+ * Test metadata functionality
  */
 export async function testMetadata() {
   log.info("Testing metadata.listTables...");
@@ -72,7 +72,7 @@ export async function testMetadata() {
 }
 
 /**
- * 测试表数据功能
+ * Test table data functionality
  */
 export async function testTableData() {
   log.info("Testing tableData.get...");
@@ -92,7 +92,7 @@ export async function testTableData() {
 }
 
 /**
- * 测试连接功能
+ * Test connections functionality
  */
 export async function testConnections() {
   log.info("Testing connections.list...");
@@ -106,10 +106,10 @@ export async function testConnections() {
 }
 
 /**
- * 运行所有测试
+ * Run all tests
  */
 export async function runAllTests() {
-  console.log("%c========== Mock API 测试开始 ==========", "color: purple; font-weight: bold; font-size: 14px");
+  console.log("%c========== Mock API Tests Starting ==========", "color: purple; font-weight: bold; font-size: 14px");
   
   await testQuery();
   console.log("");
@@ -122,10 +122,10 @@ export async function runAllTests() {
   
   await testConnections();
   
-  console.log("%c========== Mock API 测试结束 ==========", "color: purple; font-weight: bold; font-size: 14px");
+  console.log("%c========== Mock API Tests Ended ==========", "color: purple; font-weight: bold; font-size: 14px");
 }
 
-// 导出测试函数，方便在浏览器控制台调用
+// Export test functions for easy calling from browser console
 if (typeof window !== "undefined") {
   (window as any).testMockAPI = {
     runAllTests,

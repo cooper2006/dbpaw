@@ -16,18 +16,18 @@ pub struct PostgresDriver {
 }
 
 fn build_dsn(form: &ConnectionForm) -> Result<String, String> {
-    let host = form.host.clone().ok_or("[VALIDATION_ERROR] host 不能为空")?;
+    let host = form.host.clone().ok_or("[VALIDATION_ERROR] host cannot be empty")?;
     let port = form.port.unwrap_or(5432);
-    // 允许 database 为空，默认为 postgres
+    // Allow database to be empty, default to postgres
     let database = form.database.clone().unwrap_or_else(|| "postgres".to_string());
     let username = form
         .username
         .clone()
-        .ok_or("[VALIDATION_ERROR] username 不能为空")?;
+        .ok_or("[VALIDATION_ERROR] username cannot be empty")?;
     let password = form
         .password
         .clone()
-        .ok_or("[VALIDATION_ERROR] password 不能为空")?;
+        .ok_or("[VALIDATION_ERROR] password cannot be empty")?;
     let mut dsn = format!(
         "postgres://{}:{}@{}:{}/{}",
         username, password, host, port, database
@@ -140,7 +140,7 @@ impl DatabaseDriver for PostgresDriver {
                 r#type: row.try_get(1).unwrap_or_default(),
                 nullable: row.try_get::<String, _>(2).unwrap_or_default() == "YES",
                 default_value: row.try_get(3).ok(),
-                primary_key: false, // TODO: 需要查询 constraint
+                primary_key: false, // TODO: Need to query constraint
                 comment: None,
             });
         }
