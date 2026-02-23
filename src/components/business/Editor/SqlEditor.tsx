@@ -23,6 +23,45 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+const warmDarkEditorOverrides = EditorView.theme(
+  {
+    "&": {
+      backgroundColor: "#2e2a26",
+      color: "#f0ebe3",
+    },
+    ".cm-content": {
+      caretColor: "#f0ebe3",
+    },
+    ".cm-gutters": {
+      backgroundColor: "#34302b",
+      color: "#b9afa3",
+      borderRight: "1px solid #5f5851",
+    },
+    ".cm-activeLine": {
+      backgroundColor: "rgba(221, 202, 180, 0.10)",
+    },
+    ".cm-activeLineGutter": {
+      backgroundColor: "rgba(221, 202, 180, 0.12)",
+    },
+    ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
+      backgroundColor: "rgba(221, 202, 180, 0.24)",
+    },
+    ".cm-cursor, .cm-dropCursor": {
+      borderLeftColor: "#f0ebe3",
+    },
+    ".cm-tooltip": {
+      backgroundColor: "#3a342e",
+      color: "#f0ebe3",
+      border: "1px solid #6b6359",
+    },
+    ".cm-tooltip-autocomplete ul li[aria-selected]": {
+      backgroundColor: "rgba(221, 202, 180, 0.18)",
+      color: "#fff8ef",
+    },
+  },
+  { dark: true },
+);
+
 interface SqlEditorProps {
   queryResults?: {
     data: any[];
@@ -271,7 +310,7 @@ export function SqlEditor({
   // Theme
   const editorTheme = useMemo(() => {
     const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    return isDark ? oneDark : [];
+    return isDark ? [oneDark, warmDarkEditorOverrides] : [];
   }, [theme]);
 
   return (
