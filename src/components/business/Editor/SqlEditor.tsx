@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import CodeMirror, { Extension } from "@uiw/react-codemirror";
 import { sql, PostgreSQL, MySQL, SQLite, StandardSQL, SQLNamespace } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
-import { keymap } from "@codemirror/view";
+import { keymap, EditorView } from "@codemirror/view";
 import { CompletionContext } from "@codemirror/autocomplete";
 import { Button } from "@/components/ui/button";
 import {
@@ -227,6 +227,7 @@ export function SqlEditor({
   // Extensions
   const extensions = useMemo(() => {
     const exts: Extension[] = [
+      EditorView.lineWrapping,
       sql({
         dialect,
         schema: sqlSchema,
