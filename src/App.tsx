@@ -83,11 +83,13 @@ export default function App() {
 
     const unlistenProgress = listen("query.progress", () => { });
     const unlistenDone = listen("query.done", () => { });
+    const unlistenSettings = listen("open-settings", () => setOpenSettings(true));
 
     return () => {
       unlistenChunk.then((f) => f());
       unlistenProgress.then((f) => f());
       unlistenDone.then((f) => f());
+      unlistenSettings.then((f) => f());
     };
   }, []);
 
