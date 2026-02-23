@@ -515,29 +515,29 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-muted/30">
-      {/* Header */}
-      <header className="h-12 bg-background border-b border-border flex items-center justify-between px-2 shadow-sm">
-        <div className="flex items-center gap-2">
+      {/* Integrated Title Bar */}
+      <div data-tauri-drag-region className="h-10 bg-background border-b border-border flex items-center justify-between px-2 pl-20 select-none">
+        <div className="flex items-center gap-2 pointer-events-none">
           <img
             src="/product-icon.png"
             alt="DbPaw"
-            className="w-8 h-8 rounded-lg object-cover"
+            className="w-5 h-5 rounded-md object-cover"
           />
-          <h1 className="font-semibold text-lg">DbPaw</h1>
+          <span className="font-semibold text-sm">DbPaw</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Notifications">
             <Bell className="w-4 h-4" />
           </Button>
 
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setOpenSettings(true)}>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setOpenSettings(true)} title="Settings">
             <Settings className="w-4 h-4" />
           </Button>
           <Button
             variant={aiVisible ? "default" : "ghost"}
             size="sm"
-            className="h-8 w-8 p-0"
+            className="h-7 w-7 p-0"
             onClick={() => setAiVisible((v) => !v)}
             title={aiVisible ? "Hide AI Panel" : "Show AI Panel"}
             aria-label={aiVisible ? "Hide AI panel" : "Show AI panel"}
@@ -547,7 +547,7 @@ export default function App() {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0 justify-center">
+              <Button variant="ghost" className="h-7 w-7 p-0 justify-center rounded-full ml-1">
                 <Avatar className="w-6 h-6">
                   <AvatarImage src="https://github.com/shadcn.png" />
                   <AvatarFallback>AD</AvatarFallback>
@@ -573,7 +573,7 @@ export default function App() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </header>
+      </div>
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">

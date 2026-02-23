@@ -36,10 +36,20 @@ impl LocalDb {
             .await
             .map_err(|e| format!("[MIGRATION_002_ERROR] {e}"))?;
 
-        sqlx::query(include_str!("../../migrations/003_add_database_to_saved_queries.sql"))
-            .execute(&pool)
-            .await
-            .map_err(|e| format!("[MIGRATION_003_ERROR] {e}"))?;
+        // Check if database column exists in saved_queries to avoid duplicate column error
+        let has_database_column: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('saved_queries') WHERE name='database')"
+        )
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| format!("[MIGRATION_003_CHECK_ERROR] {e}"))?;
+
+        if !has_database_column {
+            sqlx::query(include_str!("../../migrations/003_add_database_to_saved_queries.sql"))
+                .execute(&pool)
+                .await
+                .map_err(|e| format!("[MIGRATION_003_ERROR] {e}"))?;
+        }
 
         Ok(Self { pool })
     }
