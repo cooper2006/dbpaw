@@ -28,6 +28,7 @@ interface SqlEditorProps {
     data: any[];
     columns: string[];
     executionTime?: string;
+    error?: string;
   } | null;
   onExecute?: (sql: string) => void;
   onCancel?: () => void;
@@ -39,6 +40,7 @@ interface SqlEditorProps {
   schemaOverview?: SchemaOverview;
   savedQueryId?: number;
   initialName?: string;
+  initialDescription?: string;
   onSaveSuccess?: (savedQuery: SavedQuery) => void;
 }
 
@@ -54,6 +56,7 @@ export function SqlEditor({
   schemaOverview,
   savedQueryId,
   initialName,
+  initialDescription,
   onSaveSuccess,
 }: SqlEditorProps) {
   const [internalSql, setInternalSql] = useState("-- Enter your SQL query here\n");
@@ -132,6 +135,7 @@ export function SqlEditor({
           description,
           query: code,
           connectionId: _connectionId || undefined,
+          database: databaseName,
         });
       } else {
         result = await api.queries.create({
@@ -139,6 +143,7 @@ export function SqlEditor({
           description,
           query: code,
           connectionId: _connectionId || undefined,
+          database: databaseName,
         });
       }
       if (onSaveSuccess) {
@@ -407,14 +412,20 @@ export function SqlEditor({
               <ResizableHandle withHandle />
               <ResizablePanel defaultSize={50} minSize={20}>
                 <div className="h-full flex flex-col">
-                  {/* Header removed as requested */}
-                  <div className="flex-1 overflow-hidden">
-                    <TableView
-                      data={queryResults.data}
-                      columns={queryResults.columns}
-                      hideHeader
-                    />
-                  </div>
+                  {queryResults.error ? (
+                    <div className="h-full p-4 bg-destructive/10 text-destructive overflow-auto font-mono text-sm whitespace-pre-wrap">
+                      <div className="font-bold mb-2">Error executing query:</div>
+                      {queryResults.error}
+                    </div>
+                  ) : (
+                    <div className="flex-1 overflow-hidden">
+                      <TableView
+                        data={queryResults.data}
+                        columns={queryResults.columns}
+                        hideHeader
+                      />
+                    </div>
+                  )}
                 </div>
               </ResizablePanel>
             </>
@@ -427,6 +438,7 @@ export function SqlEditor({
         onOpenChange={setIsSaveDialogOpen}
         onSave={handleSave}
         initialName={initialName}
+        initialDescription={initialDescription}
       />
     </div>
   );

@@ -178,6 +178,9 @@ export function ConnectionList({
     username: "",
     password: "",
     ssl: false,
+    sshEnabled: false,
+    sshPort: 22,
+    sshUsername: "root",
   });
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -427,21 +430,21 @@ export function ConnectionList({
 
   return (
     <div className="h-full flex flex-col bg-background border-r border-border">
-      <div className="p-2 border-b border-border flex items-center justify-between">
+      <div className="px-2 py-1 border-b border-border flex items-center justify-between h-8">
         <h2 className="font-semibold text-sm">Connections</h2>
         <div className="flex gap-1">
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-7 p-0"
+            className="h-6 w-6 p-0"
             onClick={fetchConnections}
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className="w-3.5 h-3.5" />
           </Button>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                <Plus className="w-4 h-4" />
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                <Plus className="w-3.5 h-3.5" />
               </Button>
             </DialogTrigger>
             <DialogContent>
@@ -582,8 +585,94 @@ export function ConnectionList({
                           setForm((f) => ({ ...f, ssl: checked === true }))
                         }
                       />
-                      <Label htmlFor="ssl">Use SSL</Label>
+                      <Label htmlFor="ssl">SSL</Label>
                     </div>
+
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="ssh"
+                        checked={form.sshEnabled}
+                        onCheckedChange={(checked) =>
+                          setForm((f) => ({ ...f, sshEnabled: checked === true }))
+                        }
+                      />
+                      <Label htmlFor="ssh">SSH</Label>
+                    </div>
+
+                    {form.sshEnabled && (
+                      <div className="border p-3 rounded-md space-y-3 bg-muted/20">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="grid gap-2">
+                            <Label htmlFor="sshHost">SSH Host</Label>
+                            <Input
+                              id="sshHost"
+                              placeholder="ssh.example.com"
+                              value={form.sshHost || ""}
+                              onChange={(e) =>
+                                setForm((f) => ({ ...f, sshHost: e.target.value }))
+                              }
+                            />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="sshPort">SSH Port</Label>
+                            <Input
+                              id="sshPort"
+                              placeholder="22"
+                              value={String(form.sshPort || "")}
+                              onChange={(e) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  sshPort: Number(e.target.value) || undefined,
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="sshUsername">SSH Username</Label>
+                          <Input
+                            id="sshUsername"
+                            placeholder="root"
+                            value={form.sshUsername || ""}
+                            onChange={(e) =>
+                              setForm((f) => ({
+                                ...f,
+                                sshUsername: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="sshPassword">SSH Password</Label>
+                          <Input
+                            id="sshPassword"
+                            type="password"
+                            placeholder="Optional if using key"
+                            value={form.sshPassword || ""}
+                            onChange={(e) =>
+                              setForm((f) => ({
+                                ...f,
+                                sshPassword: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="sshKeyPath">SSH Key Path</Label>
+                          <Input
+                            id="sshKeyPath"
+                            placeholder="/path/to/private_key"
+                            value={form.sshKeyPath || ""}
+                            onChange={(e) =>
+                              setForm((f) => ({
+                                ...f,
+                                sshKeyPath: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
                 {isSqlite && (

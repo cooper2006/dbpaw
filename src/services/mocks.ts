@@ -6,6 +6,7 @@ import {
   SchemaOverview,
   ConnectionForm,
   TestConnectionResult,
+  SavedQuery,
 } from "./api";
 
 /**
@@ -19,7 +20,7 @@ export const mockConnections: any[] = [
   {
     id: 1,
     name: "PostgreSQL Dev",
-    driver: "postgres",
+    dbType: "postgres",
     host: "localhost",
     port: 5432,
     database: "testdb",
@@ -29,7 +30,7 @@ export const mockConnections: any[] = [
   {
     id: 2,
     name: "SQLite Local",
-    driver: "sqlite",
+    dbType: "sqlite",
     filePath: "/path/to/database.db",
     createdAt: new Date().toISOString(),
   },
@@ -223,6 +224,29 @@ export const mockDatabases = [
   "template0",
   "testdb",
   "myapp_dev",
+];
+
+export const mockSavedQueries: SavedQuery[] = [
+  {
+    id: 1,
+    name: "Get all users",
+    query: "SELECT * FROM users",
+    description: "Fetch all users from the database",
+    connectionId: 1,
+    database: "testdb",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 2,
+    name: "Active posts",
+    query: "SELECT * FROM posts WHERE status = 'active'",
+    description: null,
+    connectionId: 1,
+    database: "testdb",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
 ];
 
 export const mockQueryResult: QueryResult = {
@@ -477,7 +501,7 @@ export async function mockCreateConnection(form: ConnectionForm): Promise<any> {
   return {
     id: mockConnections.length + 1,
     name: form.name || "New Connection",
-    driver: form.driver,
+    dbType: form.driver,
     host: form.host,
     port: form.port,
     database: form.database,
@@ -499,6 +523,85 @@ export async function mockTestConnectionEphemeral(
     message: "Connection test successful",
     latencyMs: Math.floor(Math.random() * 100) + 50,
   };
+}
+
+/**
+ * 模拟获取已保存的查询
+ */
+export async function mockGetSavedQueries(): Promise<SavedQuery[]> {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return [...mockSavedQueries];
+}
+
+/**
+ * 模拟保存查询
+ */
+export async function mockSaveQuery(data: {
+  name: string;
+  query: string;
+  description?: string;
+  connectionId?: number;
+  database?: string;
+}): Promise<SavedQuery> {
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  const newQuery: SavedQuery = {
+    id:
+      mockSavedQueries.length > 0
+        ? Math.max(...mockSavedQueries.map((q) => q.id)) + 1
+        : 1,
+    name: data.name,
+    query: data.query,
+    description: data.description || null,
+    connectionId: data.connectionId || null,
+    database: data.database || null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  mockSavedQueries.push(newQuery);
+  return newQuery;
+}
+
+/**
+ * 模拟更新保存的查询
+ */
+export async function mockUpdateSavedQuery(
+  id: number,
+  data: {
+    name: string;
+    query: string;
+    description?: string;
+    connectionId?: number;
+    database?: string;
+  }
+): Promise<SavedQuery> {
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  const index = mockSavedQueries.findIndex((q) => q.id === id);
+  if (index === -1) {
+    throw new Error(`Saved query with id ${id} not found`);
+  }
+
+  const updatedQuery = {
+    ...mockSavedQueries[index],
+    ...data,
+    updatedAt: new Date().toISOString(),
+  };
+
+  mockSavedQueries[index] = updatedQuery;
+  return updatedQuery;
+}
+
+/**
+ * 模拟删除保存的查询
+ */
+export async function mockDeleteSavedQuery(id: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const index = mockSavedQueries.findIndex((q) => q.id === id);
+  if (index !== -1) {
+    mockSavedQueries.splice(index, 1);
+  }
 }
 
 /**
@@ -587,6 +690,19 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
 
     case "test_connection_ephemeral":
       return mockTestConnectionEphemeral(args.form) as Promise<T>;
+
+    // Saved Queries commands
+    case "get_saved_queries":
+      return mockGetSavedQueries() as Promise<T>;
+
+    case "save_query":
+      return mockSaveQuery(args) as Promise<T>;
+
+    case "update_saved_query":
+      return mockUpdateSavedQuery(args.id, args) as Promise<T>;
+
+    case "delete_saved_query":
+      return mockDeleteSavedQuery(args.id) as Promise<T>;
 
     default:
       console.warn(`[Mock] Unknown command: ${cmd}`);

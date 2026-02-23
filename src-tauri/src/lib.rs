@@ -1,7 +1,7 @@
 use crate::db::local::LocalDb;
 use crate::state::AppState;
-use tauri::Manager;
 use std::sync::Arc;
+use tauri::Manager;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -19,16 +19,18 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            // Initialize local database
-            tauri::async_runtime::spawn(async move {
+            // Initialize local database (blocking to avoid race conditions)
+            tauri::async_runtime::block_on(async move {
                 let state = handle.state::<AppState>();
                 match LocalDb::init(&handle).await {
                     Ok(db) => {
-                        *state.local_db.lock().await = Some(Arc::new(db));
+                        let mut lock = state.local_db.lock().await;
+                        *lock = Some(Arc::new(db));
                         println!("Local DB initialized successfully");
                     }
                     Err(e) => {
                         eprintln!("Failed to initialize local DB: {}", e);
+                        // Make the error visible in the frontend if possible, or at least easier to debug
                     }
                 }
             });
@@ -80,3 +82,4 @@ pub mod events;
 pub mod models;
 pub mod state;
 pub mod utils;
+pub mod ssh;

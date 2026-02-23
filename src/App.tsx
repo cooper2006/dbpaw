@@ -15,27 +15,15 @@ import {
   Table,
   X,
   Settings,
-  User,
-  Bell,
-  LogOut,
   Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { api, isTauri, SchemaOverview, SavedQuery } from "@/services/api";
 import { listen } from "@tauri-apps/api/event";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
@@ -65,9 +53,11 @@ interface TabItem {
     data: any[];
     columns: string[];
     executionTime: string;
+    error?: string;
   } | null;
   schemaOverview?: SchemaOverview;
   savedQueryId?: number;
+  savedQueryDescription?: string;
 }
 
 const TAB_TRIGGER_CLASS =
@@ -134,15 +124,17 @@ export default function App() {
     const newTabId = `saved-query-${query.id}`;
 
     // Check if tab already exists
-    const existingTab = tabs.find(t => t.id === newTabId);
+    const existingTab = tabs.find(
+      (t) => t.id === newTabId || t.savedQueryId === query.id,
+    );
     if (existingTab) {
-      setActiveTab(newTabId);
+      setActiveTab(existingTab.id);
       return;
     }
 
     let connectionId = query.connectionId || undefined;
     let driver: string | undefined = undefined;
-    let database: string | undefined = undefined;
+    let database: string | undefined = query.database || undefined;
 
     // If query is linked to a connection, try to fetch connection details
     if (connectionId) {
@@ -163,7 +155,10 @@ export default function App() {
         const conn = conns.find((c: any) => c.id === connectionId);
         if (conn) {
           driver = conn.dbType;
-          database = conn.database;
+          // Only fallback to connection default if no specific database was saved
+          if (!database) {
+            database = conn.database;
+          }
         }
       } catch (e) {
         console.error("Failed to fetch connection details for saved query", e);
@@ -179,6 +174,7 @@ export default function App() {
       driver,
       sqlContent: query.query,
       savedQueryId: query.id,
+      savedQueryDescription: query.description || undefined,
       queryResults: null,
     };
     setTabs((prev) => [...prev, newTab]);
@@ -224,7 +220,8 @@ export default function App() {
         }),
       );
     } catch (e) {
-      console.error("execute_query failed:", e instanceof Error ? e.message : String(e));
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      console.error("execute_query failed:", errorMessage);
       setTabs((prev) =>
         prev.map((t) => {
           if (t.id !== tabId) return t;
@@ -234,6 +231,7 @@ export default function App() {
               data: [],
               columns: [],
               executionTime: "0ms",
+              error: errorMessage,
             },
           };
         }),
@@ -505,65 +503,33 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-muted/30">
-      {/* Header */}
-      <header className="h-12 bg-background border-b border-border flex items-center justify-between px-2 shadow-sm">
-        <div className="flex items-center gap-2">
+      {/* Integrated Title Bar */}
+      <div data-tauri-drag-region className="h-10 bg-background border-b border-border flex items-center justify-between px-2 pl-20 select-none">
+        <div className="flex items-center gap-2 pointer-events-none">
           <img
             src="/product-icon.png"
             alt="DbPaw"
-            className="w-8 h-8 rounded-lg object-cover"
+            className="w-5 h-5 rounded-md object-cover"
           />
-          <h1 className="font-semibold text-lg">DbPaw</h1>
+          <span className="font-semibold text-sm">DbPaw</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-            <Bell className="w-4 h-4" />
-          </Button>
-
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setOpenSettings(true)}>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setOpenSettings(true)} title="Settings">
             <Settings className="w-4 h-4" />
           </Button>
           <Button
             variant={aiVisible ? "default" : "ghost"}
             size="sm"
-            className="h-8 w-8 p-0"
+            className="h-7 w-7 p-0"
             onClick={() => setAiVisible((v) => !v)}
             title={aiVisible ? "Hide AI Panel" : "Show AI Panel"}
             aria-label={aiVisible ? "Hide AI panel" : "Show AI panel"}
           >
             <Sparkles className="w-4 h-4" />
           </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0 justify-center">
-                <Avatar className="w-6 h-6">
-                  <AvatarImage src="https://github.com/shadcn.png" />
-                  <AvatarFallback>AD</AvatarFallback>
-                </Avatar>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuLabel>My Account</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <User className="w-4 h-4 mr-2" />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setOpenSettings(true)}>
-                <Settings className="w-4 h-4 mr-2" />
-                Settings
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <LogOut className="w-4 h-4 mr-2" />
-                Logout
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
-      </header>
+      </div>
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
@@ -669,6 +635,7 @@ export default function App() {
                           schemaOverview={tab.schemaOverview}
                           savedQueryId={tab.savedQueryId}
                           initialName={tab.title.startsWith("Query (") ? "" : tab.title}
+                          initialDescription={tab.savedQueryDescription}
                           onSaveSuccess={(savedQuery) => {
                             setTabs((prev) =>
                               prev.map((t) => {
@@ -677,6 +644,7 @@ export default function App() {
                                     ...t,
                                     savedQueryId: savedQuery.id,
                                     title: savedQuery.name,
+                                    savedQueryDescription: savedQuery.description || undefined,
                                   };
                                 }
                                 return t;

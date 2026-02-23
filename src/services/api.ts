@@ -56,6 +56,12 @@ export interface ConnectionForm {
   password?: string;
   ssl?: boolean;
   filePath?: string;
+  sshEnabled?: boolean;
+  sshHost?: string;
+  sshPort?: number;
+  sshUsername?: string;
+  sshPassword?: string;
+  sshKeyPath?: string;
 }
 export interface TestConnectionResult {
   success: boolean;
@@ -116,6 +122,7 @@ export interface SavedQuery {
   query: string;
   description?: string | null;
   connectionId?: number | null;
+  database?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -213,6 +220,7 @@ export const api = {
       query: string;
       description?: string;
       connectionId?: number;
+      database?: string;
     }) => invoke<SavedQuery>("save_query", data),
     update: (
       id: number,
@@ -221,6 +229,7 @@ export const api = {
         query: string;
         description?: string;
         connectionId?: number;
+        database?: string;
       },
     ) => invoke<SavedQuery>("update_saved_query", { id, ...data }),
     delete: (id: number) => invoke<void>("delete_saved_query", { id }),
