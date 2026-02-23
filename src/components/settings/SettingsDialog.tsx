@@ -1,5 +1,12 @@
-import { Palette, Info } from "lucide-react";
+import { Palette, Info, RefreshCw } from "lucide-react";
 import { useTheme, Theme } from "@/components/theme-provider";
+import { useState, useEffect } from "react";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { getSetting, saveSetting } from "@/services/store";
+import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 
 import {
   Dialog,
@@ -33,6 +40,50 @@ const THEME_COLORS = [
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { theme, setTheme, accentColor, setAccentColor } = useTheme();
+  const [autoUpdate, setAutoUpdate] = useState(true);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      getSetting("autoUpdate", true).then(setAutoUpdate);
+    }
+  }, [open]);
+
+  const handleCheckUpdate = async () => {
+    setChecking(true);
+    try {
+      const update = await check();
+      if (update?.available) {
+        toast.info(`New version ${update.version} available!`, {
+          action: {
+            label: "Update",
+            onClick: async () => {
+              try {
+                toast.info("Downloading update...");
+                await update.downloadAndInstall();
+                toast.success("Update installed, restarting...");
+                await relaunch();
+              } catch (e) {
+                toast.error("Failed to update");
+              }
+            }
+          }
+        });
+      } else {
+        toast.success("You are on the latest version.");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to check for updates");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const toggleAutoUpdate = async (checked: boolean) => {
+    setAutoUpdate(checked);
+    await saveSetting("autoUpdate", checked);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -93,6 +144,35 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 ))}
               </div>
             </div>
+          </div>
+
+          <Separator />
+
+          {/* Updates Section */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium flex items-center gap-2">
+              <RefreshCw className="w-5 h-5" /> Updates
+            </h3>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label className="text-base">Auto Update</Label>
+                <p className="text-xs text-muted-foreground">
+                  Check for updates automatically
+                </p>
+              </div>
+              <Switch
+                checked={autoUpdate}
+                onCheckedChange={toggleAutoUpdate}
+              />
+            </div>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleCheckUpdate}
+              disabled={checking}
+            >
+              {checking ? "Checking..." : "Check for updates now"}
+            </Button>
           </div>
 
           <Separator />

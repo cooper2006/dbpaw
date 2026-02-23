@@ -27,6 +27,7 @@ import {
 import { api, isTauri, SchemaOverview, SavedQuery } from "@/services/api";
 import { listen } from "@tauri-apps/api/event";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { UpdaterChecker } from "@/components/updater-checker";
 
 interface TabItem {
   id: string;
@@ -719,6 +720,7 @@ export default function App() {
         </ResizablePanelGroup>
       </div>
       <SettingsDialog open={openSettings} onOpenChange={setOpenSettings} />
+      <UpdaterChecker />
     </div>
   );
 }

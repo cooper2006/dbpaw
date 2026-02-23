@@ -1,7 +1,7 @@
 use crate::db::local::LocalDb;
 use crate::state::AppState;
 use std::sync::Arc;
-use tauri::{Manager, Emitter};
+use tauri::{Emitter, Manager};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -15,10 +15,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .on_menu_event(|app, event| {
-             if event.id() == "settings" {
-                 let _ = app.emit("open-settings", ());
-             }
+            if event.id() == "settings" {
+                let _ = app.emit("open-settings", ());
+            }
         })
         .manage(AppState::new())
         .setup(|app| {
@@ -26,14 +28,20 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             {
-                use tauri::menu::{Menu, MenuItem, Submenu, PredefinedMenuItem};
+                use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
                 // Use a closure to handle potential errors gracefully
                 if let Err(e) = (|| -> tauri::Result<()> {
                     let app_menu = Submenu::new(&handle, "App", true)?;
                     let edit_menu = Submenu::new(&handle, "Edit", true)?;
-                    
+
                     let about = PredefinedMenuItem::about(&handle, None, None)?;
-                    let settings = MenuItem::with_id(&handle, "settings", "Settings...", true, Some("CmdOrCtrl+,"))?;
+                    let settings = MenuItem::with_id(
+                        &handle,
+                        "settings",
+                        "Settings...",
+                        true,
+                        Some("CmdOrCtrl+,"),
+                    )?;
                     let separator = PredefinedMenuItem::separator(&handle)?;
                     let services = PredefinedMenuItem::services(&handle, None)?;
                     let hide = PredefinedMenuItem::hide(&handle, None)?;
@@ -137,6 +145,6 @@ pub mod db;
 pub mod error;
 pub mod events;
 pub mod models;
+pub mod ssh;
 pub mod state;
 pub mod utils;
-pub mod ssh;

@@ -2,6 +2,8 @@
 
 ![DbPaw Logo](public/product-icon.png)
 
+English | [简体中文](README_CN.md)
+
 > **A modern, AI-powered database client for the new era.**
 
 [![Release](https://img.shields.io/github/v/release/username/DbPaw?style=flat-square)](https://github.com/username/DbPaw/releases)
@@ -15,14 +17,14 @@
 - **🔌 Multi-Database Support**: Connect to **PostgreSQL** and **MySQL** databases with ease.
 - **🤖 AI-Powered Assistance**: Integrated AI sidebar to help you write complex SQL queries, explain execution plans, and optimize performance.
 - **🔒 Secure Connectivity**: Support for **SSH Tunneling** to securely access remote databases.
-- **📝 Advanced SQL Editor**: 
+- **📝 Advanced SQL Editor**:
   - Syntax highlighting and auto-completion.
   - **Saved Queries** library to organize your frequently used scripts.
   - Format SQL with a single click.
-- **📊 Interactive Data Grid**: 
+- **📊 Interactive Data Grid**:
   - View, filter, and sort table data efficiently.
   - Visualize data relationships.
-- **🎨 Modern UI**: 
+- **🎨 Modern UI**:
   - Beautifully designed with **TailwindCSS** and **Shadcn/UI**.
   - Built-in **Dark Mode** support for comfortable coding at night.
 - **🚀 High Performance**: Built on Rust, ensuring low memory usage and blazing fast startup times.
@@ -32,6 +34,7 @@
 Go to the [Releases](https://github.com/username/DbPaw/releases) page to download the latest version for your operating system.
 
 ### macOS Users
+
 If you encounter a "DbPaw is damaged" or "Unidentified Developer" warning upon opening the app:
 
 1. Move `DbPaw.app` to your `/Applications` folder.
@@ -41,37 +44,42 @@ If you encounter a "DbPaw is damaged" or "Unidentified Developer" warning upon o
    ```
 3. You can now open the app normally.
 
-*Note: This is required because the app is not yet notarized by Apple.*
+_Note: This is required because the app is not yet notarized by Apple._
 
 ## 🛠️ Development
 
 If you want to contribute or build from source, follow these steps:
 
 ### Prerequisites
+
 - [Rust](https://www.rust-lang.org/tools/install) (latest stable)
 - [Bun](https://bun.sh/) or Node.js (v18+)
 
 ### Setup
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/username/DbPaw.git
    cd DbPaw
    ```
 
 2. **Install frontend dependencies**
+
    ```bash
    bun install
    ```
 
 3. **Run in Development Mode**
-   
+
    **Frontend-only (Mock Mode)** - Recommended for UI work:
+
    ```bash
    bun dev:mock
    ```
-   
+
    **Full App (Tauri + Rust)** - For full functionality testing:
+
    ```bash
    bun tauri dev
    ```
