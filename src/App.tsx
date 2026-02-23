@@ -28,6 +28,7 @@ import { api, isTauri, SchemaOverview, SavedQuery } from "@/services/api";
 import { listen } from "@tauri-apps/api/event";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { UpdaterChecker } from "@/components/updater-checker";
+import { isModKey, shouldIgnoreGlobalShortcut } from "@/lib/keyboard";
 
 interface TabItem {
   id: string;
@@ -469,12 +470,30 @@ export default function App() {
     setActiveTab(tabId);
   };
 
+  const handleCycleTabs = (direction: 1 | -1) => {
+    if (tabs.length < 2) return;
+    const currentIndex = tabs.findIndex((t) => t.id === activeTab);
+    const startIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = (startIndex + direction + tabs.length) % tabs.length;
+    setActiveTab(tabs[nextIndex].id);
+  };
+
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      // Check for Mod key (Cmd on Mac, Ctrl on Windows)
-      const isMod = e.metaKey || e.ctrlKey;
-      if (!isMod) return;
+      if (!isModKey(e) || shouldIgnoreGlobalShortcut(e)) return;
+
+      if (e.shiftKey && e.code === "BracketRight") {
+        e.preventDefault();
+        handleCycleTabs(1);
+        return;
+      }
+
+      if (e.shiftKey && e.code === "BracketLeft") {
+        e.preventDefault();
+        handleCycleTabs(-1);
+        return;
+      }
 
       switch (e.key.toLowerCase()) {
         case "w":
@@ -515,7 +534,7 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleGlobalKeyDown);
     };
-  }, [activeTab, tabs, aiVisible]);
+  }, [activeTab, tabs]);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-muted/30">
@@ -531,7 +550,7 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setOpenSettings(true)} title="Settings">
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setOpenSettings(true)} title="Settings (Cmd/Ctrl+,)">
             <Settings className="w-4 h-4" />
           </Button>
           <Button
@@ -539,7 +558,7 @@ export default function App() {
             size="sm"
             className="h-7 w-7 p-0"
             onClick={() => setAiVisible((v) => !v)}
-            title={aiVisible ? "Hide AI Panel" : "Show AI Panel"}
+            title={aiVisible ? "Hide AI Panel (Cmd/Ctrl+\\)" : "Show AI Panel (Cmd/Ctrl+\\)"}
             aria-label={aiVisible ? "Hide AI panel" : "Show AI panel"}
           >
             <Sparkles className="w-4 h-4" />

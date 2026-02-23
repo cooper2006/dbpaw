@@ -28,6 +28,7 @@ import {
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { api } from "@/services/api";
+import { isEditableTarget, isModKey } from "@/lib/keyboard";
 
 interface PendingChange {
   rowIndex: number;
@@ -107,6 +108,7 @@ export function TableView({
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Sort state: controlled (via props) or uncontrolled (internal state for client-side sorting)
   const [internalSortColumn, setInternalSortColumn] = useState<string | undefined>();
@@ -503,8 +505,51 @@ export function TableView({
     };
   }, [handleMouseMove, handleMouseUp]);
 
+  useEffect(() => {
+    const handleTableHotkeys = (e: KeyboardEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const activeElement = document.activeElement;
+      if (!activeElement || !container.contains(activeElement)) return;
+
+      if (isModKey(e) && e.key.toLowerCase() === "s") {
+        if (hasPendingChanges && !isSaving) {
+          e.preventDefault();
+          void handleSave();
+        }
+        return;
+      }
+
+      if (e.key === "Escape") {
+        if (editingCell) {
+          e.preventDefault();
+          cancelEdit();
+          return;
+        }
+
+        if (hasPendingChanges && !isEditableTarget(e.target)) {
+          e.preventDefault();
+          handleDiscardChanges();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleTableHotkeys);
+    return () => {
+      window.removeEventListener("keydown", handleTableHotkeys);
+    };
+  }, [
+    hasPendingChanges,
+    isSaving,
+    handleSave,
+    editingCell,
+    cancelEdit,
+    handleDiscardChanges,
+  ]);
+
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div ref={containerRef} className="h-full flex flex-col bg-background">
       {!hideHeader && (
         <div className="flex items-center justify-between px-4 py-2 border-b border-border">
           <div className="flex items-center gap-2">
@@ -562,6 +607,7 @@ export function TableView({
                   className="gap-1.5"
                   onClick={handleSave}
                   disabled={isSaving}
+                  title="Save changes (Cmd/Ctrl+S)"
                 >
                   {isSaving ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -579,6 +625,7 @@ export function TableView({
                   className="gap-1.5"
                   onClick={handleDiscardChanges}
                   disabled={isSaving}
+                  title="Discard changes (Esc)"
                 >
                   <Undo2 className="w-4 h-4" />
                   Undo

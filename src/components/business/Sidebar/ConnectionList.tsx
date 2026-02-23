@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Database,
   Server,
@@ -428,6 +428,62 @@ export function ConnectionList({
     }
   };
 
+  const handleTestConnection = async () => {
+    try {
+      setValidationMsg(null);
+      setIsTesting(true);
+      setTestMsg(null);
+      const res = await api.connections.testEphemeral(form);
+      setTestMsg({
+        ok: res.success,
+        text: res.message,
+        latency: res.latencyMs,
+      });
+    } catch (e: any) {
+      setTestMsg({ ok: false, text: String(e?.message || e) });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const handleConnect = async () => {
+    if (!requiredOk) {
+      setValidationMsg(
+        "Please fill in required fields: Host, Port, Username, Password, Database",
+      );
+      return;
+    }
+    setValidationMsg(null);
+    setIsConnecting(true);
+    try {
+      const res = await api.connections.create(form);
+      setConnections((prev) => [
+        {
+          id: String(res.id),
+          name: res.name || "Unknown",
+          type: res.dbType as any,
+          host: res.host,
+          port: String(res.port),
+          username: res.username,
+          isConnected: false,
+          databases: [],
+        },
+        ...prev,
+      ]);
+      setIsDialogOpen(false);
+      if (onConnect) onConnect(form);
+    } catch (e: any) {
+      setValidationMsg(String(e?.message || e));
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleConnectSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    void handleConnect();
+  };
+
   return (
     <div className="h-full flex flex-col bg-background border-r border-border">
       <div className="px-2 py-1 border-b border-border flex items-center justify-between h-8">
@@ -448,10 +504,11 @@ export function ConnectionList({
               </Button>
             </DialogTrigger>
             <DialogContent>
-              <DialogHeader>
-                <DialogTitle>New Database Connection</DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
+              <form onSubmit={handleConnectSubmit}>
+                <DialogHeader>
+                  <DialogTitle>New Database Connection</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="name">Connection Name</Label>
                   <Input
@@ -690,35 +747,21 @@ export function ConnectionList({
                     />
                   </div>
                 )}
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={async () => {
-                    try {
-                      setValidationMsg(null);
-                      setIsTesting(true);
-                      setTestMsg(null);
-                      const res = await api.connections.testEphemeral(form);
-                      setTestMsg({
-                        ok: res.success,
-                        text: res.message,
-                        latency: res.latencyMs,
-                      });
-                    } catch (e: any) {
-                      setTestMsg({ ok: false, text: String(e?.message || e) });
-                    } finally {
-                      setIsTesting(false);
-                    }
-                  }}
-                  disabled={isTesting}
-                >
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleTestConnection}
+                    disabled={isTesting}
+                  >
                   {isTesting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -727,42 +770,11 @@ export function ConnectionList({
                   ) : (
                     "Test"
                   )}
-                </Button>
-                <Button
-                  onClick={async () => {
-                    if (!requiredOk) {
-                      setValidationMsg(
-                        "Please fill in required fields: Host, Port, Username, Password, Database",
-                      );
-                      return;
-                    }
-                    setValidationMsg(null);
-                    setIsConnecting(true);
-                    try {
-                      const res = await api.connections.create(form);
-                      setConnections((prev) => [
-                        {
-                          id: String(res.id),
-                          name: res.name || "Unknown",
-                          type: res.dbType as any,
-                          host: res.host,
-                          port: String(res.port),
-                          username: res.username,
-                          isConnected: false,
-                          databases: [],
-                        },
-                        ...prev,
-                      ]);
-                      setIsDialogOpen(false);
-                      if (onConnect) onConnect(form);
-                    } catch (e: any) {
-                      setValidationMsg(String(e?.message || e));
-                    } finally {
-                      setIsConnecting(false);
-                    }
-                  }}
-                  disabled={isConnecting || !requiredOk}
-                >
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isConnecting || !requiredOk}
+                  >
                   {isConnecting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -771,29 +783,30 @@ export function ConnectionList({
                   ) : (
                     "Connect"
                   )}
-                </Button>
-              </div>
-              {validationMsg && (
-                <div className="mt-3">
-                  <Alert variant="destructive">
-                    <AlertTitle>Validation Failed</AlertTitle>
-                    <AlertDescription>{validationMsg}</AlertDescription>
-                  </Alert>
+                  </Button>
                 </div>
-              )}
-              {testMsg && (
-                <div className="mt-3">
-                  <Alert variant={testMsg.ok ? "default" : "destructive"}>
-                    <AlertTitle>
-                      {testMsg.ok ? "Connection Test Successful" : "Connection Test Failed"}
-                    </AlertTitle>
-                    <AlertDescription>
-                      {testMsg.text}
-                      {testMsg.latency ? `(${testMsg.latency}ms)` : ""}
-                    </AlertDescription>
-                  </Alert>
-                </div>
-              )}
+                {validationMsg && (
+                  <div className="mt-3">
+                    <Alert variant="destructive">
+                      <AlertTitle>Validation Failed</AlertTitle>
+                      <AlertDescription>{validationMsg}</AlertDescription>
+                    </Alert>
+                  </div>
+                )}
+                {testMsg && (
+                  <div className="mt-3">
+                    <Alert variant={testMsg.ok ? "default" : "destructive"}>
+                      <AlertTitle>
+                        {testMsg.ok ? "Connection Test Successful" : "Connection Test Failed"}
+                      </AlertTitle>
+                      <AlertDescription>
+                        {testMsg.text}
+                        {testMsg.latency ? `(${testMsg.latency}ms)` : ""}
+                      </AlertDescription>
+                    </Alert>
+                  </div>
+                )}
+              </form>
             </DialogContent>
           </Dialog>
         </div>

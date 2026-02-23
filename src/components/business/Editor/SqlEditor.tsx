@@ -373,7 +373,7 @@ export function SqlEditor({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Run SQL (Cmd+Enter)</p>
+                  <p>Run SQL (Cmd/Ctrl+Enter)</p>
                 </TooltipContent>
               </Tooltip>
 
@@ -421,7 +421,7 @@ export function SqlEditor({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Save Query</p>
+                  <p>Save Query (Cmd/Ctrl+S)</p>
                 </TooltipContent>
               </Tooltip>
 
