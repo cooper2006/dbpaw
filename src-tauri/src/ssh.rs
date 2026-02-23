@@ -28,12 +28,21 @@ pub fn start_ssh_tunnel(config: &ConnectionForm) -> Result<SshTunnel, String> {
     // Validate config
     let ssh_host = config.ssh_host.clone().ok_or("SSH Host is required")?;
     let ssh_port = config.ssh_port.unwrap_or(22);
+    if ssh_port < 1 || ssh_port > 65535 {
+        return Err("SSH port must be between 1 and 65535".to_string());
+    }
+    let ssh_port = ssh_port as u16;
+
     let ssh_user = config.ssh_username.clone().ok_or("SSH Username is required")?;
     let ssh_password = config.ssh_password.clone();
     let ssh_key_path = config.ssh_key_path.clone();
 
     let target_host = config.host.clone().unwrap_or("localhost".to_string());
     let target_port = config.port.unwrap_or(5432);
+    if target_port < 1 || target_port > 65535 {
+        return Err("Target port must be between 1 and 65535".to_string());
+    }
+    let target_port = target_port as u16;
 
     // Bind local listener
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -88,12 +97,12 @@ pub fn start_ssh_tunnel(config: &ConnectionForm) -> Result<SshTunnel, String> {
 fn handle_connection(
     mut local_stream: TcpStream,
     ssh_host: &str,
-    ssh_port: i64,
+    ssh_port: u16,
     ssh_user: &str,
     ssh_password: Option<&str>,
     ssh_key_path: Option<&str>,
     target_host: &str,
-    target_port: i64,
+    target_port: u16,
 ) -> Result<(), String> {
     // 1. Connect to SSH server
     let tcp = TcpStream::connect(format!("{}:{}", ssh_host, ssh_port))
@@ -117,7 +126,7 @@ fn handle_connection(
 
     // 3. Open Channel
     let mut channel = sess
-        .channel_direct_tcpip(target_host, target_port as u16, None)
+        .channel_direct_tcpip(target_host, target_port, None)
         .map_err(|e| format!("Failed to create SSH channel: {}", e))?;
 
     // 4. Bidirectional Copy
@@ -222,4 +231,49 @@ fn handle_connection(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::ConnectionForm;
+
+    #[test]
+    fn test_ssh_port_validation() {
+        let mut config = ConnectionForm::default();
+        config.ssh_host = Some("example.com".to_string());
+        config.ssh_username = Some("user".to_string());
+        
+        // Test negative port
+        config.ssh_port = Some(-1);
+        let result = start_ssh_tunnel(&config);
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), "SSH port must be between 1 and 65535");
+
+        // Test out of range port
+        config.ssh_port = Some(70000);
+        let result = start_ssh_tunnel(&config);
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), "SSH port must be between 1 and 65535");
+    }
+
+    #[test]
+    fn test_target_port_validation() {
+        let mut config = ConnectionForm::default();
+        config.ssh_host = Some("example.com".to_string());
+        config.ssh_username = Some("user".to_string());
+        config.ssh_port = Some(22);
+
+        // Test negative port
+        config.port = Some(-1);
+        let result = start_ssh_tunnel(&config);
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), "Target port must be between 1 and 65535");
+
+        // Test out of range
+        config.port = Some(70000);
+        let result = start_ssh_tunnel(&config);
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), "Target port must be between 1 and 65535");
+    }
 }
