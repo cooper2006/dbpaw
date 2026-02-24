@@ -415,7 +415,7 @@ export default function App() {
     schema: string;
     table: string;
     driver: string;
-  }, format: "csv" | "json" | "sql") => {
+  }, format: "csv" | "json" | "sql", filePath: string) => {
     try {
       const result = await api.transfer.exportTable({
         id: ctx.connectionId,
@@ -425,6 +425,7 @@ export default function App() {
         driver: ctx.driver,
         format,
         scope: "full_table",
+        filePath,
       });
       toast.success(`Export completed (${result.rowCount} rows)`, {
         description: result.filePath,

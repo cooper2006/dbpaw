@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { save } from "@tauri-apps/plugin-dialog";
 import {
   Download,
   Filter,
@@ -36,7 +37,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { api } from "@/services/api";
+import { api, isTauri } from "@/services/api";
 import type { TransferFormat } from "@/services/api";
 import { isEditableTarget, isModKey } from "@/lib/keyboard";
 import { toast } from "sonner";
@@ -221,6 +222,37 @@ export function TableView({
       format: TransferFormat,
     ) => {
       if (!tableContext) return;
+      if (!isTauri()) {
+        toast.error("Export dialog is only available in Tauri desktop mode.");
+        return;
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const defaultPath = `${tableContext.table}_${timestamp}.${format}`;
+      const filters =
+        format === "csv"
+          ? [{ name: "CSV", extensions: ["csv"] }]
+          : format === "json"
+            ? [{ name: "JSON", extensions: ["json"] }]
+            : [{ name: "SQL", extensions: ["sql"] }];
+
+      let filePath: string | undefined;
+      try {
+        const selected = await save({
+          title: "Save Export File",
+          defaultPath,
+          filters,
+        });
+        if (!selected) return;
+        filePath = Array.isArray(selected) ? selected[0] : selected;
+        if (!filePath) return;
+      } catch (e) {
+        toast.error("Failed to open save dialog", {
+          description: e instanceof Error ? e.message : String(e),
+        });
+        return;
+      }
+
       setIsExporting(true);
       try {
         const result = await api.transfer.exportTable({
@@ -237,6 +269,7 @@ export function TableView({
           sortDirection: activeSortDirection,
           page,
           limit: pageSize,
+          filePath,
         });
         toast.success(`Export completed (${result.rowCount} rows)`, {
           description: result.filePath,

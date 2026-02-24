@@ -23,7 +23,7 @@ interface SidebarProps {
     schema: string;
     table: string;
     driver: string;
-  }, format: "csv" | "json" | "sql") => void;
+  }, format: "csv" | "json" | "sql", filePath: string) => void;
   onSelectSavedQuery: (query: SavedQuery) => void;
   lastUpdated?: number;
 }

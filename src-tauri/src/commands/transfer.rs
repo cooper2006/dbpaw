@@ -218,10 +218,25 @@ fn resolve_output_path(
         default_output_path(base_name, extension)
     };
 
+    validate_output_path(&path)?;
+
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("[EXPORT_ERROR] create dir failed: {e}"))?;
     }
     Ok(path)
+}
+
+fn validate_output_path(path: &PathBuf) -> Result<(), String> {
+    if path.as_os_str().is_empty() {
+        return Err("[EXPORT_ERROR] Invalid output path".to_string());
+    }
+    if path.file_name().is_none() {
+        return Err("[EXPORT_ERROR] Output path must include a file name".to_string());
+    }
+    if path.exists() && path.is_dir() {
+        return Err("[EXPORT_ERROR] Output path points to a directory".to_string());
+    }
+    Ok(())
 }
 
 fn default_output_path(base_name: &str, extension: &str) -> PathBuf {

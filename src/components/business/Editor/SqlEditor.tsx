@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { save } from "@tauri-apps/plugin-dialog";
 import CodeMirror, { Extension } from "@uiw/react-codemirror";
 import { sql, PostgreSQL, MySQL, SQLite, StandardSQL, SQLNamespace } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
@@ -15,7 +16,7 @@ import {
 import { Play, Save, Trash2, Clock, Database, Braces, Download } from "lucide-react";
 import { TableView } from "@/components/business/DataGrid/TableView";
 import { useTheme } from "@/components/theme-provider";
-import { SchemaOverview, api, SavedQuery, TransferFormat } from "@/services/api";
+import { SchemaOverview, api, SavedQuery, TransferFormat, isTauri } from "@/services/api";
 import { format } from "sql-formatter";
 import { SaveQueryDialog } from "./SaveQueryDialog";
 import {
@@ -231,6 +232,37 @@ export function SqlEditor({
         toast.error("Please run query with a saved connection to export.");
         return;
       }
+      if (!isTauri()) {
+        toast.error("Export dialog is only available in Tauri desktop mode.");
+        return;
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const defaultPath = `query_result_${timestamp}.${format}`;
+      const filters =
+        format === "csv"
+          ? [{ name: "CSV", extensions: ["csv"] }]
+          : format === "json"
+            ? [{ name: "JSON", extensions: ["json"] }]
+            : [{ name: "SQL", extensions: ["sql"] }];
+
+      let filePath: string | undefined;
+      try {
+        const selected = await save({
+          title: "Save Export File",
+          defaultPath,
+          filters,
+        });
+        if (!selected) return;
+        filePath = Array.isArray(selected) ? selected[0] : selected;
+        if (!filePath) return;
+      } catch (e) {
+        toast.error("Failed to open save dialog", {
+          description: e instanceof Error ? e.message : String(e),
+        });
+        return;
+      }
+
       try {
         const result = await api.transfer.exportQueryResult({
           id: _connectionId,
@@ -238,6 +270,7 @@ export function SqlEditor({
           sql: code,
           driver: driver || "postgres",
           format,
+          filePath,
         });
         toast.success(`Export completed (${result.rowCount} rows)`, {
           description: result.filePath,
