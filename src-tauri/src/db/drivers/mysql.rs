@@ -414,12 +414,16 @@ impl DatabaseDriver for MysqlDriver {
                 let type_name = col.type_info().name();
 
                 let value = match type_name {
-                    "TINYINT" | "SMALLINT" | "INT" | "INTEGER" | "MEDIUMINT" | "BIGINT"
-                    | "YEAR" => row
-                        .try_get::<i64, _>(name)
-                        .ok()
-                        .map(|v| serde_json::Value::String(v.to_string()))
-                        .unwrap_or(serde_json::Value::Null),
+                    "TINYINT" | "TINYINT UNSIGNED" | "SMALLINT" | "SMALLINT UNSIGNED" | "INT" | "INT UNSIGNED" | "INTEGER" | "INTEGER UNSIGNED" | "MEDIUMINT" | "MEDIUMINT UNSIGNED" | "BIGINT" | "BIGINT UNSIGNED"
+                    | "YEAR" => {
+                        if let Ok(v) = row.try_get::<i64, _>(name) {
+                            serde_json::Value::String(v.to_string())
+                        } else if let Ok(v) = row.try_get::<u64, _>(name) {
+                            serde_json::Value::String(v.to_string())
+                        } else {
+                            serde_json::Value::Null
+                        }
+                    }
                     "FLOAT" | "DOUBLE" | "REAL" => row
                         .try_get::<f64, _>(name)
                         .ok()
@@ -465,11 +469,15 @@ impl DatabaseDriver for MysqlDriver {
                         .ok()
                         .map(|v| serde_json::Value::Number(v.into()))
                         .unwrap_or(serde_json::Value::Null),
-                    _ => row
-                        .try_get::<String, _>(name)
-                        .ok()
-                        .map(serde_json::Value::String)
-                        .unwrap_or(serde_json::Value::Null),
+                    _ => {
+                        if let Ok(v) = row.try_get::<String, _>(name) {
+                            serde_json::Value::String(v)
+                        } else if let Ok(v) = row.try_get::<Vec<u8>, _>(name) {
+                            serde_json::Value::String(String::from_utf8_lossy(&v).to_string())
+                        } else {
+                            serde_json::Value::Null
+                        }
+                    }
                 };
 
                 obj.insert(name.to_string(), value);
@@ -513,12 +521,16 @@ impl DatabaseDriver for MysqlDriver {
                 let type_name = col.type_info().name();
 
                 let value = match type_name {
-                    "TINYINT" | "SMALLINT" | "INT" | "INTEGER" | "MEDIUMINT" | "BIGINT"
-                    | "YEAR" => row
-                        .try_get::<i64, _>(name)
-                        .ok()
-                        .map(|v| serde_json::Value::String(v.to_string()))
-                        .unwrap_or(serde_json::Value::Null),
+                    "TINYINT" | "TINYINT UNSIGNED" | "SMALLINT" | "SMALLINT UNSIGNED" | "INT" | "INT UNSIGNED" | "INTEGER" | "INTEGER UNSIGNED" | "MEDIUMINT" | "MEDIUMINT UNSIGNED" | "BIGINT" | "BIGINT UNSIGNED"
+                    | "YEAR" => {
+                        if let Ok(v) = row.try_get::<i64, _>(name) {
+                            serde_json::Value::String(v.to_string())
+                        } else if let Ok(v) = row.try_get::<u64, _>(name) {
+                            serde_json::Value::String(v.to_string())
+                        } else {
+                            serde_json::Value::Null
+                        }
+                    }
                     "FLOAT" | "DOUBLE" | "REAL" => row
                         .try_get::<f64, _>(name)
                         .ok()
@@ -564,11 +576,15 @@ impl DatabaseDriver for MysqlDriver {
                         .ok()
                         .map(|v| serde_json::Value::Number(v.into()))
                         .unwrap_or(serde_json::Value::Null),
-                    _ => row
-                        .try_get::<String, _>(name)
-                        .ok()
-                        .map(serde_json::Value::String)
-                        .unwrap_or(serde_json::Value::Null),
+                    _ => {
+                        if let Ok(v) = row.try_get::<String, _>(name) {
+                            serde_json::Value::String(v)
+                        } else if let Ok(v) = row.try_get::<Vec<u8>, _>(name) {
+                            serde_json::Value::String(String::from_utf8_lossy(&v).to_string())
+                        } else {
+                            serde_json::Value::Null
+                        }
+                    }
                 };
                 obj.insert(name.to_string(), value);
             }

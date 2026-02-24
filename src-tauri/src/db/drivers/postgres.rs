@@ -489,11 +489,15 @@ impl DatabaseDriver for PostgresDriver {
                         .ok()
                         .map(|v| v.0)
                         .unwrap_or(serde_json::Value::Null),
-                    _ => row
-                        .try_get::<String, _>(name)
-                        .ok()
-                        .map(serde_json::Value::String)
-                        .unwrap_or(serde_json::Value::Null),
+                    _ => {
+                        if let Ok(v) = row.try_get::<String, _>(name) {
+                            serde_json::Value::String(v)
+                        } else if let Ok(v) = row.try_get::<Vec<u8>, _>(name) {
+                            serde_json::Value::String(String::from_utf8_lossy(&v).to_string())
+                        } else {
+                            serde_json::Value::Null
+                        }
+                    }
                 };
 
                 obj.insert(name.to_string(), value);
@@ -586,11 +590,15 @@ impl DatabaseDriver for PostgresDriver {
                         .ok()
                         .map(|v| v.0)
                         .unwrap_or(serde_json::Value::Null),
-                    _ => row
-                        .try_get::<String, _>(name)
-                        .ok()
-                        .map(serde_json::Value::String)
-                        .unwrap_or(serde_json::Value::Null),
+                    _ => {
+                        if let Ok(v) = row.try_get::<String, _>(name) {
+                            serde_json::Value::String(v)
+                        } else if let Ok(v) = row.try_get::<Vec<u8>, _>(name) {
+                            serde_json::Value::String(String::from_utf8_lossy(&v).to_string())
+                        } else {
+                            serde_json::Value::Null
+                        }
+                    }
                 };
                 obj.insert(name.to_string(), value);
             }
