@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import CodeMirror, { Extension } from "@uiw/react-codemirror";
 import { sql, PostgreSQL, MySQL, SQLite, StandardSQL, SQLNamespace } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
-import { keymap } from "@codemirror/view";
+import { keymap, EditorView } from "@codemirror/view";
 import { CompletionContext } from "@codemirror/autocomplete";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +22,45 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+
+const aiDarkEditorOverrides = EditorView.theme(
+  {
+    "&": {
+      backgroundColor: "#1f2128",
+      color: "#e6eaf2",
+    },
+    ".cm-content": {
+      caretColor: "#e6eaf2",
+    },
+    ".cm-gutters": {
+      backgroundColor: "#242730",
+      color: "#aab2c0",
+      borderRight: "1px solid #353944",
+    },
+    ".cm-activeLine": {
+      backgroundColor: "rgba(255, 255, 255, 0.04)",
+    },
+    ".cm-activeLineGutter": {
+      backgroundColor: "rgba(255, 255, 255, 0.04)",
+    },
+    ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
+      backgroundColor: "rgba(140, 170, 255, 0.25)",
+    },
+    ".cm-cursor, .cm-dropCursor": {
+      borderLeftColor: "#e6eaf2",
+    },
+    ".cm-tooltip": {
+      backgroundColor: "#2a2f3a",
+      color: "#e6eaf2",
+      border: "1px solid #3b4250",
+    },
+    ".cm-tooltip-autocomplete ul li[aria-selected]": {
+      backgroundColor: "rgba(140, 170, 255, 0.20)",
+      color: "#f2f5fb",
+    },
+  },
+  { dark: true },
+);
 
 interface SqlEditorProps {
   queryResults?: {
@@ -102,6 +141,19 @@ export function SqlEditor({
     }
   }, [onExecute, code]);
 
+  const executeFromEditorSelection = useCallback((view: EditorView) => {
+    if (!onExecute) {
+      return;
+    }
+
+    const selectedSql = view.state.selection.ranges
+      .map(range => view.state.sliceDoc(range.from, range.to))
+      .filter(text => text.trim().length > 0)
+      .join("\n");
+
+    onExecute(selectedSql || view.state.doc.toString());
+  }, [onExecute]);
+
   const handleClear = () => {
     handleSqlChange("");
   };
@@ -126,11 +178,17 @@ export function SqlEditor({
     }
   }, [code, driver, handleSqlChange]);
 
-  const handleSave = async (name: string, description: string) => {
+  const savedQueryIdRef = useRef(savedQueryId);
+  useEffect(() => {
+    savedQueryIdRef.current = savedQueryId;
+  }, [savedQueryId]);
+
+  const executeSave = useCallback(async (name: string, description: string) => {
     try {
+      const currentId = savedQueryIdRef.current;
       let result: SavedQuery;
-      if (savedQueryId) {
-        result = await api.queries.update(savedQueryId, {
+      if (currentId) {
+        result = await api.queries.update(currentId, {
           name,
           description,
           query: code,
@@ -149,11 +207,24 @@ export function SqlEditor({
       if (onSaveSuccess) {
         onSaveSuccess(result);
       }
-      // Optional: Show toast
     } catch (e) {
       console.error("Failed to save query", e);
     }
+  }, [code, _connectionId, databaseName, onSaveSuccess]);
+
+  const handleSave = async (name: string, description: string) => {
+    await executeSave(name, description);
   };
+
+  const triggerSave = useCallback(() => {
+    const currentId = savedQueryIdRef.current;
+    console.log("triggerSave called. currentId:", currentId);
+    if (currentId) {
+      executeSave(initialName || "Untitled", initialDescription || "");
+    } else {
+      setIsSaveDialogOpen(true);
+    }
+  }, [initialName, initialDescription, executeSave]);
 
   // Determine Dialect
   const dialect = useMemo(() => {
@@ -227,6 +298,7 @@ export function SqlEditor({
   // Extensions
   const extensions = useMemo(() => {
     const exts: Extension[] = [
+      EditorView.lineWrapping,
       sql({
         dialect,
         schema: sqlSchema,
@@ -235,8 +307,8 @@ export function SqlEditor({
       keymap.of([
         {
           key: "Mod-Enter",
-          run: () => {
-            handleExecute();
+          run: (view) => {
+            executeFromEditorSelection(view);
             return true;
           },
         },
@@ -250,7 +322,7 @@ export function SqlEditor({
         {
           key: "Mod-s",
           run: () => {
-            setIsSaveDialogOpen(true);
+            triggerSave();
             return true;
           },
         },
@@ -265,12 +337,12 @@ export function SqlEditor({
     }
 
     return exts;
-  }, [dialect, sqlSchema, handleExecute, handleFormat, globalCompletion]);
+  }, [dialect, sqlSchema, executeFromEditorSelection, handleFormat, globalCompletion, triggerSave]);
 
   // Theme
   const editorTheme = useMemo(() => {
     const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    return isDark ? oneDark : [];
+    return isDark ? [oneDark, aiDarkEditorOverrides] : [];
   }, [theme]);
 
   return (
@@ -281,6 +353,7 @@ export function SqlEditor({
             <div className="flex items-center gap-2 px-3 py-1 bg-muted/50 rounded text-xs text-muted-foreground border border-border">
               <Database className={`w-3 h-3 ${schemaOverview ? "text-green-500" : "text-muted-foreground"}`} />
               <span>{databaseName}</span>
+              {savedQueryId && <span className="text-[10px] opacity-50 ml-1">#{savedQueryId}</span>}
             </div>
           )}
 
@@ -300,7 +373,7 @@ export function SqlEditor({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Run SQL (Cmd+Enter)</p>
+                  <p>Run SQL (Cmd/Ctrl+Enter)</p>
                 </TooltipContent>
               </Tooltip>
 
@@ -342,13 +415,13 @@ export function SqlEditor({
                     variant="outline"
                     size="icon"
                     className="h-8 w-8"
-                    onClick={() => setIsSaveDialogOpen(true)}
+                    onClick={triggerSave}
                   >
                     <Save className="w-4 h-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Save Query</p>
+                  <p>Save Query (Cmd/Ctrl+S)</p>
                 </TooltipContent>
               </Tooltip>
 

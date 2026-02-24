@@ -28,6 +28,7 @@ import { api, isTauri, SchemaOverview, SavedQuery } from "@/services/api";
 import { listen } from "@tauri-apps/api/event";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { UpdaterChecker } from "@/components/updater-checker";
+import { isModKey, shouldIgnoreGlobalShortcut } from "@/lib/keyboard";
 
 interface TabItem {
   id: string;
@@ -46,6 +47,8 @@ interface TabItem {
   connectionId?: number;
   driver?: string;
   sqlContent?: string;
+  lastSavedSql?: string;
+  isDirty?: boolean;
   sortColumn?: string;
   sortDirection?: "asc" | "desc";
   filter?: string;
@@ -61,6 +64,8 @@ interface TabItem {
   savedQueryDescription?: string;
 }
 
+const DEFAULT_SQL = "-- Enter your SQL query here\n";
+
 const TAB_TRIGGER_CLASS =
   "gap-2 group relative pr-8 bg-transparent data-[state=active]:bg-background border-b-2 border-b-transparent data-[state=active]:border-b-primary rounded-none h-9 hover:bg-muted/50 border-r border-r-border/40 last:border-r-0";
 
@@ -69,6 +74,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>("");
   const [aiVisible, setAiVisible] = useState(false);
   const [openSettings, setOpenSettings] = useState(false);
+  const [queriesLastUpdated, setQueriesLastUpdated] = useState(0);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -107,7 +113,9 @@ export default function App() {
       connectionId,
       database: databaseName,
       driver,
-      sqlContent: "-- Enter your SQL query here\n",
+      sqlContent: DEFAULT_SQL,
+      lastSavedSql: DEFAULT_SQL,
+      isDirty: false,
       queryResults: null,
     };
     setTabs((prev) => [...prev, newTab]);
@@ -176,6 +184,8 @@ export default function App() {
       database,
       driver,
       sqlContent: query.query,
+      lastSavedSql: query.query,
+      isDirty: false,
       savedQueryId: query.id,
       savedQueryDescription: query.description || undefined,
       queryResults: null,
@@ -188,7 +198,11 @@ export default function App() {
     setTabs((prev) =>
       prev.map((t) => {
         if (t.id !== tabId) return t;
-        return { ...t, sqlContent: sql };
+        return {
+          ...t,
+          sqlContent: sql,
+          isDirty: sql !== (t.lastSavedSql ?? ""),
+        };
       }),
     );
   };
@@ -456,12 +470,30 @@ export default function App() {
     setActiveTab(tabId);
   };
 
+  const handleCycleTabs = (direction: 1 | -1) => {
+    if (tabs.length < 2) return;
+    const currentIndex = tabs.findIndex((t) => t.id === activeTab);
+    const startIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = (startIndex + direction + tabs.length) % tabs.length;
+    setActiveTab(tabs[nextIndex].id);
+  };
+
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      // Check for Mod key (Cmd on Mac, Ctrl on Windows)
-      const isMod = e.metaKey || e.ctrlKey;
-      if (!isMod) return;
+      if (!isModKey(e) || shouldIgnoreGlobalShortcut(e)) return;
+
+      if (e.shiftKey && e.code === "BracketRight") {
+        e.preventDefault();
+        handleCycleTabs(1);
+        return;
+      }
+
+      if (e.shiftKey && e.code === "BracketLeft") {
+        e.preventDefault();
+        handleCycleTabs(-1);
+        return;
+      }
 
       switch (e.key.toLowerCase()) {
         case "w":
@@ -502,7 +534,7 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleGlobalKeyDown);
     };
-  }, [activeTab, tabs, aiVisible]);
+  }, [activeTab, tabs]);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-muted/30">
@@ -518,7 +550,7 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setOpenSettings(true)} title="Settings">
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setOpenSettings(true)} title="Settings (Cmd/Ctrl+,)">
             <Settings className="w-4 h-4" />
           </Button>
           <Button
@@ -526,7 +558,7 @@ export default function App() {
             size="sm"
             className="h-7 w-7 p-0"
             onClick={() => setAiVisible((v) => !v)}
-            title={aiVisible ? "Hide AI Panel" : "Show AI Panel"}
+            title={aiVisible ? "Hide AI Panel (Cmd/Ctrl+\\)" : "Show AI Panel (Cmd/Ctrl+\\)"}
             aria-label={aiVisible ? "Hide AI panel" : "Show AI panel"}
           >
             <Sparkles className="w-4 h-4" />
@@ -544,6 +576,7 @@ export default function App() {
               onConnect={() => { }}
               onCreateQuery={handleCreateQuery}
               onSelectSavedQuery={handleOpenSavedQuery}
+              lastUpdated={queriesLastUpdated}
             />
           </ResizablePanel>
 
@@ -586,8 +619,14 @@ export default function App() {
                               ) : (
                                 <FileCode className="w-4 h-4 text-primary" />
                               )}
-                              <span className="truncate max-w-[120px]">
-                                {tab.title}
+                              <span className="max-w-[120px] flex items-center">
+                                <span className="truncate">{tab.title}</span>
+                                {tab.type === "editor" && tab.isDirty && (
+                                  <span
+                                    className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 ml-1 shrink-0"
+                                    aria-label="Unsaved changes"
+                                  />
+                                )}
                               </span>
                               <button
                                 type="button"
@@ -640,6 +679,7 @@ export default function App() {
                           initialName={tab.title.startsWith("Query (") ? "" : tab.title}
                           initialDescription={tab.savedQueryDescription}
                           onSaveSuccess={(savedQuery) => {
+                            setQueriesLastUpdated(Date.now());
                             setTabs((prev) =>
                               prev.map((t) => {
                                 if (t.id === tab.id) {
@@ -648,6 +688,9 @@ export default function App() {
                                     savedQueryId: savedQuery.id,
                                     title: savedQuery.name,
                                     savedQueryDescription: savedQuery.description || undefined,
+                                    sqlContent: savedQuery.query,
+                                    lastSavedSql: savedQuery.query,
+                                    isDirty: false,
                                   };
                                 }
                                 return t;

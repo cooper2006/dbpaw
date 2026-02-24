@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -41,6 +43,15 @@ jobs:
       - name: Install frontend dependencies
         run: bun install
 
+      - name: Generate Changelog
+        uses: orhun/git-cliff-action@v4
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: --verbose --latest --strip header
+        env:
+          OUTPUT: CHANGELOG.md
+
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -48,6 +59,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'DbPaw ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download this version and install.'
+          releaseBody: ${{ steps.git-cliff.outputs.content || 'See the assets to download this version and install.' }}
           releaseDraft: true
           prerelease: false

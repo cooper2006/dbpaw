@@ -8,11 +8,11 @@ import {
 } from "./api";
 
 /**
- * Mock 数据层 - 为所有 API 命令提供 Mock 实现
- * 在非 Tauri 环境下用于前端独立开发调试
+ * Mock data layer - provides mock implementation for all API commands
+ * Used for frontend standalone development and debugging in non-Tauri environments
  */
 
-// ==================== Mock 数据 ====================
+// ==================== Mock Data ====================
 
 export const mockConnections: any[] = [
   {
@@ -275,20 +275,20 @@ const mockDDL = `CREATE TABLE public.users (
 CREATE INDEX users_email_idx ON public.users USING btree (email);
 CREATE INDEX users_username_idx ON public.users USING btree (username);`;
 
-// ==================== Mock 处理函数 ====================
+// ==================== Mock Handler Functions ====================
 
 /**
- * 模拟执行查询
+ * Mock query execution
  */
 export async function mockExecuteQuery(
   _id: number,
   query: string,
   _database?: string
 ): Promise<QueryResult> {
-  // 模拟网络延迟
+  // Simulate network latency
   await new Promise((resolve) => setTimeout(resolve, 100));
 
-  // 根据查询类型返回不同的数据
+  // Return different data based on query type
   if (query.toLowerCase().includes("select")) {
     return {
       ...mockQueryResult,
@@ -306,7 +306,7 @@ export async function mockExecuteQuery(
 }
 
 /**
- * 模拟取消查询
+ * Mock query cancellation
  */
 export async function mockCancelQuery(
   _uuid: string,
@@ -317,7 +317,7 @@ export async function mockCancelQuery(
 }
 
 /**
- * 模拟通过连接信息执行查询
+ * Mock query execution by connection info
  */
 export async function mockExecuteByConn(
   _form: ConnectionForm,
@@ -328,7 +328,7 @@ export async function mockExecuteByConn(
 }
 
 /**
- * 模拟列出表
+ * Mock list tables
  */
 export async function mockListTables(
   _id: number,
@@ -340,7 +340,7 @@ export async function mockListTables(
 }
 
 /**
- * 模拟获取表结构
+ * Mock get table structure
  */
 export async function mockGetTableStructure(
   _id: number,
@@ -352,7 +352,7 @@ export async function mockGetTableStructure(
 }
 
 /**
- * 模拟获取表 DDL
+ * Mock get table DDL
  */
 export async function mockGetTableDDL(
   _id: number,
@@ -365,7 +365,7 @@ export async function mockGetTableDDL(
 }
 
 /**
- * 模拟获取表元数据
+ * Mock get table metadata
  */
 export async function mockGetTableMetadata(
   _id: number,
@@ -378,7 +378,7 @@ export async function mockGetTableMetadata(
 }
 
 /**
- * 模拟通过连接信息列出表
+ * Mock list tables by connection info
  */
 export async function mockListTablesByConn(
   _form: ConnectionForm
@@ -388,7 +388,7 @@ export async function mockListTablesByConn(
 }
 
 /**
- * 模拟列出数据库
+ * Mock list databases
  */
 export async function mockListDatabases(
   _form: ConnectionForm
@@ -398,7 +398,7 @@ export async function mockListDatabases(
 }
 
 /**
- * 模拟通过 ID 列出数据库
+ * Mock list databases by ID
  */
 export async function mockListDatabasesById(_id: number): Promise<string[]> {
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -406,7 +406,7 @@ export async function mockListDatabasesById(_id: number): Promise<string[]> {
 }
 
 /**
- * 模拟获取 schema 概览
+ * Mock get schema overview
  */
 export async function mockGetSchemaOverview(
   _id: number,
@@ -418,7 +418,7 @@ export async function mockGetSchemaOverview(
 }
 
 /**
- * 模拟获取表数据
+ * Mock get table data
  */
 export async function mockGetTableData(params: {
   id: number;
@@ -453,7 +453,7 @@ export async function mockGetTableData(params: {
 }
 
 /**
- * 模拟通过连接信息获取表数据
+ * Mock get table data by connection info
  */
 export async function mockGetTableDataByConn(
   _form: ConnectionForm,
@@ -483,7 +483,7 @@ export async function mockGetTableDataByConn(
 }
 
 /**
- * 模拟获取连接列表
+ * Mock get connections list
  */
 export async function mockGetConnections(): Promise<any[]> {
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -491,7 +491,7 @@ export async function mockGetConnections(): Promise<any[]> {
 }
 
 /**
- * 模拟创建连接
+ * Mock create connection
  */
 export async function mockCreateConnection(form: ConnectionForm): Promise<any> {
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -509,7 +509,7 @@ export async function mockCreateConnection(form: ConnectionForm): Promise<any> {
 }
 
 /**
- * 模拟测试连接
+ * Mock test connection
  */
 export async function mockTestConnectionEphemeral(
   _form: ConnectionForm
@@ -524,7 +524,7 @@ export async function mockTestConnectionEphemeral(
 }
 
 /**
- * 模拟获取已保存的查询
+ * Mock get saved queries
  */
 export async function mockGetSavedQueries(): Promise<SavedQuery[]> {
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -532,7 +532,7 @@ export async function mockGetSavedQueries(): Promise<SavedQuery[]> {
 }
 
 /**
- * 模拟保存查询
+ * Mock save query
  */
 export async function mockSaveQuery(data: {
   name: string;
@@ -562,7 +562,7 @@ export async function mockSaveQuery(data: {
 }
 
 /**
- * 模拟更新保存的查询
+ * Mock update saved query
  */
 export async function mockUpdateSavedQuery(
   id: number,
@@ -592,7 +592,7 @@ export async function mockUpdateSavedQuery(
 }
 
 /**
- * 模拟删除保存的查询
+ * Mock delete saved query
  */
 export async function mockDeleteSavedQuery(id: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -603,7 +603,7 @@ export async function mockDeleteSavedQuery(id: number): Promise<void> {
 }
 
 /**
- * 根据命令名调用对应的 Mock 处理函数
+ * Invoke corresponding mock handler function by command name
  */
 export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
   console.log(`[Mock] ${cmd}`, args);

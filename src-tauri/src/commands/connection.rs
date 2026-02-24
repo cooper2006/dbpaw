@@ -31,7 +31,7 @@ pub async fn test_connection_ephemeral(
     let elapsed = start.elapsed().as_millis() as i64;
     Ok(TestConnectionResult {
         success: true,
-        message: "连接成功".to_string(),
+        message: "Connection successful".to_string(),
         latency_ms: Some(elapsed),
     })
 }

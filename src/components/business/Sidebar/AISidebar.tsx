@@ -3,6 +3,7 @@ import { Send, Sparkles, Copy, ThumbsUp, ThumbsDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { isModKey } from "@/lib/keyboard";
 
 interface Message {
   id: string;
@@ -74,11 +75,11 @@ export function AISidebar() {
     );
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "Enter") return;
+    if (e.shiftKey && !isModKey(e)) return;
+    e.preventDefault();
+    handleSend();
   };
 
   return (
@@ -145,7 +146,7 @@ export function AISidebar() {
             placeholder="Ask AI for help with SQL, optimization, or database questions..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyDown}
             className="resize-none"
             rows={3}
           />

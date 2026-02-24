@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Database,
   Server,
@@ -227,7 +227,7 @@ export function ConnectionList({
   const isSqlite = form.driver === "sqlite";
   const requiredOk = useMemo(() => {
     if (isSqlite) return !!form.filePath;
-    // Database 不再必填，允许连接服务器后列出所有库
+    // Database is no longer required, allowing listing all databases after connecting to server
     return !!form.host && !!form.port && !!form.username && !!form.password;
   }, [form, isSqlite]);
 
@@ -299,9 +299,9 @@ export function ConnectionList({
     databaseName: string,
   ) => {
     try {
-      // 使用 listTables 通过 ID 获取表列表，传入当前选中的 database
-      // 对于 Postgres，databaseName 通常对应 database 字段，schema 可能是 public 或其他
-      // 这里简化处理：将 databaseName 传给 database 参数
+      // Use listTables to get table list by ID, passing the currently selected database
+      // For Postgres, databaseName usually corresponds to database field, schema might be public or others
+      // Simplified handling: pass databaseName to database parameter
       const tables = await api.metadata.listTables(
         Number(connectionId),
         databaseName,
@@ -333,8 +333,8 @@ export function ConnectionList({
       newExpanded.delete(key);
     } else {
       newExpanded.add(key);
-      // 展开时，尝试加载表（如果未加载）
-      // key 格式为 "connectionId-dbName"
+      // When expanding, try to load tables (if not loaded)
+      // Key format is "connectionId-dbName"
       const [connId, ...dbNameParts] = key.split("-");
       const dbName = dbNameParts.join("-");
       // 找到对应的 connection 和 database
@@ -404,7 +404,7 @@ export function ConnectionList({
       newExpanded.delete(tableKey);
     } else {
       newExpanded.add(tableKey);
-      // 首次展开时加载列信息
+      // Load column info on first expand
       if (table.columns.length === 0) {
         fetchAndSetTableColumns(connectionId, databaseName, table.schema, table.name);
       }
@@ -428,6 +428,62 @@ export function ConnectionList({
     }
   };
 
+  const handleTestConnection = async () => {
+    try {
+      setValidationMsg(null);
+      setIsTesting(true);
+      setTestMsg(null);
+      const res = await api.connections.testEphemeral(form);
+      setTestMsg({
+        ok: res.success,
+        text: res.message,
+        latency: res.latencyMs,
+      });
+    } catch (e: any) {
+      setTestMsg({ ok: false, text: String(e?.message || e) });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const handleConnect = async () => {
+    if (!requiredOk) {
+      setValidationMsg(
+        "Please fill in required fields: Host, Port, Username, Password, Database",
+      );
+      return;
+    }
+    setValidationMsg(null);
+    setIsConnecting(true);
+    try {
+      const res = await api.connections.create(form);
+      setConnections((prev) => [
+        {
+          id: String(res.id),
+          name: res.name || "Unknown",
+          type: res.dbType as any,
+          host: res.host,
+          port: String(res.port),
+          username: res.username,
+          isConnected: false,
+          databases: [],
+        },
+        ...prev,
+      ]);
+      setIsDialogOpen(false);
+      if (onConnect) onConnect(form);
+    } catch (e: any) {
+      setValidationMsg(String(e?.message || e));
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleConnectSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    void handleConnect();
+  };
+
   return (
     <div className="h-full flex flex-col bg-background border-r border-border">
       <div className="px-2 py-1 border-b border-border flex items-center justify-between h-8">
@@ -448,10 +504,11 @@ export function ConnectionList({
               </Button>
             </DialogTrigger>
             <DialogContent>
-              <DialogHeader>
-                <DialogTitle>New Database Connection</DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
+              <form onSubmit={handleConnectSubmit}>
+                <DialogHeader>
+                  <DialogTitle>New Database Connection</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="name">Connection Name</Label>
                   <Input
@@ -690,35 +747,21 @@ export function ConnectionList({
                     />
                   </div>
                 )}
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={async () => {
-                    try {
-                      setValidationMsg(null);
-                      setIsTesting(true);
-                      setTestMsg(null);
-                      const res = await api.connections.testEphemeral(form);
-                      setTestMsg({
-                        ok: res.success,
-                        text: res.message,
-                        latency: res.latencyMs,
-                      });
-                    } catch (e: any) {
-                      setTestMsg({ ok: false, text: String(e?.message || e) });
-                    } finally {
-                      setIsTesting(false);
-                    }
-                  }}
-                  disabled={isTesting}
-                >
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleTestConnection}
+                    disabled={isTesting}
+                  >
                   {isTesting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -727,42 +770,11 @@ export function ConnectionList({
                   ) : (
                     "Test"
                   )}
-                </Button>
-                <Button
-                  onClick={async () => {
-                    if (!requiredOk) {
-                      setValidationMsg(
-                        "Please fill in required fields: Host, Port, Username, Password, Database",
-                      );
-                      return;
-                    }
-                    setValidationMsg(null);
-                    setIsConnecting(true);
-                    try {
-                      const res = await api.connections.create(form);
-                      setConnections((prev) => [
-                        {
-                          id: String(res.id),
-                          name: res.name || "Unknown",
-                          type: res.dbType as any,
-                          host: res.host,
-                          port: String(res.port),
-                          username: res.username,
-                          isConnected: false,
-                          databases: [],
-                        },
-                        ...prev,
-                      ]);
-                      setIsDialogOpen(false);
-                      if (onConnect) onConnect(form);
-                    } catch (e: any) {
-                      setValidationMsg(String(e?.message || e));
-                    } finally {
-                      setIsConnecting(false);
-                    }
-                  }}
-                  disabled={isConnecting || !requiredOk}
-                >
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isConnecting || !requiredOk}
+                  >
                   {isConnecting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -771,29 +783,30 @@ export function ConnectionList({
                   ) : (
                     "Connect"
                   )}
-                </Button>
-              </div>
-              {validationMsg && (
-                <div className="mt-3">
-                  <Alert variant="destructive">
-                    <AlertTitle>Validation Failed</AlertTitle>
-                    <AlertDescription>{validationMsg}</AlertDescription>
-                  </Alert>
+                  </Button>
                 </div>
-              )}
-              {testMsg && (
-                <div className="mt-3">
-                  <Alert variant={testMsg.ok ? "default" : "destructive"}>
-                    <AlertTitle>
-                      {testMsg.ok ? "Connection Test Successful" : "Connection Test Failed"}
-                    </AlertTitle>
-                    <AlertDescription>
-                      {testMsg.text}
-                      {testMsg.latency ? `(${testMsg.latency}ms)` : ""}
-                    </AlertDescription>
-                  </Alert>
-                </div>
-              )}
+                {validationMsg && (
+                  <div className="mt-3">
+                    <Alert variant="destructive">
+                      <AlertTitle>Validation Failed</AlertTitle>
+                      <AlertDescription>{validationMsg}</AlertDescription>
+                    </Alert>
+                  </div>
+                )}
+                {testMsg && (
+                  <div className="mt-3">
+                    <Alert variant={testMsg.ok ? "default" : "destructive"}>
+                      <AlertTitle>
+                        {testMsg.ok ? "Connection Test Successful" : "Connection Test Failed"}
+                      </AlertTitle>
+                      <AlertDescription>
+                        {testMsg.text}
+                        {testMsg.latency ? `(${testMsg.latency}ms)` : ""}
+                      </AlertDescription>
+                    </Alert>
+                  </div>
+                )}
+              </form>
             </DialogContent>
           </Dialog>
         </div>

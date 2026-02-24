@@ -28,6 +28,7 @@ import {
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { api } from "@/services/api";
+import { isEditableTarget, isModKey } from "@/lib/keyboard";
 
 interface PendingChange {
   rowIndex: number;
@@ -107,6 +108,7 @@ export function TableView({
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Sort state: controlled (via props) or uncontrolled (internal state for client-side sorting)
   const [internalSortColumn, setInternalSortColumn] = useState<string | undefined>();
@@ -259,6 +261,10 @@ export function TableView({
     setPendingChanges(new Map());
     setEditingCell(null);
     setSaveError(null);
+  }, []);
+
+  const handleCopy = useCallback((text: string) => {
+    navigator.clipboard.writeText(text);
   }, []);
 
   // --- SQL generation & save ---
@@ -499,8 +505,51 @@ export function TableView({
     };
   }, [handleMouseMove, handleMouseUp]);
 
+  useEffect(() => {
+    const handleTableHotkeys = (e: KeyboardEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const activeElement = document.activeElement;
+      if (!activeElement || !container.contains(activeElement)) return;
+
+      if (isModKey(e) && e.key.toLowerCase() === "s") {
+        if (hasPendingChanges && !isSaving) {
+          e.preventDefault();
+          void handleSave();
+        }
+        return;
+      }
+
+      if (e.key === "Escape") {
+        if (editingCell) {
+          e.preventDefault();
+          cancelEdit();
+          return;
+        }
+
+        if (hasPendingChanges && !isEditableTarget(e.target)) {
+          e.preventDefault();
+          handleDiscardChanges();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleTableHotkeys);
+    return () => {
+      window.removeEventListener("keydown", handleTableHotkeys);
+    };
+  }, [
+    hasPendingChanges,
+    isSaving,
+    handleSave,
+    editingCell,
+    cancelEdit,
+    handleDiscardChanges,
+  ]);
+
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div ref={containerRef} className="h-full flex flex-col bg-background">
       {!hideHeader && (
         <div className="flex items-center justify-between px-4 py-2 border-b border-border">
           <div className="flex items-center gap-2">
@@ -558,6 +607,7 @@ export function TableView({
                   className="gap-1.5"
                   onClick={handleSave}
                   disabled={isSaving}
+                  title="Save changes (Cmd/Ctrl+S)"
                 >
                   {isSaving ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -575,6 +625,7 @@ export function TableView({
                   className="gap-1.5"
                   onClick={handleDiscardChanges}
                   disabled={isSaving}
+                  title="Discard changes (Esc)"
                 >
                   <Undo2 className="w-4 h-4" />
                   Undo
@@ -703,6 +754,7 @@ export function TableView({
                               minWidth: 50,
                             }}
                             onClick={() => handleCellClick(rowIndex, column)}
+                            onContextMenu={() => handleCellClick(rowIndex, column)}
                             onDoubleClick={() =>
                               handleCellDoubleClick(rowIndex, column, row[column])
                             }
@@ -734,11 +786,30 @@ export function TableView({
                     </tr>
                   </ContextMenuTrigger>
                   <ContextMenuContent>
-                    <ContextMenuItem>
+                    <ContextMenuItem
+                      onClick={() => {
+                        if (selectedCell && selectedCell.row === rowIndex) {
+                          const val = getCellDisplayValue(
+                            rowIndex,
+                            selectedCell.col,
+                            row[selectedCell.col]
+                          );
+                          handleCopy(val === null || val === undefined ? "" : String(val));
+                        }
+                      }}
+                    >
                       <Copy className="w-4 h-4 mr-2" />
                       Copy
                     </ContextMenuItem>
-                    <ContextMenuItem>
+                    <ContextMenuItem
+                      onClick={() => {
+                        const values = columns.map((col) => {
+                          const val = getCellDisplayValue(rowIndex, col, row[col]);
+                          return val === null || val === undefined ? "" : String(val);
+                        });
+                        handleCopy(values.join("\t"));
+                      }}
+                    >
                       <TableIcon className="w-4 h-4 mr-2" />
                       Copy Row
                     </ContextMenuItem>
@@ -769,9 +840,84 @@ export function TableView({
                         Copy as
                       </ContextMenuSubTrigger>
                       <ContextMenuSubContent>
-                        <ContextMenuItem>Copy as CSV</ContextMenuItem>
-                        <ContextMenuItem>Copy as Insert SQL</ContextMenuItem>
-                        <ContextMenuItem>Copy as Update SQL</ContextMenuItem>
+                        <ContextMenuItem
+                          onClick={() => {
+                            const values = columns.map((col) => {
+                              const val = getCellDisplayValue(rowIndex, col, row[col]);
+                              if (val === null || val === undefined) return "";
+                              const str = String(val);
+                              if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+                                return `"${str.replace(/"/g, '""')}"`;
+                              }
+                              return str;
+                            });
+                            handleCopy(values.join(","));
+                          }}
+                        >
+                          Copy as CSV
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onClick={() => {
+                            if (!tableContext) return;
+                            const { schema, table, driver } = tableContext;
+                            const tableName =
+                              driver === "mysql"
+                                ? `${quoteIdent(table)}`
+                                : `${quoteIdent(schema)}.${quoteIdent(table)}`;
+
+                            const cols = columns.map((c) => quoteIdent(c)).join(", ");
+                            const vals = columns
+                              .map((col) => {
+                                const val = getCellDisplayValue(rowIndex, col, row[col]);
+                                return formatSQLValue(
+                                  val === null || val === undefined ? "" : String(val),
+                                  row[col]
+                                );
+                              })
+                              .join(", ");
+                            const sql = `INSERT INTO ${tableName} (${cols}) VALUES (${vals});`;
+                            handleCopy(sql);
+                          }}
+                        >
+                          Copy as Insert SQL
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onClick={() => {
+                            if (!tableContext || primaryKeys.length === 0) return;
+                            const { schema, table, driver } = tableContext;
+                            const tableName =
+                              driver === "mysql"
+                                ? `${quoteIdent(table)}`
+                                : `${quoteIdent(schema)}.${quoteIdent(table)}`;
+
+                            const setClauses = columns.map((col) => {
+                              const val = getCellDisplayValue(rowIndex, col, row[col]);
+                              const formattedValue = formatSQLValue(
+                                val === null || val === undefined ? "" : String(val),
+                                row[col]
+                              );
+                              return `${quoteIdent(col)} = ${formattedValue}`;
+                            });
+
+                            const whereClauses = primaryKeys.map((pk) => {
+                              const pkValue = row[pk];
+                              if (pkValue === null || pkValue === undefined) {
+                                return `${quoteIdent(pk)} IS NULL`;
+                              }
+                              if (typeof pkValue === "number") {
+                                return `${quoteIdent(pk)} = ${pkValue}`;
+                              }
+                              return `${quoteIdent(pk)} = '${escapeSQL(String(pkValue))}'`;
+                            });
+
+                            const sql = `UPDATE ${tableName} SET ${setClauses.join(
+                              ", "
+                            )} WHERE ${whereClauses.join(" AND ")};`;
+                            handleCopy(sql);
+                          }}
+                        >
+                          Copy as Update SQL
+                        </ContextMenuItem>
                       </ContextMenuSubContent>
                     </ContextMenuSub>
                   </ContextMenuContent>
@@ -782,7 +928,7 @@ export function TableView({
         </table>
       </div>
 
-          {saveError && (
+      {saveError && (
         <div className="px-4 py-2 border-t border-destructive/30 bg-destructive/10 text-destructive text-xs font-mono whitespace-pre-wrap">
           {saveError}
           <button
