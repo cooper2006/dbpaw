@@ -27,8 +27,19 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { api } from "@/services/api";
+import type { TransferFormat } from "@/services/api";
 import { isEditableTarget, isModKey } from "@/lib/keyboard";
+import { toast } from "sonner";
 
 interface PendingChange {
   rowIndex: number;
@@ -162,6 +173,7 @@ export function TableView({
   const [pendingChanges, setPendingChanges] = useState<Map<string, PendingChange>>(new Map());
   const [primaryKeys, setPrimaryKeys] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -202,6 +214,51 @@ export function TableView({
     if (!tableContext) return;
     onOpenDDL?.(tableContext);
   };
+
+  const handleExport = useCallback(
+    async (
+      scope: "current_page" | "filtered" | "full_table",
+      format: TransferFormat,
+    ) => {
+      if (!tableContext) return;
+      setIsExporting(true);
+      try {
+        const result = await api.transfer.exportTable({
+          id: tableContext.connectionId,
+          database: tableContext.database,
+          schema: tableContext.schema,
+          table: tableContext.table,
+          driver: tableContext.driver,
+          format,
+          scope,
+          filter: controlledFilter || undefined,
+          orderBy: orderByInput || undefined,
+          sortColumn: activeSortColumn,
+          sortDirection: activeSortDirection,
+          page,
+          limit: pageSize,
+        });
+        toast.success(`Export completed (${result.rowCount} rows)`, {
+          description: result.filePath,
+        });
+      } catch (e) {
+        toast.error("Export failed", {
+          description: e instanceof Error ? e.message : String(e),
+        });
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [
+      tableContext,
+      controlledFilter,
+      orderByInput,
+      activeSortColumn,
+      activeSortDirection,
+      page,
+      pageSize,
+    ],
+  );
 
   // --- Fetch primary keys when tableContext is available ---
   useEffect(() => {
@@ -740,9 +797,80 @@ export function TableView({
               Showing {startIndex + 1}-{startIndex + currentData.length} of{" "}
               {total || sortedData.length} rows
             </span>
-            <Button variant="outline" size="sm" className="gap-2">
-              <Download className="w-4 h-4" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  disabled={!tableContext || isExporting}
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Export Current Page</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem
+                        onClick={() => void handleExport("current_page", "csv")}
+                      >
+                        CSV
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => void handleExport("current_page", "json")}
+                      >
+                        JSON
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => void handleExport("current_page", "sql")}
+                      >
+                        SQL
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Export Filtered Result</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem
+                        onClick={() => void handleExport("filtered", "csv")}
+                      >
+                        CSV
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => void handleExport("filtered", "json")}
+                      >
+                        JSON
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => void handleExport("filtered", "sql")}
+                      >
+                        SQL
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Export Full Table</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem
+                        onClick={() => void handleExport("full_table", "csv")}
+                      >
+                        CSV
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => void handleExport("full_table", "json")}
+                      >
+                        JSON
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => void handleExport("full_table", "sql")}
+                      >
+                        SQL
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       )}

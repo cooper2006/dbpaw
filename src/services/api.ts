@@ -127,6 +127,18 @@ export interface SavedQuery {
   updatedAt: string;
 }
 
+export type TransferFormat = "csv" | "json" | "sql";
+export type ExportScope =
+  | "current_page"
+  | "filtered"
+  | "full_table"
+  | "query_result";
+
+export interface ExportResult {
+  filePath: string;
+  rowCount: number;
+}
+
 export const api = {
   query: {
     execute: (id: number, query: string, database?: string) =>
@@ -206,6 +218,33 @@ export const api = {
         limit: number;
         executionTimeMs: number;
       }>("get_table_data_by_conn", { form, schema, table, page, limit }),
+  },
+  transfer: {
+    exportTable: (params: {
+      id: number;
+      database?: string;
+      schema: string;
+      table: string;
+      driver: string;
+      format: TransferFormat;
+      scope: Exclude<ExportScope, "query_result">;
+      filter?: string;
+      orderBy?: string;
+      sortColumn?: string;
+      sortDirection?: "asc" | "desc";
+      page?: number;
+      limit?: number;
+      filePath?: string;
+      chunkSize?: number;
+    }) => invoke<ExportResult>("export_table_data", params),
+    exportQueryResult: (params: {
+      id: number;
+      database?: string;
+      sql: string;
+      driver: string;
+      format: TransferFormat;
+      filePath?: string;
+    }) => invoke<ExportResult>("export_query_result", params),
   },
   connections: {
     list: () => invoke<any[]>("get_connections"),

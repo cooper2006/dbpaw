@@ -5,6 +5,7 @@ import {
   ConnectionForm,
   TestConnectionResult,
   SavedQuery,
+  ExportResult,
 } from "./api";
 
 /**
@@ -671,6 +672,28 @@ export async function mockDeleteSavedQuery(id: number): Promise<void> {
 }
 
 /**
+ * Mock export table data
+ */
+export async function mockExportTableData(_params: any): Promise<ExportResult> {
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  return {
+    filePath: `/tmp/dbpaw-table-export-${Date.now()}.csv`,
+    rowCount: mockTableData.total,
+  };
+}
+
+/**
+ * Mock export query result
+ */
+export async function mockExportQueryResult(_params: any): Promise<ExportResult> {
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  return {
+    filePath: `/tmp/dbpaw-query-export-${Date.now()}.csv`,
+    rowCount: mockQueryResult.rowCount,
+  };
+}
+
+/**
  * Invoke corresponding mock handler function by command name
  */
 export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
@@ -775,6 +798,13 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
 
     case "delete_saved_query":
       return mockDeleteSavedQuery(args.id) as Promise<T>;
+
+    // Transfer commands
+    case "export_table_data":
+      return mockExportTableData(args) as Promise<T>;
+
+    case "export_query_result":
+      return mockExportQueryResult(args) as Promise<T>;
 
     default:
       console.warn(`[Mock] Unknown command: ${cmd}`);

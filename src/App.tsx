@@ -25,6 +25,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { api, isTauri, SchemaOverview, SavedQuery } from "@/services/api";
+import { toast } from "sonner";
 import { listen } from "@tauri-apps/api/event";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { UpdaterChecker } from "@/components/updater-checker";
@@ -338,6 +339,33 @@ export default function App() {
     }
   };
 
+  const handleExportTableFromTree = async (ctx: {
+    connectionId: number;
+    database: string;
+    schema: string;
+    table: string;
+    driver: string;
+  }, format: "csv" | "json" | "sql") => {
+    try {
+      const result = await api.transfer.exportTable({
+        id: ctx.connectionId,
+        database: ctx.database,
+        schema: ctx.schema,
+        table: ctx.table,
+        driver: ctx.driver,
+        format,
+        scope: "full_table",
+      });
+      toast.success(`Export completed (${result.rowCount} rows)`, {
+        description: result.filePath,
+      });
+    } catch (e) {
+      toast.error("Export failed", {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
+
   const handleOpenTableDDL = (ctx: {
     connectionId: number;
     database: string;
@@ -610,6 +638,7 @@ export default function App() {
               onTableSelect={handleTableSelect}
               onConnect={() => { }}
               onCreateQuery={handleCreateQuery}
+              onExportTable={handleExportTableFromTree}
               onSelectSavedQuery={handleOpenSavedQuery}
               lastUpdated={queriesLastUpdated}
             />

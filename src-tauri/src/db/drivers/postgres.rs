@@ -515,6 +515,30 @@ impl DatabaseDriver for PostgresDriver {
         })
     }
 
+    async fn get_table_data_chunk(
+        &self,
+        schema: String,
+        table: String,
+        page: i64,
+        limit: i64,
+        sort_column: Option<String>,
+        sort_direction: Option<String>,
+        filter: Option<String>,
+        order_by: Option<String>,
+    ) -> Result<TableDataResponse, String> {
+        self.get_table_data(
+            schema,
+            table,
+            page,
+            limit,
+            sort_column,
+            sort_direction,
+            filter,
+            order_by,
+        )
+        .await
+    }
+
     async fn execute_query(&self, sql: String) -> Result<QueryResult, String> {
         let start = std::time::Instant::now();
         let rows = sqlx::query(&sql)

@@ -15,6 +15,7 @@ import {
   Trash2,
   FileCode,
   Search,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -170,12 +171,20 @@ interface ConnectionListProps {
     databaseName: string,
     driver: string,
   ) => void;
+  onExportTable?: (ctx: {
+    connectionId: number;
+    database: string;
+    schema: string;
+    table: string;
+    driver: string;
+  }, format: "csv" | "json" | "sql") => void;
 }
 
 export function ConnectionList({
   onTableSelect,
   onConnect,
   onCreateQuery,
+  onExportTable,
 }: ConnectionListProps) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [expandedConnections, setExpandedConnections] = useState<Set<string>>(
@@ -191,7 +200,10 @@ export function ConnectionList({
     y: number;
     connectionId: string | null;
     databaseName?: string | null;
-    type: "connection" | "database";
+    schema?: string | null;
+    tableName?: string | null;
+    driver?: Driver;
+    type: "connection" | "database" | "table";
   }>({ visible: false, x: 0, y: 0, connectionId: null, type: "connection" });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
@@ -1092,6 +1104,21 @@ export function ConnectionList({
                             onDoubleClick={() => {
                               handleTableClick(connection, database, table);
                             }}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setContextMenu({
+                                visible: true,
+                                x: e.clientX,
+                                y: e.clientY,
+                                connectionId: connection.id,
+                                databaseName: database.name,
+                                schema: table.schema,
+                                tableName: table.name,
+                                driver: connection.type,
+                                type: "table",
+                              });
+                            }}
                             actions={
                               <div onClick={(e) => e.stopPropagation()}>
                                 <Button
@@ -1195,7 +1222,7 @@ export function ConnectionList({
                 Delete
               </button>
             </>
-          ) : (
+          ) : contextMenu.type === "database" ? (
             <button
               className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
               onClick={() => {
@@ -1221,6 +1248,81 @@ export function ConnectionList({
               <FileCode className="w-4 h-4" />
               New Query
             </button>
+          ) : (
+            <>
+              <button
+                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                onClick={() => {
+                  if (
+                    onExportTable &&
+                    contextMenu.connectionId &&
+                    contextMenu.databaseName &&
+                    contextMenu.schema &&
+                    contextMenu.tableName
+                  ) {
+                    onExportTable({
+                      connectionId: Number(contextMenu.connectionId),
+                      database: contextMenu.databaseName,
+                      schema: contextMenu.schema,
+                      table: contextMenu.tableName,
+                      driver: contextMenu.driver || "postgres",
+                    }, "csv");
+                  }
+                  setContextMenu((prev) => ({ ...prev, visible: false }));
+                }}
+              >
+                <Download className="w-4 h-4" />
+                Export as CSV
+              </button>
+              <button
+                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                onClick={() => {
+                  if (
+                    onExportTable &&
+                    contextMenu.connectionId &&
+                    contextMenu.databaseName &&
+                    contextMenu.schema &&
+                    contextMenu.tableName
+                  ) {
+                    onExportTable({
+                      connectionId: Number(contextMenu.connectionId),
+                      database: contextMenu.databaseName,
+                      schema: contextMenu.schema,
+                      table: contextMenu.tableName,
+                      driver: contextMenu.driver || "postgres",
+                    }, "json");
+                  }
+                  setContextMenu((prev) => ({ ...prev, visible: false }));
+                }}
+              >
+                <Download className="w-4 h-4" />
+                Export as JSON
+              </button>
+              <button
+                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                onClick={() => {
+                  if (
+                    onExportTable &&
+                    contextMenu.connectionId &&
+                    contextMenu.databaseName &&
+                    contextMenu.schema &&
+                    contextMenu.tableName
+                  ) {
+                    onExportTable({
+                      connectionId: Number(contextMenu.connectionId),
+                      database: contextMenu.databaseName,
+                      schema: contextMenu.schema,
+                      table: contextMenu.tableName,
+                      driver: contextMenu.driver || "postgres",
+                    }, "sql");
+                  }
+                  setContextMenu((prev) => ({ ...prev, visible: false }));
+                }}
+              >
+                <Download className="w-4 h-4" />
+                Export as SQL
+              </button>
+            </>
           )}
         </div>
       )}
