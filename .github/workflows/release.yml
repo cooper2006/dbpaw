@@ -4,9 +4,91 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (required when manually triggering from a branch)'
+        required: false
+        type: string
 
 jobs:
+  prepare-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate Changelog
+        uses: orhun/git-cliff-action@v4
+        id: git_cliff
+        with:
+          config: cliff.toml
+          args: --verbose --latest --strip header
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Create or Update Release Body
+        uses: actions/github-script@v7
+        env:
+          TAG_NAME: ${{ inputs.tag || github.ref_name }}
+          RELEASE_BODY: ${{ steps.git_cliff.outputs.content || 'See the assets to download this version and install.' }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const tag = process.env.TAG_NAME;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const body = process.env.RELEASE_BODY;
+            const releaseName = `DbPaw ${tag}`;
+            const manualTag = context.payload?.inputs?.tag;
+
+            if (context.eventName === "workflow_dispatch" && !manualTag) {
+              throw new Error("workflow_dispatch requires input 'tag' (e.g. v0.1.5).");
+            }
+
+            if (!tag) {
+              throw new Error("Tag is empty. For workflow_dispatch, provide the 'tag' input.");
+            }
+
+            try {
+              const { data: existing } = await github.rest.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag,
+              });
+
+              await github.rest.repos.updateRelease({
+                owner,
+                repo,
+                release_id: existing.id,
+                tag_name: tag,
+                name: releaseName,
+                body,
+                draft: true,
+                prerelease: false,
+              });
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+
+              await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: tag,
+                name: releaseName,
+                body,
+                draft: true,
+                prerelease: false,
+              });
+            }
+
   release:
+    needs: prepare-release
     permissions:
       contents: write
     strategy:
@@ -19,7 +101,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -40,25 +122,31 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
       - name: Install frontend dependencies
         run: bun install
 
-      - name: Generate Changelog
-        uses: orhun/git-cliff-action@v4
-        id: git-cliff
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          config: cliff.toml
-          args: --verbose --latest --strip header
-        env:
-          OUTPUT: CHANGELOG.md
+          workspaces: |
+            src-tauri -> target
 
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'DbPaw ${{ github.ref_name }}'
-          releaseBody: ${{ steps.git-cliff.outputs.content || 'See the assets to download this version and install.' }}
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: 'DbPaw ${{ inputs.tag || github.ref_name }}'
           releaseDraft: true
           prerelease: false
