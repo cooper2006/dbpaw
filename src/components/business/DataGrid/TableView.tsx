@@ -58,6 +58,7 @@ interface TableViewProps {
   pageSize?: number;
   executionTimeMs?: number;
   onPageChange?: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
   sortColumn?: string;
   sortDirection?: "asc" | "desc";
   onSortChange?: (column: string, direction: "asc" | "desc") => void;
@@ -86,9 +87,10 @@ export function TableView({
   hideHeader = false,
   total = 0,
   page = 1,
-  pageSize = 50,
+  pageSize = 100,
   executionTimeMs = 0,
   onPageChange,
+  onPageSizeChange,
   sortColumn: controlledSortColumn,
   sortDirection: controlledSortDirection,
   onSortChange,
@@ -101,6 +103,8 @@ export function TableView({
 }: TableViewProps) {
   const [whereInput, setWhereInput] = useState(controlledFilter || "");
   const [orderByInput, setOrderByInput] = useState(controlledOrderBy || "");
+  const [pageInput, setPageInput] = useState(String(page));
+  const [pageSizeInput, setPageSizeInput] = useState(String(pageSize));
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
 
   // Reset column widths when columns definition changes (e.g. switching tables)
@@ -166,6 +170,14 @@ export function TableView({
   useEffect(() => {
     setOrderByInput(controlledOrderBy || "");
   }, [controlledOrderBy]);
+
+  useEffect(() => {
+    setPageInput(String(page));
+  }, [page]);
+
+  useEffect(() => {
+    setPageSizeInput(String(pageSize));
+  }, [pageSize]);
 
   // --- Cell selection & editing state ---
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: string } | null>(null);
@@ -654,6 +666,25 @@ export function TableView({
     }
   };
 
+  const handlePageInputCommit = () => {
+    const parsed = Number.parseInt(pageInput, 10);
+    const maxPage = Math.max(totalPages, 1);
+    const nextPage = Number.isNaN(parsed) ? page : Math.min(Math.max(parsed, 1), maxPage);
+    setPageInput(String(nextPage));
+    if (nextPage !== page) {
+      onPageChange?.(nextPage);
+    }
+  };
+
+  const handlePageSizeInputCommit = () => {
+    const parsed = Number.parseInt(pageSizeInput, 10);
+    const nextPageSize = Number.isNaN(parsed) ? pageSize : Math.min(Math.max(parsed, 1), 10000);
+    setPageSizeInput(String(nextPageSize));
+    if (nextPageSize !== pageSize) {
+      onPageSizeChange?.(nextPageSize);
+    }
+  };
+
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!resizingRef.current) return;
     const { column, startX, startWidth } = resizingRef.current;
@@ -738,110 +769,104 @@ export function TableView({
   return (
     <div ref={containerRef} className="h-full flex flex-col bg-background">
       {!hideHeader && (
-        <div className="flex items-center justify-between px-4 py-2 border-b border-border">
-          <div className="flex items-center gap-2">
-            {tableContext && onFilterChange ? (
-              <>
-                <div className="relative">
-                  <Filter className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    type="text"
-                    placeholder="WHERE ..."
-                    className="pl-8 h-8 w-64 font-mono text-xs"
-                    value={whereInput}
-                    onChange={(e) => setWhereInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        onFilterChange(whereInput, orderByInput);
-                      }
-                    }}
-                  />
-                </div>
-                <div className="relative">
-                  <ArrowUpDown className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    type="text"
-                    placeholder="ORDER BY ..."
-                    className="pl-8 h-8 w-48 font-mono text-xs"
-                    value={orderByInput}
-                    onChange={(e) => setOrderByInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        onFilterChange(whereInput, orderByInput);
-                      }
-                    }}
-                  />
-                </div>
-              </>
-            ) : null}
-            {tableContext && (
+        <div className="flex flex-col gap-1.5 px-4 py-2 border-b border-border">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">page</span>
+              <Input
+                type="text"
+                inputMode="numeric"
+                className="h-7 w-6 px-2 text-xs"
+                value={pageInput}
+                onChange={(e) => setPageInput(e.target.value.replace(/\D/g, ""))}
+                onBlur={handlePageInputCommit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handlePageInputCommit();
+                  }
+                }}
+              />
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-2"
-                onClick={handleShowDDL}
-                title="View Table Structure (DDL)"
+                className="h-7"
+                onClick={handlePrevPage}
+                disabled={page <= 1}
               >
-                <FileCode className="w-4 h-4" />
+                <ChevronLeft className="w-4 h-4" />
               </Button>
-            )}
-            {hasPendingChanges && (
-              <>
-                <div className="w-px h-5 bg-border" />
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  title="Save changes (Cmd/Ctrl+S)"
-                >
-                  {isSaving ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Save className="w-4 h-4" />
-                  )}
-                  Save
-                  <span className="bg-primary-foreground/20 text-primary-foreground text-xs px-1.5 py-0.5 rounded-full">
-                    {pendingChanges.size}
-                  </span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleDiscardChanges}
-                  disabled={isSaving}
-                  title="Discard changes (Esc)"
-                >
-                  <Undo2 className="w-4 h-4" />
-                  Undo
-                </Button>
-              </>
-            )}
-            {tableContext && !isEditable && primaryKeys.length === 0 && (
-              <span className="text-xs text-muted-foreground italic" title="This table has no primary key and does not support inline editing">
-                Read-only
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">
-              Showing {startIndex + 1}-{startIndex + currentData.length} of{" "}
-              {total || sortedData.length} rows
-            </span>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  disabled={!tableContext || isExporting}
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7"
+                onClick={handleNextPage}
+                disabled={page >= totalPages}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+              <span className="text-xs text-muted-foreground">limit</span>
+              <Input
+                type="text"
+                inputMode="numeric"
+                className="h-7 w-12 px-2 text-xs"
+                value={pageSizeInput}
+                onChange={(e) => setPageSizeInput(e.target.value.replace(/\D/g, ""))}
+                onBlur={handlePageSizeInputCommit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handlePageSizeInputCommit();
+                  }
+                }}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              {hasPendingChanges && (
+                <>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-7 gap-1.5"
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    title="Save changes (Cmd/Ctrl+S)"
+                  >
+                    {isSaving ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    Save
+                    <span className="bg-primary-foreground/20 text-primary-foreground text-xs px-1.5 py-0.5 rounded-full">
+                      {pendingChanges.size}
+                    </span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5"
+                    onClick={handleDiscardChanges}
+                    disabled={isSaving}
+                    title="Discard changes (Esc)"
+                  >
+                    <Undo2 className="w-4 h-4" />
+                    Undo
+                  </Button>
+                </>
+              )}
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-2"
+                    disabled={!tableContext || isExporting}
+                  >
+                    <Download className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>Export Current Page</DropdownMenuSubTrigger>
                     <DropdownMenuSubContent>
@@ -902,9 +927,70 @@ export function TableView({
                       </DropdownMenuItem>
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {tableContext && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-2"
+                  onClick={handleShowDDL}
+                  title="View Table Structure (DDL)"
+                >
+                  <FileCode className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
           </div>
+
+          {tableContext && onFilterChange ? (
+            <div className="pt-1 border-t border-border/40 flex items-center gap-2">
+              <div className="relative flex-1 min-w-0">
+                <Filter className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="WHERE ..."
+                  className="pl-8 h-7 w-full font-mono text-xs"
+                  value={whereInput}
+                  onChange={(e) => setWhereInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      onFilterChange(whereInput, orderByInput);
+                    }
+                  }}
+                />
+              </div>
+              <div className="relative flex-1 min-w-0">
+                <ArrowUpDown className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="ORDER BY ..."
+                  className="pl-8 h-7 w-full font-mono text-xs"
+                  value={orderByInput}
+                  onChange={(e) => setOrderByInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      onFilterChange(whereInput, orderByInput);
+                    }
+                  }}
+                />
+              </div>
+              {tableContext && !isEditable && primaryKeys.length === 0 && (
+                <span className="text-xs text-muted-foreground italic" title="This table has no primary key and does not support inline editing">
+                  Read-only
+                </span>
+              )}
+            </div>
+          ) : (
+            tableContext &&
+            !isEditable &&
+            primaryKeys.length === 0 && (
+              <span className="text-xs text-muted-foreground italic" title="This table has no primary key and does not support inline editing">
+                Read-only
+              </span>
+            )
+          )}
         </div>
       )}
 
@@ -1201,7 +1287,7 @@ export function TableView({
         </div>
       )}
 
-      <div className="flex items-center justify-between px-4 py-1 border-t border-border bg-muted/40">
+      <div className="flex items-center px-4 py-1 border-t border-border bg-muted/40">
         <div className="text-sm text-muted-foreground">
           Query executed in{" "}
           {executionTimeMs ? (executionTimeMs / 1000).toFixed(3) : "0.000"}s •{" "}
@@ -1211,29 +1297,6 @@ export function TableView({
               • {pendingChanges.size} unsaved change(s)
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7"
-            onClick={handlePrevPage}
-            disabled={page <= 1}
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages || 1}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7"
-            onClick={handleNextPage}
-            disabled={page >= totalPages}
-          >
-            <ChevronRight className="w-4 h-4" />
-          </Button>
         </div>
       </div>
     </div>
