@@ -117,6 +117,7 @@ interface TreeNodeProps {
   label: string;
   isExpanded?: boolean;
   onToggle?: () => void;
+  toggleOnRowClick?: boolean;
   onDoubleClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   actions?: React.ReactNode;
@@ -129,6 +130,7 @@ const TreeNode = ({
   label,
   isExpanded,
   onToggle,
+  toggleOnRowClick = true,
   onDoubleClick,
   onContextMenu,
   actions,
@@ -140,18 +142,25 @@ const TreeNode = ({
       <div
         className="flex items-center gap-1 px-2 py-1 hover:bg-accent cursor-pointer group select-none"
         style={{ paddingLeft: `${level * 12 + 8}px` }}
-        onClick={onToggle}
+        onClick={toggleOnRowClick ? onToggle : undefined}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
       >
         {hasChildren && (
-          <span className="text-muted-foreground">
+          <button
+            type="button"
+            className="text-muted-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle?.();
+            }}
+          >
             {isExpanded ? (
               <ChevronDown className="w-4 h-4" />
             ) : (
               <ChevronRight className="w-4 h-4" />
             )}
-          </span>
+          </button>
         )}
         {!hasChildren && <span className="w-4" />}
         <span className="text-muted-foreground">{icon}</span>
@@ -1160,6 +1169,7 @@ export function ConnectionList({
                                   icon={<Table className="w-4 h-4" />}
                                   label={table.name}
                                   isExpanded={expandedTables.has(tableKey)}
+                                  toggleOnRowClick={false}
                                   onToggle={() => {
                                     toggleTable(tableKey, connection.id, database.name, table);
                                   }}
