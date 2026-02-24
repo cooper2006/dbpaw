@@ -91,6 +91,62 @@ export function TableView({
   const [orderByInput, setOrderByInput] = useState(controlledOrderBy || "");
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
 
+  // Reset column widths when columns definition changes (e.g. switching tables)
+  const prevColumnsRef = useRef<string>("");
+  useEffect(() => {
+    const colsKey = columns.join(",");
+    if (prevColumnsRef.current !== colsKey) {
+      setColumnWidths({});
+      prevColumnsRef.current = colsKey;
+    }
+  }, [columns]);
+
+  // Auto-calculate column widths based on content
+  useEffect(() => {
+    if (!data.length || !columns.length) return;
+
+    const newWidths: Record<string, number> = {};
+    let hasChanges = false;
+
+    // Configuration for auto-sizing
+    const CHAR_WIDTH = 9; // Approximate width per character in px
+    const PADDING = 36;   // Padding + icon space
+    // Dynamically adjust min width based on column count to fill space better for small tables
+    const MIN_WIDTH = columns.length <= 3 ? 250 : 100;
+    const MAX_WIDTH = 500;
+
+    columns.forEach((col) => {
+      // Only calculate if width is not already set (preserve manual resizes and previous calcs)
+      if (columnWidths[col] !== undefined) return;
+
+      let maxLen = col.length;
+      // Sample up to 20 rows to estimate width
+      const sampleSize = Math.min(data.length, 20);
+
+      for (let i = 0; i < sampleSize; i++) {
+        const val = data[i][col];
+        if (val !== null && val !== undefined) {
+          const str = String(val);
+          // Simple length check, capping at 100 chars
+          const len = str.length > 100 ? 100 : str.length;
+          if (len > maxLen) maxLen = len;
+        }
+      }
+
+      const calculatedWidth = Math.min(
+        MAX_WIDTH,
+        Math.max(MIN_WIDTH, maxLen * CHAR_WIDTH + PADDING)
+      );
+
+      newWidths[col] = calculatedWidth;
+      hasChanges = true;
+    });
+
+    if (hasChanges) {
+      setColumnWidths((prev) => ({ ...prev, ...newWidths }));
+    }
+  }, [data, columns, columnWidths]);
+
   useEffect(() => {
     setWhereInput(controlledFilter || "");
   }, [controlledFilter]);
