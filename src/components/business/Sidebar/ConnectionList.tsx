@@ -18,6 +18,7 @@ import {
   Search,
   Download,
 } from "lucide-react";
+import { siMysql, siPostgresql, siSqlite, type SimpleIcon } from "simple-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -108,6 +109,38 @@ const defaultForm: ConnectionForm = {
   sshEnabled: false,
   sshPort: 22,
   sshUsername: "root",
+};
+
+const renderSimpleIcon = (icon: SimpleIcon) => (
+  <svg
+    viewBox="0 0 24 24"
+    width="16"
+    height="16"
+    aria-hidden="true"
+    className="shrink-0"
+    role="img"
+  >
+    <path d={icon.path} fill="currentColor" />
+  </svg>
+);
+
+const getConnectionIcon = (driver: Driver | string): React.ReactNode => {
+  const normalized = String(driver || "").trim().toLowerCase();
+
+  switch (normalized) {
+    case "postgres":
+    case "postgresql":
+    case "pgsql":
+      return renderSimpleIcon(siPostgresql);
+    case "mysql":
+    case "mariadb":
+      return renderSimpleIcon(siMysql);
+    case "sqlite":
+    case "sqlite3":
+      return renderSimpleIcon(siSqlite);
+    default:
+      return <Server className="w-4 h-4" />;
+  }
 };
 
 interface TreeNodeProps {
@@ -1115,7 +1148,7 @@ export function ConnectionList({
           <TreeNode
             key={connection.id}
             level={0}
-            icon={<Server className="w-4 h-4" />}
+            icon={getConnectionIcon(connection.type)}
             label={connection.name}
             isExpanded={expandedConnections.has(connection.id)}
             onToggle={() => toggleConnection(connection.id)}

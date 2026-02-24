@@ -383,7 +383,7 @@ export default function App() {
         schema,
         table,
         page: 1,
-        limit: 50,
+        limit: 100,
       });
       const columns = resp.data.length > 0 ? Object.keys(resp.data[0]) : [];
       const newTab: TabItem = {
@@ -474,7 +474,7 @@ export default function App() {
         schema: schema || "public",
         table: tab.tableName,
         page,
-        limit: tab.pageSize || 50,
+        limit: tab.pageSize || 100,
         filter: tab.filter,
         sortColumn: tab.sortColumn,
         sortDirection: tab.sortDirection,
@@ -498,6 +498,42 @@ export default function App() {
     }
   };
 
+  const handlePageSizeChange = async (tabId: string, pageSize: number) => {
+    const tab = tabs.find((t) => t.id === tabId);
+    if (!tab || !tab.connectionId || !tab.driver || !tab.tableName) return;
+
+    try {
+      const schema = tab.driver === "mysql" ? tab.database : "public";
+      const resp = await api.tableData.get({
+        id: tab.connectionId,
+        schema: schema || "public",
+        table: tab.tableName,
+        page: 1,
+        limit: pageSize,
+        filter: tab.filter,
+        sortColumn: tab.sortColumn,
+        sortDirection: tab.sortDirection,
+        orderBy: tab.orderBy,
+      });
+
+      setTabs((prev) =>
+        prev.map((t) => {
+          if (t.id !== tabId) return t;
+          return {
+            ...t,
+            data: resp.data,
+            total: resp.total,
+            page: resp.page,
+            pageSize: resp.limit,
+            executionTimeMs: resp.executionTimeMs,
+          };
+        }),
+      );
+    } catch (e) {
+      console.error("handlePageSizeChange failed", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const handleSortChange = async (tabId: string, column: string, direction: "asc" | "desc") => {
     const tab = tabs.find((t) => t.id === tabId);
     if (!tab || !tab.connectionId || !tab.driver || !tab.tableName) return;
@@ -517,7 +553,7 @@ export default function App() {
         schema: schema || "public",
         table: tab.tableName,
         page: 1, // Reset to first page on sort change
-        limit: tab.pageSize || 50,
+        limit: tab.pageSize || 100,
         filter: tab.filter,
         sortColumn: column,
         sortDirection: direction,
@@ -562,7 +598,7 @@ export default function App() {
         schema: schema || "public",
         table: tab.tableName,
         page: 1, // Reset to first page on filter change
-        limit: tab.pageSize || 50,
+        limit: tab.pageSize || 100,
         filter: filter || undefined,
         sortColumn: tab.sortColumn,
         sortDirection: tab.sortDirection,
@@ -864,6 +900,9 @@ export default function App() {
                           pageSize={tab.pageSize}
                           executionTimeMs={tab.executionTimeMs}
                           onPageChange={(p) => handlePageChange(tab.id, p)}
+                          onPageSizeChange={(size) =>
+                            handlePageSizeChange(tab.id, size)
+                          }
                           sortColumn={tab.sortColumn}
                           sortDirection={tab.sortDirection}
                           onSortChange={(col, dir) =>
