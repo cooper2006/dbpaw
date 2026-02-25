@@ -69,6 +69,13 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
 
   const requestIdRef = useRef<string>("");
   const errorNotifiedRef = useRef(false);
+  const streamQueueRef = useRef<string>("");
+  const streamDrainTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamFinalizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLoadingRef = useRef(false);
+  const activeConversationIdRef = useRef<number | null>(null);
+  const reloadConversationsRef = useRef<() => Promise<void>>(async () => {});
+  const loadConversationRef = useRef<(conversationId: number) => Promise<void>>(async () => {});
 
   const sortedConversations = useMemo(
     () => [...conversations].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)),
@@ -94,7 +101,7 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
     try {
       const list = await api.ai.conversations.list({ connectionId, database });
       setConversations(list);
-      if (!activeConversationId && list.length > 0) {
+      if (!activeConversationIdRef.current && list.length > 0) {
         setActiveConversationId(list[0].id);
       }
     } catch (e) {
@@ -108,6 +115,14 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
       const detail = await api.ai.conversations.get(conversationId);
       setMessages(detail.messages);
       setActiveConversationId(conversationId);
+      // Fallback: if done event was missed, unstick input once assistant reply is persisted.
+      const hasAssistantReply = detail.messages.some((m) => m.role === "assistant");
+      if (isLoadingRef.current && hasAssistantReply) {
+        setIsLoading(false);
+        setStreamStatus("");
+        setStreamingContent("");
+        streamQueueRef.current = "";
+      }
     } catch (e) {
       toast.error("Failed to load conversation", {
         description: e instanceof Error ? e.message : String(e),
@@ -120,6 +135,19 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
     reloadConversations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId, database]);
+
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    reloadConversationsRef.current = reloadConversations;
+    loadConversationRef.current = loadConversation;
+  });
 
   useEffect(() => {
     if (!activeConversationId) {
@@ -146,17 +174,31 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
     listen<AiChunkPayload>("ai.chunk", (evt) => {
       if (evt.payload.requestId !== requestIdRef.current) return;
       setStreamStatus("Receiving response...");
-      setStreamingContent((prev) => prev + evt.payload.chunk);
+      streamQueueRef.current += evt.payload.chunk;
     }).then((f) => (unlistenChunk = f));
 
     listen<AiDonePayload>("ai.done", (evt) => {
       if (evt.payload.requestId !== requestIdRef.current) return;
-      setIsLoading(false);
-      setStreamingContent("");
-      setStreamStatus("");
+      setStreamStatus("Finalizing response...");
       setActiveConversationId(evt.payload.conversationId);
-      reloadConversations();
-      loadConversation(evt.payload.conversationId);
+      void reloadConversationsRef.current();
+      void loadConversationRef.current(evt.payload.conversationId);
+
+      // Wait until queued stream text is flushed to avoid flashing "all at once".
+      const finish = () => {
+        if (streamQueueRef.current.length > 0) {
+          streamFinalizeTimerRef.current = setTimeout(finish, 20);
+          return;
+        }
+        if (streamFinalizeTimerRef.current) {
+          clearTimeout(streamFinalizeTimerRef.current);
+          streamFinalizeTimerRef.current = null;
+        }
+        setIsLoading(false);
+        setStreamingContent("");
+        setStreamStatus("");
+      };
+      finish();
     }).then((f) => (unlistenDone = f));
 
     listen<AiErrorPayload>("ai.error", (evt) => {
@@ -164,6 +206,11 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
       setIsLoading(false);
       setStreamingContent("");
       setStreamStatus("");
+      streamQueueRef.current = "";
+      if (streamFinalizeTimerRef.current) {
+        clearTimeout(streamFinalizeTimerRef.current);
+        streamFinalizeTimerRef.current = null;
+      }
       errorNotifiedRef.current = true;
       toast.error("AI request failed", {
         id: "ai-request-error",
@@ -176,8 +223,39 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
       if (unlistenStarted) unlistenStarted();
       if (unlistenDone) unlistenDone();
       if (unlistenError) unlistenError();
+      if (streamFinalizeTimerRef.current) {
+        clearTimeout(streamFinalizeTimerRef.current);
+        streamFinalizeTimerRef.current = null;
+      }
     };
-  }, [activeConversationId]);
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      if (streamDrainTimerRef.current) {
+        clearInterval(streamDrainTimerRef.current);
+        streamDrainTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (!streamDrainTimerRef.current) {
+      streamDrainTimerRef.current = setInterval(() => {
+        if (!streamQueueRef.current) return;
+        const take = Math.min(2, streamQueueRef.current.length);
+        const next = streamQueueRef.current.slice(0, take);
+        streamQueueRef.current = streamQueueRef.current.slice(take);
+        setStreamingContent((prev) => prev + next);
+      }, 16);
+    }
+
+    return () => {
+      if (streamDrainTimerRef.current) {
+        clearInterval(streamDrainTimerRef.current);
+        streamDrainTimerRef.current = null;
+      }
+    };
+  }, [isLoading]);
 
   const handleSend = async () => {
     const text = input.trim();
@@ -205,6 +283,11 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
     setIsLoading(true);
     setStreamingContent("");
     setStreamStatus("Sending request...");
+    streamQueueRef.current = "";
+    if (streamFinalizeTimerRef.current) {
+      clearTimeout(streamFinalizeTimerRef.current);
+      streamFinalizeTimerRef.current = null;
+    }
 
     const request = {
       requestId,
@@ -219,26 +302,41 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
     };
 
     try {
+      let conversationIdToRefresh: number | null = null;
       if (activeConversationId) {
-        await api.ai.chat.continue(request);
+        const done = await api.ai.chat.continue(request);
+        conversationIdToRefresh = done.conversationId;
       } else {
         const started = await api.ai.chat.start(request);
         setActiveConversationId(started.conversationId);
+        conversationIdToRefresh = started.conversationId;
       }
 
-      if (!isTauri()) {
+      // Tauri event can be missed in edge cases; invoke result is a reliable fallback.
+      if (conversationIdToRefresh !== null) {
+        await reloadConversations();
+        await loadConversation(conversationIdToRefresh);
+      }
+
+      if (!isTauri() || requestIdRef.current === requestId) {
         setIsLoading(false);
         setStreamingContent("");
         setStreamStatus("");
-        reloadConversations();
-        if (activeConversationId) {
-          loadConversation(activeConversationId);
+        streamQueueRef.current = "";
+        if (streamFinalizeTimerRef.current) {
+          clearTimeout(streamFinalizeTimerRef.current);
+          streamFinalizeTimerRef.current = null;
         }
       }
     } catch (e) {
       setIsLoading(false);
       setStreamingContent("");
       setStreamStatus("");
+      streamQueueRef.current = "";
+      if (streamFinalizeTimerRef.current) {
+        clearTimeout(streamFinalizeTimerRef.current);
+        streamFinalizeTimerRef.current = null;
+      }
       if (!errorNotifiedRef.current) {
         toast.error("Failed to send AI message", {
           id: "ai-request-error",
