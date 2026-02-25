@@ -161,23 +161,35 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
   useEffect(() => {
     if (!isTauri()) return;
 
-    let unlistenChunk: (() => void) | undefined;
-    let unlistenStarted: (() => void) | undefined;
-    let unlistenDone: (() => void) | undefined;
-    let unlistenError: (() => void) | undefined;
+    let disposed = false;
+    const unlistenFns: Array<() => void> = [];
 
-    listen<AiStartedPayload>("ai.started", (evt) => {
+    const registerListener = <T,>(event: string, handler: (evt: { payload: T }) => void) => {
+      void listen<T>(event, handler)
+        .then((unlisten) => {
+          if (disposed) {
+            unlisten();
+            return;
+          }
+          unlistenFns.push(unlisten);
+        })
+        .catch((error) => {
+          console.error(`Failed to register listener for ${event}`, error);
+        });
+    };
+
+    registerListener<AiStartedPayload>("ai.started", (evt) => {
       if (evt.payload.requestId !== requestIdRef.current) return;
       setStreamStatus(`Request sent (${evt.payload.model}), waiting for first token...`);
-    }).then((f) => (unlistenStarted = f));
+    });
 
-    listen<AiChunkPayload>("ai.chunk", (evt) => {
+    registerListener<AiChunkPayload>("ai.chunk", (evt) => {
       if (evt.payload.requestId !== requestIdRef.current) return;
       setStreamStatus("Receiving response...");
       streamQueueRef.current += evt.payload.chunk;
-    }).then((f) => (unlistenChunk = f));
+    });
 
-    listen<AiDonePayload>("ai.done", (evt) => {
+    registerListener<AiDonePayload>("ai.done", (evt) => {
       if (evt.payload.requestId !== requestIdRef.current) return;
       setStreamStatus("Finalizing response...");
       setActiveConversationId(evt.payload.conversationId);
@@ -199,9 +211,9 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
         setStreamStatus("");
       };
       finish();
-    }).then((f) => (unlistenDone = f));
+    });
 
-    listen<AiErrorPayload>("ai.error", (evt) => {
+    registerListener<AiErrorPayload>("ai.error", (evt) => {
       if (evt.payload.requestId !== requestIdRef.current) return;
       setIsLoading(false);
       setStreamingContent("");
@@ -216,13 +228,13 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
         id: "ai-request-error",
         description: evt.payload.error,
       });
-    }).then((f) => (unlistenError = f));
+    });
 
     return () => {
-      if (unlistenChunk) unlistenChunk();
-      if (unlistenStarted) unlistenStarted();
-      if (unlistenDone) unlistenDone();
-      if (unlistenError) unlistenError();
+      disposed = true;
+      for (const unlisten of unlistenFns) {
+        unlisten();
+      }
       if (streamFinalizeTimerRef.current) {
         clearTimeout(streamFinalizeTimerRef.current);
         streamFinalizeTimerRef.current = null;
