@@ -6,6 +6,10 @@ import {
   TestConnectionResult,
   SavedQuery,
   ExportResult,
+  AIProviderConfig,
+  AIProviderType,
+  AIConversation,
+  AIConversationDetail,
 } from "./api";
 
 /**
@@ -262,6 +266,86 @@ export const mockQueryResult: QueryResult = {
   timeTakenMs: 45,
   success: true,
 };
+
+const mockAiProviders: AIProviderConfig[] = [
+  {
+    id: 1,
+    name: "OpenAI",
+    providerType: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4.1-mini",
+    apiKey: "sk-mock",
+    isDefault: true,
+    enabled: true,
+    extraJson: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+const mockAiConversations: AIConversation[] = [
+  {
+    id: 1,
+    title: "Generate User Table",
+    scenario: "sql_generate",
+    connectionId: 1,
+    database: "testdb",
+    createdAt: new Date(Date.now() - 86400000).toISOString(),
+    updatedAt: new Date(Date.now() - 86400000).toISOString(),
+  },
+  {
+    id: 2,
+    title: "Optimize Query",
+    scenario: "sql_optimize",
+    connectionId: 1,
+    database: "testdb",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+const mockAiMessages: Record<number, AIConversationDetail["messages"]> = {
+  1: [
+    {
+      id: 1,
+      conversationId: 1,
+      role: "user",
+      content: "Create a user table with id, name, and email.",
+      createdAt: new Date(Date.now() - 86400000).toISOString(),
+    },
+    {
+      id: 2,
+      conversationId: 1,
+      role: "assistant",
+      content:
+        "```sql\nCREATE TABLE users (\n  id SERIAL PRIMARY KEY,\n  name VARCHAR(255) NOT NULL,\n  email VARCHAR(255) NOT NULL UNIQUE\n);\n```",
+      model: "gpt-4",
+      createdAt: new Date(Date.now() - 86400000 + 1000).toISOString(),
+    },
+  ],
+  2: [
+    {
+      id: 3,
+      conversationId: 2,
+      role: "user",
+      content:
+        "Optimize this query: SELECT * FROM logs WHERE created_at > '2023-01-01'",
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 4,
+      conversationId: 2,
+      role: "assistant",
+      content:
+        "To optimize this query, consider adding an index on `created_at` column.\n\n```sql\nCREATE INDEX idx_logs_created_at ON logs(created_at);\n```",
+      model: "gpt-4",
+      createdAt: new Date(Date.now() + 2000).toISOString(),
+    },
+  ],
+};
+
+const isAIProviderType = (value: string): value is AIProviderType =>
+  value === "openai" || value === "kimi" || value === "glm";
 
 const mockDDL = `CREATE TABLE public.users (
   id integer NOT NULL,
@@ -805,6 +889,151 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
 
     case "export_query_result":
       return mockExportQueryResult(args) as Promise<T>;
+
+    case "ai_list_providers":
+      return Promise.resolve([...mockAiProviders]) as Promise<T>;
+
+    case "ai_create_provider": {
+      const requestedType = String(args.config.providerType || "openai");
+      if (!isAIProviderType(requestedType)) {
+        throw new Error("providerType must be one of: openai, kimi, glm");
+      }
+
+      const now = new Date().toISOString();
+      const isDefault = args.config.isDefault ?? true;
+      if (isDefault) {
+        mockAiProviders.forEach((p) => (p.isDefault = false));
+      }
+
+      const idx = mockAiProviders.findIndex((p) => p.providerType === requestedType);
+      if (idx >= 0) {
+        mockAiProviders[idx] = {
+          ...mockAiProviders[idx],
+          ...args.config,
+          providerType: requestedType,
+          enabled: args.config.enabled ?? true,
+          isDefault,
+          updatedAt: now,
+        };
+        return Promise.resolve(mockAiProviders[idx]) as Promise<T>;
+      }
+
+      const id = mockAiProviders.length
+        ? Math.max(...mockAiProviders.map((p) => p.id)) + 1
+        : 1;
+      const created: AIProviderConfig = {
+        id,
+        providerType: requestedType,
+        isDefault,
+        enabled: args.config.enabled ?? true,
+        extraJson: args.config.extraJson ?? null,
+        createdAt: now,
+        updatedAt: now,
+        ...args.config,
+      };
+      mockAiProviders.push(created);
+      return Promise.resolve(created) as Promise<T>;
+    }
+
+    case "ai_update_provider": {
+      const idx = mockAiProviders.findIndex((p) => p.id === args.id);
+      if (idx < 0) throw new Error("Provider not found");
+      const requestedType = String(
+        args.config.providerType || mockAiProviders[idx].providerType
+      );
+      if (!isAIProviderType(requestedType)) {
+        throw new Error("providerType must be one of: openai, kimi, glm");
+      }
+      const conflict = mockAiProviders.find(
+        (p) => p.providerType === requestedType && p.id !== args.id
+      );
+      if (conflict) {
+        throw new Error("UNIQUE constraint failed: ai_providers.provider_type");
+      }
+      if (args.config.isDefault) {
+        mockAiProviders.forEach((p) => (p.isDefault = false));
+      }
+      mockAiProviders[idx] = {
+        ...mockAiProviders[idx],
+        ...args.config,
+        providerType: requestedType,
+        updatedAt: new Date().toISOString(),
+      };
+      return Promise.resolve(mockAiProviders[idx]) as Promise<T>;
+    }
+
+    case "ai_delete_provider": {
+      const idx = mockAiProviders.findIndex((p) => p.id === args.id);
+      if (idx >= 0) mockAiProviders.splice(idx, 1);
+      return Promise.resolve(undefined) as Promise<T>;
+    }
+
+    case "ai_set_default_provider": {
+      mockAiProviders.forEach((p) => (p.isDefault = p.id === args.id));
+      return Promise.resolve(undefined) as Promise<T>;
+    }
+
+    case "ai_list_conversations":
+      return Promise.resolve([...mockAiConversations]) as Promise<T>;
+
+    case "ai_get_conversation": {
+      const c = mockAiConversations.find((x) => x.id === args.conversationId);
+      if (!c) throw new Error("Conversation not found");
+      return Promise.resolve({
+        conversation: c,
+        messages: mockAiMessages[c.id] || [],
+      }) as Promise<T>;
+    }
+
+    case "ai_delete_conversation": {
+      const idx = mockAiConversations.findIndex((x) => x.id === args.conversationId);
+      if (idx >= 0) mockAiConversations.splice(idx, 1);
+      delete mockAiMessages[args.conversationId];
+      return Promise.resolve(undefined) as Promise<T>;
+    }
+
+    case "ai_chat_start":
+    case "ai_chat_continue": {
+      const input = args.request.input as string;
+      let conversationId = args.request.conversationId as number | undefined;
+      if (!conversationId) {
+        conversationId = mockAiConversations.length
+          ? Math.max(...mockAiConversations.map((x) => x.id)) + 1
+          : 1;
+        mockAiConversations.unshift({
+          id: conversationId,
+          title: args.request.title || input.slice(0, 20),
+          scenario: args.request.scenario || "sql_generate",
+          connectionId: args.request.connectionId || null,
+          database: args.request.database || null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      const msgs = mockAiMessages[conversationId] || [];
+      const now = new Date().toISOString();
+      msgs.push({
+        id: msgs.length + 1,
+        conversationId,
+        role: "user",
+        content: input,
+        createdAt: now,
+      } as any);
+      msgs.push({
+        id: msgs.length + 1,
+        conversationId,
+        role: "assistant",
+        content: `SELECT * FROM users -- mock response for: ${input}`,
+        model: "mock-model",
+        createdAt: now,
+      } as any);
+      mockAiMessages[conversationId] = msgs;
+      return Promise.resolve({
+        conversationId,
+        userMessageId: msgs[msgs.length - 2].id,
+        assistantMessageId: msgs[msgs.length - 1].id,
+      }) as Promise<T>;
+    }
 
     default:
       console.warn(`[Mock] Unknown command: ${cmd}`);

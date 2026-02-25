@@ -383,7 +383,7 @@ export default function App() {
         schema,
         table,
         page: 1,
-        limit: 50,
+        limit: 100,
       });
       const columns = resp.data.length > 0 ? Object.keys(resp.data[0]) : [];
       const newTab: TabItem = {
@@ -415,7 +415,7 @@ export default function App() {
     schema: string;
     table: string;
     driver: string;
-  }, format: "csv" | "json" | "sql") => {
+  }, format: "csv" | "json" | "sql", filePath: string) => {
     try {
       const result = await api.transfer.exportTable({
         id: ctx.connectionId,
@@ -425,6 +425,7 @@ export default function App() {
         driver: ctx.driver,
         format,
         scope: "full_table",
+        filePath,
       });
       toast.success(`Export completed (${result.rowCount} rows)`, {
         description: result.filePath,
@@ -473,7 +474,7 @@ export default function App() {
         schema: schema || "public",
         table: tab.tableName,
         page,
-        limit: tab.pageSize || 50,
+        limit: tab.pageSize || 100,
         filter: tab.filter,
         sortColumn: tab.sortColumn,
         sortDirection: tab.sortDirection,
@@ -497,6 +498,42 @@ export default function App() {
     }
   };
 
+  const handlePageSizeChange = async (tabId: string, pageSize: number) => {
+    const tab = tabs.find((t) => t.id === tabId);
+    if (!tab || !tab.connectionId || !tab.driver || !tab.tableName) return;
+
+    try {
+      const schema = tab.driver === "mysql" ? tab.database : "public";
+      const resp = await api.tableData.get({
+        id: tab.connectionId,
+        schema: schema || "public",
+        table: tab.tableName,
+        page: 1,
+        limit: pageSize,
+        filter: tab.filter,
+        sortColumn: tab.sortColumn,
+        sortDirection: tab.sortDirection,
+        orderBy: tab.orderBy,
+      });
+
+      setTabs((prev) =>
+        prev.map((t) => {
+          if (t.id !== tabId) return t;
+          return {
+            ...t,
+            data: resp.data,
+            total: resp.total,
+            page: resp.page,
+            pageSize: resp.limit,
+            executionTimeMs: resp.executionTimeMs,
+          };
+        }),
+      );
+    } catch (e) {
+      console.error("handlePageSizeChange failed", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const handleSortChange = async (tabId: string, column: string, direction: "asc" | "desc") => {
     const tab = tabs.find((t) => t.id === tabId);
     if (!tab || !tab.connectionId || !tab.driver || !tab.tableName) return;
@@ -516,7 +553,7 @@ export default function App() {
         schema: schema || "public",
         table: tab.tableName,
         page: 1, // Reset to first page on sort change
-        limit: tab.pageSize || 50,
+        limit: tab.pageSize || 100,
         filter: tab.filter,
         sortColumn: column,
         sortDirection: direction,
@@ -561,7 +598,7 @@ export default function App() {
         schema: schema || "public",
         table: tab.tableName,
         page: 1, // Reset to first page on filter change
-        limit: tab.pageSize || 50,
+        limit: tab.pageSize || 100,
         filter: filter || undefined,
         sortColumn: tab.sortColumn,
         sortDirection: tab.sortDirection,
@@ -669,6 +706,8 @@ export default function App() {
     };
   }, [activeTab, tabs]);
 
+  const activeTabItem = tabs.find((t) => t.id === activeTab);
+
   return (
     <div className="h-screen w-screen flex flex-col bg-muted/30">
       {!isFullscreen && (
@@ -691,9 +730,18 @@ export default function App() {
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
-        <ResizablePanelGroup direction="horizontal">
+        <ResizablePanelGroup
+          direction="horizontal"
+          autoSaveId={aiVisible ? "main-layout-with-ai" : "main-layout"}
+        >
           {/* Left Sidebar - Database Connections */}
-          <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
+          <ResizablePanel
+            id="left-sidebar"
+            order={1}
+            defaultSize={20}
+            minSize={15}
+            maxSize={30}
+          >
             <Sidebar
               onTableSelect={handleTableSelect}
               onConnect={() => { }}
@@ -707,7 +755,7 @@ export default function App() {
           <ResizableHandle />
 
           {/* Main Panel - SQL Editor & Results */}
-          <ResizablePanel defaultSize={60} minSize={40}>
+          <ResizablePanel id="main-panel" order={2} defaultSize={60} minSize={40}>
             <Tabs
               value={activeTab}
               onValueChange={setActiveTab}
@@ -854,6 +902,9 @@ export default function App() {
                           pageSize={tab.pageSize}
                           executionTimeMs={tab.executionTimeMs}
                           onPageChange={(p) => handlePageChange(tab.id, p)}
+                          onPageSizeChange={(size) =>
+                            handlePageSizeChange(tab.id, size)
+                          }
                           sortColumn={tab.sortColumn}
                           sortDirection={tab.sortDirection}
                           onSortChange={(col, dir) =>
@@ -903,8 +954,18 @@ export default function App() {
 
           {/* Right Sidebar - AI Assistant */}
           {aiVisible && (
-            <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
-              <AISidebar />
+            <ResizablePanel
+              id="ai-sidebar"
+              order={3}
+              defaultSize={20}
+              minSize={20}
+              maxSize={40}
+            >
+              <AISidebar
+                connectionId={activeTabItem?.connectionId}
+                database={activeTabItem?.database}
+                schemaOverview={activeTabItem?.schemaOverview}
+              />
             </ResizablePanel>
           )}
         </ResizablePanelGroup>

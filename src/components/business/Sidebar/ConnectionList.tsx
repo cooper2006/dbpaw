@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { save } from "@tauri-apps/plugin-dialog";
 import {
   Database,
   Server,
@@ -17,6 +18,7 @@ import {
   Search,
   Download,
 } from "lucide-react";
+import { siMysql, siPostgresql, siSqlite, type SimpleIcon } from "simple-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -46,8 +48,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { api } from "@/services/api";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { api, isTauri } from "@/services/api";
 import type { ConnectionForm, Driver } from "@/services/api";
+import { toast } from "sonner";
 
 interface Column {
   name: string;
@@ -102,6 +111,38 @@ const defaultForm: ConnectionForm = {
   sshUsername: "root",
 };
 
+const renderSimpleIcon = (icon: SimpleIcon) => (
+  <svg
+    viewBox="0 0 24 24"
+    width="16"
+    height="16"
+    aria-hidden="true"
+    className="shrink-0"
+    role="img"
+  >
+    <path d={icon.path} fill="currentColor" />
+  </svg>
+);
+
+const getConnectionIcon = (driver: Driver | string): React.ReactNode => {
+  const normalized = String(driver || "").trim().toLowerCase();
+
+  switch (normalized) {
+    case "postgres":
+    case "postgresql":
+    case "pgsql":
+      return renderSimpleIcon(siPostgresql);
+    case "mysql":
+    case "mariadb":
+      return renderSimpleIcon(siMysql);
+    case "sqlite":
+    case "sqlite3":
+      return renderSimpleIcon(siSqlite);
+    default:
+      return <Server className="w-4 h-4" />;
+  }
+};
+
 interface TreeNodeProps {
   level: number;
   children: React.ReactNode;
@@ -109,6 +150,7 @@ interface TreeNodeProps {
   label: string;
   isExpanded?: boolean;
   onToggle?: () => void;
+  toggleOnRowClick?: boolean;
   onDoubleClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   actions?: React.ReactNode;
@@ -121,6 +163,7 @@ const TreeNode = ({
   label,
   isExpanded,
   onToggle,
+  toggleOnRowClick = true,
   onDoubleClick,
   onContextMenu,
   actions,
@@ -132,18 +175,25 @@ const TreeNode = ({
       <div
         className="flex items-center gap-1 px-2 py-1 hover:bg-accent cursor-pointer group select-none"
         style={{ paddingLeft: `${level * 12 + 8}px` }}
-        onClick={onToggle}
+        onClick={toggleOnRowClick ? onToggle : undefined}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
       >
         {hasChildren && (
-          <span className="text-muted-foreground">
+          <button
+            type="button"
+            className="text-muted-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle?.();
+            }}
+          >
             {isExpanded ? (
               <ChevronDown className="w-4 h-4" />
             ) : (
               <ChevronRight className="w-4 h-4" />
             )}
-          </span>
+          </button>
         )}
         {!hasChildren && <span className="w-4" />}
         <span className="text-muted-foreground">{icon}</span>
@@ -177,7 +227,7 @@ interface ConnectionListProps {
     schema: string;
     table: string;
     driver: string;
-  }, format: "csv" | "json" | "sql") => void;
+  }, format: "csv" | "json" | "sql", filePath: string) => void;
 }
 
 export function ConnectionList({
@@ -200,10 +250,7 @@ export function ConnectionList({
     y: number;
     connectionId: string | null;
     databaseName?: string | null;
-    schema?: string | null;
-    tableName?: string | null;
-    driver?: Driver;
-    type: "connection" | "database" | "table";
+    type: "connection" | "database";
   }>({ visible: false, x: 0, y: 0, connectionId: null, type: "connection" });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
@@ -663,6 +710,61 @@ export function ConnectionList({
     }
   };
 
+  const getExportDefaultName = (tableName: string, format: "csv" | "json" | "sql") => {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    return `${tableName}_${timestamp}.${format}`;
+  };
+
+  const getExportFilter = (format: "csv" | "json" | "sql") => {
+    if (format === "csv") {
+      return [{ name: "CSV", extensions: ["csv"] }];
+    }
+    if (format === "json") {
+      return [{ name: "JSON", extensions: ["json"] }];
+    }
+    return [{ name: "SQL", extensions: ["sql"] }];
+  };
+
+  const handleTableExport = async (
+    connection: Connection,
+    database: DatabaseInfo,
+    table: TableInfo,
+    format: "csv" | "json" | "sql",
+  ) => {
+    if (!onExportTable) return;
+    if (!isTauri()) {
+      toast.error("Export dialog is only available in Tauri desktop mode.");
+      return;
+    }
+
+    try {
+      const selected = await save({
+        title: "Save Export File",
+        defaultPath: getExportDefaultName(table.name, format),
+        filters: getExportFilter(format),
+      });
+      if (!selected) return;
+      const filePath = Array.isArray(selected) ? selected[0] : selected;
+      if (!filePath) return;
+
+      onExportTable(
+        {
+          connectionId: Number(connection.id),
+          database: database.name,
+          schema: table.schema,
+          table: table.name,
+          driver: connection.type,
+        },
+        format,
+        filePath,
+      );
+    } catch (e) {
+      toast.error("Failed to open save dialog", {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
+
   return (
     <div className="h-full flex flex-col bg-background border-r border-border">
       <div className="px-2 py-1 border-b border-border flex items-center justify-between h-8">
@@ -1046,7 +1148,7 @@ export function ConnectionList({
           <TreeNode
             key={connection.id}
             level={0}
-            icon={<Server className="w-4 h-4" />}
+            icon={getConnectionIcon(connection.type)}
             label={connection.name}
             isExpanded={expandedConnections.has(connection.id)}
             onToggle={() => toggleConnection(connection.id)}
@@ -1092,73 +1194,90 @@ export function ConnectionList({
                       {database.tables.map((table) => {
                         const tableKey = `${dbKey}-${table.name}`;
                         return (
-                          <TreeNode
-                            key={tableKey}
-                            level={2}
-                            icon={<Table className="w-4 h-4" />}
-                            label={table.name}
-                            isExpanded={expandedTables.has(tableKey)}
-                            onToggle={() => {
-                              toggleTable(tableKey, connection.id, database.name, table);
-                            }}
-                            onDoubleClick={() => {
-                              handleTableClick(connection, database, table);
-                            }}
-                            onContextMenu={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setContextMenu({
-                                visible: true,
-                                x: e.clientX,
-                                y: e.clientY,
-                                connectionId: connection.id,
-                                databaseName: database.name,
-                                schema: table.schema,
-                                tableName: table.name,
-                                driver: connection.type,
-                                type: "table",
-                              });
-                            }}
-                            actions={
-                              <div onClick={(e) => e.stopPropagation()}>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 w-6 p-0"
-                                  onClick={() =>
-                                    handleTableClick(
-                                      connection,
-                                      database,
-                                      table,
-                                    )
+                          <ContextMenu key={tableKey}>
+                            <ContextMenuTrigger asChild>
+                              <div>
+                                <TreeNode
+                                  level={2}
+                                  icon={<Table className="w-4 h-4" />}
+                                  label={table.name}
+                                  isExpanded={expandedTables.has(tableKey)}
+                                  toggleOnRowClick={false}
+                                  onToggle={() => {
+                                    toggleTable(tableKey, connection.id, database.name, table);
+                                  }}
+                                  onDoubleClick={() => {
+                                    handleTableClick(connection, database, table);
+                                  }}
+                                  actions={
+                                    <div onClick={(e) => e.stopPropagation()}>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={() =>
+                                          handleTableClick(
+                                            connection,
+                                            database,
+                                            table,
+                                          )
+                                        }
+                                      >
+                                        <Play className="w-3 h-3" />
+                                      </Button>
+                                    </div>
                                   }
                                 >
-                                  <Play className="w-3 h-3" />
-                                </Button>
+                                  {table.columns.map((column) => (
+                                    <div
+                                      key={column.name}
+                                      className="flex items-center gap-1 px-2 py-1 hover:bg-accent text-xs"
+                                      style={{ paddingLeft: `${3 * 12 + 8}px` }}
+                                    >
+                                      <span className="w-4" />
+                                      {column.isPrimaryKey ? (
+                                        <Key className="w-3 h-3 text-yellow-600 shrink-0" />
+                                      ) : (
+                                        <span className="w-3 shrink-0" />
+                                      )}
+                                      <span className="flex-1 truncate text-foreground">
+                                        {column.name}
+                                      </span>
+                                      <span className="text-muted-foreground text-xs shrink-0">
+                                        {column.type}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </TreeNode>
                               </div>
-                            }
-                          >
-                            {table.columns.map((column) => (
-                              <div
-                                key={column.name}
-                                className="flex items-center gap-1 px-2 py-1 hover:bg-accent text-xs"
-                                style={{ paddingLeft: `${3 * 12 + 8}px` }}
+                            </ContextMenuTrigger>
+                            <ContextMenuContent>
+                              <ContextMenuItem
+                                onClick={() =>
+                                  void handleTableExport(connection, database, table, "csv")
+                                }
                               >
-                                <span className="w-4" />
-                                {column.isPrimaryKey ? (
-                                  <Key className="w-3 h-3 text-yellow-600 shrink-0" />
-                                ) : (
-                                  <span className="w-3 shrink-0" />
-                                )}
-                                <span className="flex-1 truncate text-foreground">
-                                  {column.name}
-                                </span>
-                                <span className="text-muted-foreground text-xs shrink-0">
-                                  {column.type}
-                                </span>
-                              </div>
-                            ))}
-                          </TreeNode>
+                                <Download className="w-4 h-4 mr-2" />
+                                Export as CSV
+                              </ContextMenuItem>
+                              <ContextMenuItem
+                                onClick={() =>
+                                  void handleTableExport(connection, database, table, "json")
+                                }
+                              >
+                                <Download className="w-4 h-4 mr-2" />
+                                Export as JSON
+                              </ContextMenuItem>
+                              <ContextMenuItem
+                                onClick={() =>
+                                  void handleTableExport(connection, database, table, "sql")
+                                }
+                              >
+                                <Download className="w-4 h-4 mr-2" />
+                                Export as SQL
+                              </ContextMenuItem>
+                            </ContextMenuContent>
+                          </ContextMenu>
                         );
                       })}
                     </TreeNode>
@@ -1248,82 +1367,7 @@ export function ConnectionList({
               <FileCode className="w-4 h-4" />
               New Query
             </button>
-          ) : (
-            <>
-              <button
-                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
-                onClick={() => {
-                  if (
-                    onExportTable &&
-                    contextMenu.connectionId &&
-                    contextMenu.databaseName &&
-                    contextMenu.schema &&
-                    contextMenu.tableName
-                  ) {
-                    onExportTable({
-                      connectionId: Number(contextMenu.connectionId),
-                      database: contextMenu.databaseName,
-                      schema: contextMenu.schema,
-                      table: contextMenu.tableName,
-                      driver: contextMenu.driver || "postgres",
-                    }, "csv");
-                  }
-                  setContextMenu((prev) => ({ ...prev, visible: false }));
-                }}
-              >
-                <Download className="w-4 h-4" />
-                Export as CSV
-              </button>
-              <button
-                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
-                onClick={() => {
-                  if (
-                    onExportTable &&
-                    contextMenu.connectionId &&
-                    contextMenu.databaseName &&
-                    contextMenu.schema &&
-                    contextMenu.tableName
-                  ) {
-                    onExportTable({
-                      connectionId: Number(contextMenu.connectionId),
-                      database: contextMenu.databaseName,
-                      schema: contextMenu.schema,
-                      table: contextMenu.tableName,
-                      driver: contextMenu.driver || "postgres",
-                    }, "json");
-                  }
-                  setContextMenu((prev) => ({ ...prev, visible: false }));
-                }}
-              >
-                <Download className="w-4 h-4" />
-                Export as JSON
-              </button>
-              <button
-                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
-                onClick={() => {
-                  if (
-                    onExportTable &&
-                    contextMenu.connectionId &&
-                    contextMenu.databaseName &&
-                    contextMenu.schema &&
-                    contextMenu.tableName
-                  ) {
-                    onExportTable({
-                      connectionId: Number(contextMenu.connectionId),
-                      database: contextMenu.databaseName,
-                      schema: contextMenu.schema,
-                      table: contextMenu.tableName,
-                      driver: contextMenu.driver || "postgres",
-                    }, "sql");
-                  }
-                  setContextMenu((prev) => ({ ...prev, visible: false }));
-                }}
-              >
-                <Download className="w-4 h-4" />
-                Export as SQL
-              </button>
-            </>
-          )}
+          ) : null}
         </div>
       )}
       <AlertDialog
