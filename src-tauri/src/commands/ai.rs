@@ -200,7 +200,23 @@ async fn run_chat(
     );
 
     let mut history: Vec<AiChatMessage> = Vec::new();
-    let mut existing = db.list_ai_messages(conversation.id).await.unwrap_or_default();
+    let mut existing = match db.list_ai_messages(conversation.id).await {
+        Ok(messages) => messages,
+        Err(e) => {
+            eprintln!(
+                "[AI_HISTORY_LOAD_ERROR] Failed to load messages for conversation {}: {}",
+                conversation.id, e
+            );
+            let client_error = "Failed to load conversation history".to_string();
+            emit_ai_error(
+                &app,
+                request.request_id.clone(),
+                Some(conversation.id),
+                client_error.clone(),
+            );
+            return Err(client_error);
+        }
+    };
     if existing.len() > 16 {
         existing = existing.split_off(existing.len() - 16);
     }
