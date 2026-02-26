@@ -1,16 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Send, Sparkles, Plus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Sparkles, Plus } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   api,
   AIConversation,
@@ -21,8 +12,9 @@ import {
 } from "@/services/api";
 import { isModKey } from "@/lib/keyboard";
 import { toast } from "sonner";
-import { AIMarkdownMessage } from "./AIMarkdownMessage";
 import { AIHistoryPopover } from "./AIHistoryPopover";
+import { ChatComposer } from "./chat/ChatComposer";
+import { ChatMessageList } from "./chat/ChatMessageList";
 
 interface AISidebarProps {
   connectionId?: number;
@@ -370,7 +362,7 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== "Enter") return;
     if (e.shiftKey && !isModKey(e)) return;
     e.preventDefault();
@@ -418,74 +410,25 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <ScrollArea className="h-full">
-          <div className="space-y-5 px-4 py-4">
-            {messages.map((message) => (
-              <div key={`${message.id}-${message.createdAt}`}>
-                {message.role === "user" ? (
-                  <div className="ml-auto max-w-[86%] rounded-xl border border-border/80 bg-muted/40 px-3 py-2">
-                    <div className="whitespace-pre-wrap text-sm leading-6 text-foreground">
-                      {message.content}
-                    </div>
-                  </div>
-                ) : (
-                  <AIMarkdownMessage
-                    content={message.content}
-                    className="max-w-[92%] rounded-md border border-border/50 bg-background/80 px-1"
-                  />
-                )}
-              </div>
-            ))}
+      <ChatMessageList
+        messages={messages}
+        isLoading={isLoading}
+        streamingContent={streamingContent}
+        streamStatus={streamStatus}
+      />
 
-            {isLoading && (
-              <div className="max-w-[92%]">
-                <AIMarkdownMessage content={streamingContent || streamStatus || "Thinking..."} />
-              </div>
-            )}
-          </div>
-        </ScrollArea>
-      </div>
-
-      <div className="shrink-0 border-t border-border/70 p-3">
-        <div className="rounded-xl border border-border/80 bg-muted/20 p-2">
-          <Textarea
-            placeholder="Describe SQL to generate or optimize..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="min-h-[84px] resize-none border-0 bg-transparent px-2 py-1 shadow-none focus-visible:ring-0"
-            rows={3}
-          />
-          <div className="mt-2 flex items-center justify-between gap-2 border-t border-border/70 px-1 pt-2">
-            <Select value={selectedProviderId} onValueChange={setSelectedProviderId}>
-              <SelectTrigger className="h-8 w-full max-w-[72%] border-border/70 bg-background text-xs">
-                <SelectValue placeholder="Select AI provider" />
-              </SelectTrigger>
-              <SelectContent align="start">
-                {providers.map((p) => (
-                  <SelectItem key={p.id} value={String(p.id)}>
-                    {p.name} / {p.model}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              onClick={() => {
-                void handleSend();
-              }}
-              disabled={!input.trim() || isLoading || !selectedProviderId}
-              size="icon"
-              className="h-8 w-8 rounded-lg"
-              title="Send"
-              aria-label="Send message"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
+      <ChatComposer
+        input={input}
+        onInputChange={setInput}
+        onKeyDown={handleKeyDown}
+        onSend={() => {
+          void handleSend();
+        }}
+        isLoading={isLoading}
+        providers={providers}
+        selectedProviderId={selectedProviderId}
+        onProviderChange={setSelectedProviderId}
+      />
     </div>
   );
 }
