@@ -108,7 +108,7 @@ export function SqlEditor({
   initialDescription,
   onSaveSuccess,
 }: SqlEditorProps) {
-  const [internalSql, setInternalSql] = useState("-- Enter your SQL query here\n");
+  const [internalSql, setInternalSql] = useState("");
   const { theme } = useTheme();
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
