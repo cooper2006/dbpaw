@@ -143,6 +143,9 @@ const getConnectionIcon = (driver: Driver | string): React.ReactNode => {
   }
 };
 
+const sanitizeConnectionErrorMessage = (message: string) =>
+  message.replace(/^(?:\s*\[[^\]]+\])+\s*/g, "").trim();
+
 interface TreeNodeProps {
   level: number;
   children: React.ReactNode;
@@ -260,7 +263,6 @@ export function ConnectionList({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteTargetConnectionId, setDeleteTargetConnectionId] = useState<string | null>(null);
-  const [connectionErrors, setConnectionErrors] = useState<Record<string, string>>({});
   const [testMsg, setTestMsg] = useState<{
     ok: boolean;
     text: string;
@@ -348,7 +350,6 @@ export function ConnectionList({
       );
       setExpandedConnections(new Set());
       setExpandedDatabases(new Set());
-      setConnectionErrors({});
     } catch (e) {
       console.error("listConnections failed", e instanceof Error ? e.message : String(e));
     }
@@ -386,19 +387,11 @@ export function ConnectionList({
           };
         }),
       );
-      setConnectionErrors((prev) => {
-        const next = { ...prev };
-        delete next[connectionId];
-        return next;
-      });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      const sanitizedMessage = sanitizeConnectionErrorMessage(message);
       console.error("listDatabasesById failed", message);
-      setConnectionErrors((prev) => ({
-        ...prev,
-        [connectionId]: message,
-      }));
-      toast.error("Failed to load databases", { description: message });
+      toast.error("Failed to load databases", { description: sanitizedMessage || message });
     }
   };
 
@@ -1295,32 +1288,7 @@ export function ConnectionList({
                     );
                   })}
               </>
-            ) : (
-              <>
-                <div
-                  className="px-2 py-1 text-xs text-gray-500"
-                  style={{ paddingLeft: "32px" }}
-                >
-                  Not connected
-                </div>
-                {connectionErrors[connection.id] && (
-                  <div
-                    className="px-2 pb-2 text-xs text-destructive space-y-1"
-                    style={{ paddingLeft: "32px" }}
-                  >
-                    <div>Failed to load databases: {connectionErrors[connection.id]}</div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void handleReconnect(connection.id)}
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                )}
-              </>
-            )}
+            ) : null}
           </TreeNode>
         ))}
       </div>
