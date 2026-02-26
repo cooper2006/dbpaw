@@ -260,6 +260,7 @@ export function ConnectionList({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteTargetConnectionId, setDeleteTargetConnectionId] = useState<string | null>(null);
+  const [connectionErrors, setConnectionErrors] = useState<Record<string, string>>({});
   const [testMsg, setTestMsg] = useState<{
     ok: boolean;
     text: string;
@@ -347,6 +348,7 @@ export function ConnectionList({
       );
       setExpandedConnections(new Set());
       setExpandedDatabases(new Set());
+      setConnectionErrors({});
     } catch (e) {
       console.error("listConnections failed", e instanceof Error ? e.message : String(e));
     }
@@ -384,8 +386,19 @@ export function ConnectionList({
           };
         }),
       );
+      setConnectionErrors((prev) => {
+        const next = { ...prev };
+        delete next[connectionId];
+        return next;
+      });
     } catch (e) {
-      console.error("listDatabasesById failed", e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      console.error("listDatabasesById failed", message);
+      setConnectionErrors((prev) => ({
+        ...prev,
+        [connectionId]: message,
+      }));
+      toast.error("Failed to load databases", { description: message });
     }
   };
 
@@ -809,16 +822,6 @@ export function ConnectionList({
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="name">Connection Name</Label>
-                    <Input
-                      id="name"
-                      value={form.name || ""}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, name: e.target.value }))
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-2">
                     <Label htmlFor="type">Database Type</Label>
                     <Select
                       value={form.driver}
@@ -844,6 +847,16 @@ export function ConnectionList({
                         <SelectItem value="sqlite">SQLite</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="name">Connection Name</Label>
+                    <Input
+                      id="name"
+                      value={form.name || ""}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, name: e.target.value }))
+                      }
+                    />
                   </div>
                   {!isSqlite && (
                     <>
@@ -1134,7 +1147,6 @@ export function ConnectionList({
           />
         </div>
       </div>
-
       <div
         className="flex-1 overflow-auto"
         onClick={() => setContextMenu((prev) => ({ ...prev, visible: false }))}
@@ -1170,7 +1182,11 @@ export function ConnectionList({
                         key={dbKey}
                         level={1}
                         icon={<Database className="w-4 h-4" />}
-                        label={database.name}
+                        label={
+                          connection.type === "sqlite" && database.name === "main"
+                            ? "main (SQLite)"
+                            : database.name
+                        }
                         isExpanded={expandedDatabases.has(dbKey)}
                         onToggle={() => toggleDatabase(dbKey)}
                         onContextMenu={(e) => {
@@ -1280,12 +1296,30 @@ export function ConnectionList({
                   })}
               </>
             ) : (
-              <div
-                className="px-2 py-1 text-xs text-gray-500"
-                style={{ paddingLeft: "32px" }}
-              >
-                Not connected
-              </div>
+              <>
+                <div
+                  className="px-2 py-1 text-xs text-gray-500"
+                  style={{ paddingLeft: "32px" }}
+                >
+                  Not connected
+                </div>
+                {connectionErrors[connection.id] && (
+                  <div
+                    className="px-2 pb-2 text-xs text-destructive space-y-1"
+                    style={{ paddingLeft: "32px" }}
+                  >
+                    <div>Failed to load databases: {connectionErrors[connection.id]}</div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleReconnect(connection.id)}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </TreeNode>
         ))}
