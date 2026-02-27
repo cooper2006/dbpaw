@@ -288,6 +288,7 @@ export const api = {
   tableData: {
     get: (params: {
       id: number;
+      database?: string;
       schema: string;
       table: string;
       page: number;

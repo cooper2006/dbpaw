@@ -505,12 +505,12 @@ export default function App() {
     const nextOrderBy = hasOwn("orderBy") ? overrides?.orderBy : tab.orderBy;
 
     try {
-      const schema =
-        tab.driver === "mysql" || tab.driver === "clickhouse"
-          ? tab.database
-          : "public";
+      const isMySQLLike = tab.driver === "mysql" || tab.driver === "clickhouse";
+      const schema = isMySQLLike ? tab.database : "public";
+      const database = isMySQLLike ? undefined : tab.database;
       const resp = await api.tableData.get({
         id: tab.connectionId,
+        database,
         schema: schema || "public",
         table: tab.tableName,
         page: nextPage,
