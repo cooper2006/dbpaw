@@ -41,6 +41,7 @@ pub async fn execute_query(app_handle: tauri::AppHandle, state: State<'_, AppSta
 pub async fn get_table_data(
     state: State<'_, AppState>,
     id: i64,
+    database: Option<String>,
     schema: String,
     table: String,
     page: i64,
@@ -50,7 +51,7 @@ pub async fn get_table_data(
     sort_direction: Option<String>,
     order_by: Option<String>,
 ) -> Result<TableDataResponse, String> {
-    super::execute_with_retry(&state, id, None, |driver| {
+    super::execute_with_retry(&state, id, database, |driver| {
         let schema_clone = schema.clone();
         let table_clone = table.clone();
         let filter_clone = filter.clone();

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { save } from "@tauri-apps/plugin-dialog";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import {
   Database,
   Server,
@@ -17,6 +17,7 @@ import {
   FileCode,
   Search,
   Download,
+  FolderOpen,
 } from "lucide-react";
 import { siMysql, siPostgresql, siSqlite, type SimpleIcon } from "simple-icons";
 import { Button } from "@/components/ui/button";
@@ -138,6 +139,8 @@ const getConnectionIcon = (driver: Driver | string): React.ReactNode => {
     case "sqlite":
     case "sqlite3":
       return renderSimpleIcon(siSqlite);
+    case "clickhouse":
+      return <Database className="w-4 h-4" />;
     default:
       return <Server className="w-4 h-4" />;
   }
@@ -398,6 +401,7 @@ export function ConnectionList({
   const fetchAndSetTables = async (
     connectionId: string,
     databaseName: string,
+    options?: { force?: boolean },
   ) => {
     try {
       // Use listTables to get table list by ID, passing the currently selected database
@@ -414,7 +418,7 @@ export function ConnectionList({
             ...conn,
             databases: conn.databases.map((db) => {
               if (db.name !== databaseName) return db;
-              if (db.tables.length > 0) return db;
+              if (!options?.force && db.tables.length > 0) return db;
               return {
                 ...db,
                 tables: tables.map((t) => ({ name: t.name, schema: t.schema, columns: [] })),
@@ -426,6 +430,21 @@ export function ConnectionList({
     } catch (e) {
       console.error("listTables failed", e instanceof Error ? e.message : String(e));
     }
+  };
+
+  const handleRefreshDatabaseTables = async (
+    connectionId: string,
+    databaseName: string,
+  ) => {
+    const tableKeyPrefix = `${connectionId}-${databaseName}-`;
+    setExpandedTables((prev) => {
+      const next = new Set(
+        [...prev].filter((key) => !key.startsWith(tableKeyPrefix)),
+      );
+      return next;
+    });
+
+    await fetchAndSetTables(connectionId, databaseName, { force: true });
   };
 
   const toggleDatabase = (key: string) => {
@@ -827,6 +846,8 @@ export function ConnectionList({
                               ? 5432
                               : v === "mysql"
                                 ? 3306
+                                : v === "clickhouse"
+                                  ? 8123
                                 : f.port,
                         }))
                       }
@@ -838,6 +859,7 @@ export function ConnectionList({
                         <SelectItem value="postgres">PostgreSQL</SelectItem>
                         <SelectItem value="mysql">MySQL</SelectItem>
                         <SelectItem value="sqlite">SQLite</SelectItem>
+                        <SelectItem value="clickhouse">ClickHouse</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -873,7 +895,11 @@ export function ConnectionList({
                           <Input
                             id="port"
                             placeholder={
-                              form.driver === "postgres" ? "5432" : "3306"
+                              form.driver === "postgres"
+                                ? "5432"
+                                : form.driver === "mysql"
+                                  ? "3306"
+                                  : "8123"
                             }
                             value={String(form.port || "")}
                             onChange={(e) =>
@@ -1045,14 +1071,47 @@ export function ConnectionList({
                       <Label htmlFor="filePath">
                         SQLite File Path <span className="text-red-600">*</span>
                       </Label>
-                      <Input
-                        id="filePath"
-                        placeholder="/path/to/db.sqlite"
-                        value={form.filePath || ""}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, filePath: e.target.value }))
-                        }
-                      />
+                      <div className="flex gap-2">
+                        <Input
+                          id="filePath"
+                          placeholder="/path/to/db.sqlite"
+                          value={form.filePath || ""}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, filePath: e.target.value }))
+                          }
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={async () => {
+                            if (!isTauri()) {
+                              toast.info("File browser is only available in desktop app");
+                              return;
+                            }
+                            try {
+                              const selected = await open({
+                                title: "Select SQLite Database File",
+                                multiple: false,
+                                filters: [
+                                  { name: "SQLite Database", extensions: ["sqlite", "db", "sqlite3", "db3"] },
+                                  { name: "All Files", extensions: ["*"] },
+                                ],
+                              });
+                              if (selected && typeof selected === "string") {
+                                setForm((f) => ({ ...f, filePath: selected }));
+                              }
+                            } catch (e) {
+                              toast.error("Failed to open file dialog", {
+                                description: e instanceof Error ? e.message : String(e),
+                              });
+                            }
+                          }}
+                        >
+                          <FolderOpen className="w-4 h-4 mr-2" />
+                          Browse
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1339,31 +1398,48 @@ export function ConnectionList({
               </button>
             </>
           ) : contextMenu.type === "database" ? (
-            <button
-              className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
-              onClick={() => {
-                if (
-                  onCreateQuery &&
-                  contextMenu.connectionId &&
-                  contextMenu.databaseName
-                ) {
-                  const conn = connections.find(
-                    (c) => c.id === contextMenu.connectionId,
-                  );
-                  const driver = conn ? conn.type : "postgres";
+            <>
+              <button
+                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                onClick={async () => {
+                  if (contextMenu.connectionId && contextMenu.databaseName) {
+                    await handleRefreshDatabaseTables(
+                      contextMenu.connectionId,
+                      contextMenu.databaseName,
+                    );
+                  }
+                  setContextMenu((prev) => ({ ...prev, visible: false }));
+                }}
+              >
+                <RefreshCw className="w-4 h-4" />
+                Refresh Tables
+              </button>
+              <button
+                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                onClick={() => {
+                  if (
+                    onCreateQuery &&
+                    contextMenu.connectionId &&
+                    contextMenu.databaseName
+                  ) {
+                    const conn = connections.find(
+                      (c) => c.id === contextMenu.connectionId,
+                    );
+                    const driver = conn ? conn.type : "postgres";
 
-                  onCreateQuery(
-                    Number(contextMenu.connectionId),
-                    contextMenu.databaseName,
-                    driver,
-                  );
-                }
-                setContextMenu((prev) => ({ ...prev, visible: false }));
-              }}
-            >
-              <FileCode className="w-4 h-4" />
-              New Query
-            </button>
+                    onCreateQuery(
+                      Number(contextMenu.connectionId),
+                      contextMenu.databaseName,
+                      driver,
+                    );
+                  }
+                  setContextMenu((prev) => ({ ...prev, visible: false }));
+                }}
+              >
+                <FileCode className="w-4 h-4" />
+                New Query
+              </button>
+            </>
           ) : null}
         </div>
       )}

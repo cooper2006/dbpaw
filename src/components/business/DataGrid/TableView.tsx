@@ -84,7 +84,7 @@ interface TableViewProps {
     limit?: number;
     filter?: string;
     orderBy?: string;
-  }) => void;
+  }) => void | Promise<unknown>;
   tableContext?: {
     connectionId: number;
     database: string;
@@ -204,10 +204,14 @@ export function TableView({
   const [editValue, setEditValue] = useState<string>("");
   const [pendingChanges, setPendingChanges] = useState<Map<string, PendingChange>>(new Map());
   const [primaryKeys, setPrimaryKeys] = useState<string[]>([]);
+  const [columnComments, setColumnComments] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Sort state: controlled (via props) or uncontrolled (internal state for client-side sorting)
@@ -328,6 +332,7 @@ export function TableView({
   useEffect(() => {
     if (!tableContext) {
       setPrimaryKeys([]);
+      setColumnComments({});
       return;
     }
     api.metadata
@@ -342,10 +347,20 @@ export function TableView({
           .filter((c) => c.primaryKey)
           .map((c) => c.name);
         setPrimaryKeys(pks);
+
+        const comments: Record<string, string> = {};
+        meta.columns.forEach((c) => {
+          const comment = c.comment?.trim();
+          if (comment) {
+            comments[c.name] = comment;
+          }
+        });
+        setColumnComments(comments);
       })
       .catch((e) => {
         console.error("Failed to fetch primary keys:", e);
         setPrimaryKeys([]);
+        setColumnComments({});
       });
   }, [tableContext?.connectionId, tableContext?.database, tableContext?.schema, tableContext?.table]);
 
@@ -357,7 +372,8 @@ export function TableView({
     setSaveError(null);
   }, [data, page]);
 
-  const isEditable = !!tableContext && primaryKeys.length > 0;
+  const isReadOnlyDriver = tableContext?.driver === "clickhouse";
+  const isEditable = !!tableContext && !isReadOnlyDriver && primaryKeys.length > 0;
   const hasPendingChanges = pendingChanges.size > 0;
 
   // --- Cell interaction handlers ---
@@ -452,7 +468,7 @@ export function TableView({
   // MySQL uses backticks, PostgreSQL uses double quotes
   const quoteIdent = useCallback(
     (name: string): string => {
-      if (tableContext?.driver === "mysql") {
+      if (tableContext?.driver === "mysql" || tableContext?.driver === "clickhouse") {
         return `\`${name}\``;
       }
       return `"${name}"`;
@@ -598,7 +614,8 @@ export function TableView({
     }
   }, [tableContext, hasPendingChanges, generateUpdateSQL, onDataRefresh]);
 
-  const handleRefreshClick = useCallback(() => {
+  const handleRefreshClick = useCallback(async () => {
+    if (isRefreshing) return;
     if (hasPendingChanges) {
       const confirmed = window.confirm(
         "You have unsaved changes. Refreshing may discard your editing context. Continue?",
@@ -616,13 +633,38 @@ export function TableView({
     const nextFilter = whereInput.trim() || undefined;
     const nextOrderBy = orderByInput.trim() || undefined;
 
-    onDataRefresh?.({
-      page: nextPage,
-      limit: nextLimit,
-      filter: nextFilter,
-      orderBy: nextOrderBy,
-    });
-  }, [hasPendingChanges, pageInput, page, pageSizeInput, pageSize, whereInput, orderByInput, onDataRefresh]);
+    if (!onDataRefresh) return;
+
+    setIsRefreshing(true);
+    try {
+      const ret = onDataRefresh({
+        page: nextPage,
+        limit: nextLimit,
+        filter: nextFilter,
+        orderBy: nextOrderBy,
+      });
+      if (ret && typeof (ret as Promise<unknown>).then === "function") {
+        await ret;
+      } else {
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      setLastRefreshedAt(new Date());
+    } catch (e) {
+      void e;
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [
+    hasPendingChanges,
+    pageInput,
+    page,
+    pageSizeInput,
+    pageSize,
+    whereInput,
+    orderByInput,
+    onDataRefresh,
+    isRefreshing,
+  ]);
 
   // Helper: get display value for a cell (considering pending changes)
   const getCellDisplayValue = useCallback(
@@ -772,13 +814,16 @@ export function TableView({
       const container = containerRef.current;
       if (!container) return;
 
-      const activeElement = document.activeElement;
-      if (!activeElement || !container.contains(activeElement)) return;
+      const eventTarget = e.target instanceof Node ? e.target : null;
+      const eventInsideTable = eventTarget ? container.contains(eventTarget) : false;
+      const hasTableEditingContext =
+        eventInsideTable || !!selectedCell || !!editingCell || hasPendingChanges;
 
       if (isModKey(e) && e.key.toLowerCase() === "s") {
+        if (!hasTableEditingContext) return;
+        e.preventDefault();
         if (hasPendingChanges && !isSaving) {
-          e.preventDefault();
-          void handleSave();
+          saveButtonRef.current?.click();
         }
         return;
       }
@@ -802,9 +847,9 @@ export function TableView({
       window.removeEventListener("keydown", handleTableHotkeys);
     };
   }, [
+    selectedCell,
     hasPendingChanges,
     isSaving,
-    handleSave,
     editingCell,
     cancelEdit,
     handleDiscardChanges,
@@ -867,9 +912,10 @@ export function TableView({
                   size="sm"
                   className="h-7 gap-2"
                   onClick={handleRefreshClick}
-                  title="Refresh"
+                  disabled={isRefreshing}
+                  title={isRefreshing ? "Refreshing..." : "Refresh"}
                 >
-                  <RotateCw className="w-4 h-4" />
+                  <RotateCw className={["w-4 h-4", isRefreshing ? "animate-spin" : ""].filter(Boolean).join(" ")} />
                 </Button>
               )}
             </div>
@@ -878,6 +924,7 @@ export function TableView({
               {hasPendingChanges && (
                 <>
                   <Button
+                    ref={saveButtonRef}
                     variant="default"
                     size="sm"
                     className="h-7 gap-1.5"
@@ -1030,8 +1077,8 @@ export function TableView({
                   }}
                 />
               </div>
-              {tableContext && !isEditable && primaryKeys.length === 0 && (
-                <span className="text-xs text-muted-foreground italic" title="This table has no primary key and does not support inline editing">
+              {tableContext && !isEditable && (primaryKeys.length === 0 || isReadOnlyDriver) && (
+                <span className="text-xs text-muted-foreground italic" title={isReadOnlyDriver ? "ClickHouse is read-only in this version." : "This table has no primary key and does not support inline editing"}>
                   Read-only
                 </span>
               )}
@@ -1039,8 +1086,8 @@ export function TableView({
           ) : (
             tableContext &&
             !isEditable &&
-            primaryKeys.length === 0 && (
-              <span className="text-xs text-muted-foreground italic" title="This table has no primary key and does not support inline editing">
+            (primaryKeys.length === 0 || isReadOnlyDriver) && (
+              <span className="text-xs text-muted-foreground italic" title={isReadOnlyDriver ? "ClickHouse is read-only in this version." : "This table has no primary key and does not support inline editing"}>
                 Read-only
               </span>
             )
@@ -1067,7 +1114,7 @@ export function TableView({
               />
             ))}
           </colgroup>
-          <thead className="bg-muted/40 sticky top-0 z-10">
+          <thead className="bg-muted/90 sticky top-0 z-10">
             <tr>
               <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground border-b border-r border-border w-12">
                 #
@@ -1075,6 +1122,8 @@ export function TableView({
               {columns.map((column) => {
                 const isSorted = activeSortColumn === column;
                 const direction = isSorted ? activeSortDirection : undefined;
+                const comment = columnComments[column]?.trim();
+                const headerTooltip = comment || column;
                 return (
                   <th
                     key={column}
@@ -1093,7 +1142,7 @@ export function TableView({
                         className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors min-w-0 flex-1"
                         onClick={() => handleSortClick(column)}
                       >
-                        <span className="truncate" title={column}>
+                        <span className="truncate" title={headerTooltip}>
                           {column}
                         </span>
                         <span className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center">
@@ -1283,44 +1332,46 @@ export function TableView({
                         >
                           Copy as Insert SQL
                         </ContextMenuItem>
-                        <ContextMenuItem
-                          onClick={() => {
-                            if (!tableContext || primaryKeys.length === 0) return;
-                            const { schema, table, driver } = tableContext;
-                            const tableName =
-                              driver === "mysql"
-                                ? `${quoteIdent(table)}`
-                                : `${quoteIdent(schema)}.${quoteIdent(table)}`;
+                        {isEditable && (
+                          <ContextMenuItem
+                            onClick={() => {
+                              if (!tableContext || primaryKeys.length === 0) return;
+                              const { schema, table, driver } = tableContext;
+                              const tableName =
+                                driver === "mysql"
+                                  ? `${quoteIdent(table)}`
+                                  : `${quoteIdent(schema)}.${quoteIdent(table)}`;
 
-                            const setClauses = columns.map((col) => {
-                              const val = getCellDisplayValue(rowIndex, col, row[col]);
-                              const formattedValue = formatSQLValue(
-                                val === null || val === undefined ? "" : String(val),
-                                row[col],
-                                "copy"
-                              );
-                              return `${quoteIdent(col)} = ${formattedValue}`;
-                            });
+                              const setClauses = columns.map((col) => {
+                                const val = getCellDisplayValue(rowIndex, col, row[col]);
+                                const formattedValue = formatSQLValue(
+                                  val === null || val === undefined ? "" : String(val),
+                                  row[col],
+                                  "copy"
+                                );
+                                return `${quoteIdent(col)} = ${formattedValue}`;
+                              });
 
-                            const whereClauses = primaryKeys.map((pk) => {
-                              const pkValue = row[pk];
-                              if (pkValue === null || pkValue === undefined) {
-                                return `${quoteIdent(pk)} IS NULL`;
-                              }
-                              if (typeof pkValue === "number") {
-                                return `${quoteIdent(pk)} = ${pkValue}`;
-                              }
-                              return `${quoteIdent(pk)} = '${escapeSQL(String(pkValue))}'`;
-                            });
+                              const whereClauses = primaryKeys.map((pk) => {
+                                const pkValue = row[pk];
+                                if (pkValue === null || pkValue === undefined) {
+                                  return `${quoteIdent(pk)} IS NULL`;
+                                }
+                                if (typeof pkValue === "number") {
+                                  return `${quoteIdent(pk)} = ${pkValue}`;
+                                }
+                                return `${quoteIdent(pk)} = '${escapeSQL(String(pkValue))}'`;
+                              });
 
-                            const sql = `UPDATE ${tableName} SET ${setClauses.join(
-                              ", "
-                            )} WHERE ${whereClauses.join(" AND ")};`;
-                            handleCopy(sql);
-                          }}
-                        >
-                          Copy as Update SQL
-                        </ContextMenuItem>
+                              const sql = `UPDATE ${tableName} SET ${setClauses.join(
+                                ", "
+                              )} WHERE ${whereClauses.join(" AND ")};`;
+                              handleCopy(sql);
+                            }}
+                          >
+                            Copy as Update SQL
+                          </ContextMenuItem>
+                        )}
                       </ContextMenuSubContent>
                     </ContextMenuSub>
                   </ContextMenuContent>
@@ -1348,6 +1399,16 @@ export function TableView({
           Query executed in{" "}
           {executionTimeMs ? (executionTimeMs / 1000).toFixed(3) : "0.000"}s •{" "}
           {sortedData.length} rows returned
+          {isRefreshing && (
+            <span className="ml-2">
+              • Refreshing…
+            </span>
+          )}
+          {lastRefreshedAt && !isRefreshing && (
+            <span className="ml-2">
+              • Updated {lastRefreshedAt.toLocaleTimeString()}
+            </span>
+          )}
           {hasPendingChanges && (
             <span className="text-orange-600 dark:text-orange-400 ml-2">
               • {pendingChanges.size} unsaved change(s)

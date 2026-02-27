@@ -1,8 +1,43 @@
 import { useEffect, useState } from "react";
-import { api, SavedQuery } from "@/services/api";
+import { api, SavedQuery, Driver } from "@/services/api";
 import { Button } from "@/components/ui/button";
-import { FileCode, RefreshCw, Trash2, Edit3, Search } from "lucide-react";
+import { Database, RefreshCw, Trash2, Edit3, Search, Server } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { siMysql, siPostgresql, siSqlite, type SimpleIcon } from "simple-icons";
+
+const renderSimpleIcon = (icon: SimpleIcon) => (
+  <svg
+    viewBox="0 0 24 24"
+    width="16"
+    height="16"
+    aria-hidden="true"
+    className="shrink-0"
+    role="img"
+  >
+    <path d={icon.path} fill="currentColor" />
+  </svg>
+);
+
+const getConnectionIcon = (driver?: Driver): React.ReactNode => {
+  const normalized = String(driver || "").trim().toLowerCase();
+
+  switch (normalized) {
+    case "postgres":
+    case "postgresql":
+    case "pgsql":
+      return renderSimpleIcon(siPostgresql);
+    case "mysql":
+    case "mariadb":
+      return renderSimpleIcon(siMysql);
+    case "sqlite":
+    case "sqlite3":
+      return renderSimpleIcon(siSqlite);
+    case "clickhouse":
+      return <Database className="w-4 h-4" />;
+    default:
+      return <Server className="w-4 h-4" />;
+  }
+};
 
 interface SavedQueriesListProps {
   onSelectQuery: (query: SavedQuery) => void;
@@ -12,6 +47,7 @@ interface SavedQueriesListProps {
 export function SavedQueriesList({ onSelectQuery, lastUpdated }: SavedQueriesListProps) {
   const [queries, setQueries] = useState<SavedQuery[]>([]);
   const [connections, setConnections] = useState<Record<number, string>>({});
+  const [connectionTypes, setConnectionTypes] = useState<Record<number, Driver>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
@@ -33,10 +69,13 @@ export function SavedQueriesList({ onSelectQuery, lastUpdated }: SavedQueriesLis
       setQueries(queriesData);
 
       const connMap: Record<number, string> = {};
+      const connTypeMap: Record<number, Driver> = {};
       connectionsData.forEach((c: any) => {
         connMap[c.id] = c.name;
+        connTypeMap[c.id] = c.dbType;
       });
       setConnections(connMap);
+      setConnectionTypes(connTypeMap);
     } catch (error) {
       console.error("Failed to fetch saved queries or connections:", error);
     }
@@ -110,7 +149,7 @@ export function SavedQueriesList({ onSelectQuery, lastUpdated }: SavedQueriesLis
               });
             }}
           >
-            <FileCode className="w-4 h-4 text-blue-500 shrink-0" />
+            {getConnectionIcon(query.connectionId ? connectionTypes[query.connectionId] : undefined)}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="truncate font-medium">{query.name}</span>

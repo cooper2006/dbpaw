@@ -400,7 +400,8 @@ export default function App() {
       return;
     }
     try {
-      const schema = driver === "mysql" ? database : "public";
+      const schema =
+        driver === "mysql" || driver === "clickhouse" ? database : "public";
 
       const resp = await api.tableData.get({
         id: connectionId,
@@ -409,7 +410,25 @@ export default function App() {
         page: 1,
         limit: 100,
       });
-      const columns = resp.data.length > 0 ? Object.keys(resp.data[0]) : [];
+      let columns = resp.data.length > 0 ? Object.keys(resp.data[0]) : [];
+
+      // If data is empty, fetch columns from metadata
+      if (columns.length === 0) {
+        try {
+          const meta = await api.metadata.getTableMetadata(
+            connectionId,
+            database,
+            schema,
+            table,
+          );
+          if (meta && meta.columns) {
+            columns = meta.columns.map((c) => c.name);
+          }
+        } catch (e) {
+          console.warn("Failed to fetch metadata for empty table:", e);
+        }
+      }
+
       const newTab: TabItem = {
         id: tabId,
         type: "table",
@@ -429,7 +448,11 @@ export default function App() {
       setTabs([...tabs, newTab]);
       setActiveTab(tabId);
     } catch (e) {
-      console.error("get_table_data failed", e instanceof Error ? e.message : String(e));
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      console.error("get_table_data failed", errorMessage);
+      toast.error("Failed to load table data", {
+        description: errorMessage,
+      });
     }
   };
 
@@ -500,9 +523,12 @@ export default function App() {
     const nextOrderBy = hasOwn("orderBy") ? overrides?.orderBy : tab.orderBy;
 
     try {
-      const schema = tab.driver === "mysql" ? tab.database : "public";
+      const isMySQLLike = tab.driver === "mysql" || tab.driver === "clickhouse";
+      const schema = isMySQLLike ? tab.database : "public";
+      const database = isMySQLLike ? undefined : tab.database;
       const resp = await api.tableData.get({
         id: tab.connectionId,
+        database,
         schema: schema || "public",
         table: tab.tableName,
         page: nextPage,
@@ -529,7 +555,11 @@ export default function App() {
         }),
       );
     } catch (e) {
-      console.error("handleTableRefresh failed", e instanceof Error ? e.message : String(e));
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      console.error("handleTableRefresh failed", errorMessage);
+      toast.error("Failed to refresh table", {
+        description: errorMessage,
+      });
     }
   };
 
@@ -538,7 +568,10 @@ export default function App() {
     if (!tab || !tab.connectionId || !tab.driver || !tab.tableName) return;
 
     try {
-      const schema = tab.driver === "mysql" ? tab.database : "public";
+      const schema =
+        tab.driver === "mysql" || tab.driver === "clickhouse"
+          ? tab.database
+          : "public";
       const resp = await api.tableData.get({
         id: tab.connectionId,
         schema: schema || "public",
@@ -564,7 +597,11 @@ export default function App() {
         }),
       );
     } catch (e) {
-      console.error("handlePageChange failed", e instanceof Error ? e.message : String(e));
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      console.error("handlePageChange failed", errorMessage);
+      toast.error("Failed to change page", {
+        description: errorMessage,
+      });
     }
   };
 
@@ -573,7 +610,10 @@ export default function App() {
     if (!tab || !tab.connectionId || !tab.driver || !tab.tableName) return;
 
     try {
-      const schema = tab.driver === "mysql" ? tab.database : "public";
+      const schema =
+        tab.driver === "mysql" || tab.driver === "clickhouse"
+          ? tab.database
+          : "public";
       const resp = await api.tableData.get({
         id: tab.connectionId,
         schema: schema || "public",
@@ -600,7 +640,11 @@ export default function App() {
         }),
       );
     } catch (e) {
-      console.error("handlePageSizeChange failed", e instanceof Error ? e.message : String(e));
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      console.error("handlePageSizeChange failed", errorMessage);
+      toast.error("Failed to change page size", {
+        description: errorMessage,
+      });
     }
   };
 
@@ -617,7 +661,10 @@ export default function App() {
     );
 
     try {
-      const schema = tab.driver === "mysql" ? tab.database : "public";
+      const schema =
+        tab.driver === "mysql" || tab.driver === "clickhouse"
+          ? tab.database
+          : "public";
       const resp = await api.tableData.get({
         id: tab.connectionId,
         schema: schema || "public",
@@ -645,7 +692,11 @@ export default function App() {
         }),
       );
     } catch (e) {
-      console.error("handleSortChange failed", e instanceof Error ? e.message : String(e));
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      console.error("handleSortChange failed", errorMessage);
+      toast.error("Failed to sort table", {
+        description: errorMessage,
+      });
     }
   };
 
@@ -662,7 +713,10 @@ export default function App() {
     );
 
     try {
-      const schema = tab.driver === "mysql" ? tab.database : "public";
+      const schema =
+        tab.driver === "mysql" || tab.driver === "clickhouse"
+          ? tab.database
+          : "public";
       const resp = await api.tableData.get({
         id: tab.connectionId,
         schema: schema || "public",
@@ -692,7 +746,11 @@ export default function App() {
         }),
       );
     } catch (e) {
-      console.error("handleFilterChange failed", e instanceof Error ? e.message : String(e));
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      console.error("handleFilterChange failed", errorMessage);
+      toast.error("Failed to filter table", {
+        description: errorMessage,
+      });
     }
   };
 
@@ -1178,7 +1236,7 @@ export default function App() {
                                 connectionId: tab.connectionId,
                                 database: tab.database,
                                 schema:
-                                  tab.driver === "mysql"
+                                  tab.driver === "mysql" || tab.driver === "clickhouse"
                                     ? tab.database
                                     : "public",
                                 table: tab.tableName,

@@ -1,5 +1,10 @@
 import { Bot, Info, Palette, RefreshCw, Settings2 } from "lucide-react";
-import { useTheme, Theme } from "@/components/theme-provider";
+import {
+  useTheme,
+  Theme,
+  MIN_FONT_SIZE_PX,
+  MAX_FONT_SIZE_PX,
+} from "@/components/theme-provider";
 import { useState, useEffect } from "react";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -34,6 +39,12 @@ interface SettingsDialogProps {
 }
 
 type SettingsSection = "general" | "ai" | "about";
+type AIProviderPreset = {
+  type: AIProviderType;
+  label: string;
+  baseUrl: string;
+  model: string;
+};
 
 const THEME_COLORS = [
   { name: "Zinc", value: "#09090b" },
@@ -43,70 +54,113 @@ const THEME_COLORS = [
   { name: "Orange", value: "#f97316" },
 ];
 
-const AI_PROVIDER_OPTIONS: {
-  type: AIProviderType;
-  label: string;
-  baseUrl: string;
-  model: string;
-}[] = [
-    {
-      type: "openai",
-      label: "OpenAI",
-      baseUrl: "https://api.openai.com/v1",
-      model: "gpt-4.1-mini",
-    },
-    {
-      type: "kimi",
-      label: "Kimi",
-      baseUrl: "https://api.moonshot.cn/v1",
-      model: "moonshot-v1-8k",
-    },
-    {
-      type: "glm",
-      label: "GLM",
-      baseUrl: "https://open.bigmodel.cn/api/paas/v4",
-      model: "glm-4-flash",
-    },
-  ];
+const AI_PROVIDER_OPTIONS: AIProviderPreset[] = [
+  {
+    type: "openai",
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4.1-mini",
+  },
+  {
+    type: "anthropic",
+    label: "Anthropic",
+    baseUrl: "https://api.anthropic.com/v1",
+    model: "claude-3-5-sonnet-20241022",
+  },
+  {
+    type: "gemini",
+    label: "Gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    model: "gemini-2.0-flash",
+  },
+  {
+    type: "groq",
+    label: "Groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    model: "llama-3.3-70b-versatile",
+  },
+  {
+    type: "deepseek",
+    label: "DeepSeek",
+    baseUrl: "https://api.deepseek.com/v1",
+    model: "deepseek-chat",
+  },
+  {
+    type: "qwen",
+    label: "Qwen",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    model: "qwen-plus",
+  },
+  {
+    type: "kimi",
+    label: "Kimi",
+    baseUrl: "https://api.moonshot.cn/v1",
+    model: "moonshot-v1-8k",
+  },
+  {
+    type: "glm",
+    label: "GLM",
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    model: "glm-4-flash",
+  },
+  {
+    type: "siliconflow",
+    label: "SiliconFlow",
+    baseUrl: "https://api.siliconflow.cn/v1",
+    model: "Qwen/Qwen2.5-72B-Instruct",
+  },
+  {
+    type: "openrouter",
+    label: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    model: "openai/gpt-4o-mini",
+  },
+];
 
 const AI_PROVIDER_OPTIONS_BY_TYPE = AI_PROVIDER_OPTIONS.reduce(
   (acc, item) => ({ ...acc, [item.type]: item }),
-  {} as Record<AIProviderType, (typeof AI_PROVIDER_OPTIONS)[number]>,
+  {} as Record<string, AIProviderPreset>,
 );
-
-const isAIProviderType = (value: string): value is AIProviderType =>
-  value === "openai" || value === "kimi" || value === "glm";
 
 const GITHUB_URL = "https://github.com/codeErrorSleep/dbpaw";
 const APP_VERSION = packageJson.version;
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { theme, setTheme, accentColor, setAccentColor } = useTheme();
+  const { theme, setTheme, accentColor, setAccentColor, fontSizePx, setFontSizePx } =
+    useTheme();
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [checking, setChecking] = useState(false);
   const [providers, setProviders] = useState<AIProviderConfig[]>([]);
-  const [selectedProviderType, setSelectedProviderType] = useState<AIProviderType>("openai");
+  const [selectedProviderType, setSelectedProviderType] = useState<AIProviderType>(
+    AI_PROVIDER_OPTIONS[0].type,
+  );
   const [providerBaseUrl, setProviderBaseUrl] = useState(
-    AI_PROVIDER_OPTIONS_BY_TYPE.openai.baseUrl,
+    AI_PROVIDER_OPTIONS[0].baseUrl,
   );
   const [providerModel, setProviderModel] = useState(
-    AI_PROVIDER_OPTIONS_BY_TYPE.openai.model,
+    AI_PROVIDER_OPTIONS[0].model,
   );
   const [providerApiKey, setProviderApiKey] = useState("");
+  const [fontSizeInput, setFontSizeInput] = useState(String(fontSizePx));
+
+  const clampFontSize = (size: number) => {
+    const rounded = Math.round(size);
+    return Math.min(MAX_FONT_SIZE_PX, Math.max(MIN_FONT_SIZE_PX, rounded));
+  };
 
   useEffect(() => {
     if (open) {
       setActiveSection("general");
+      setFontSizeInput(String(fontSizePx));
       getSetting("autoUpdate", true).then(setAutoUpdate);
       api.ai.providers.list().then((list) => {
-        const validProviders = list.filter((p) => isAIProviderType(p.providerType));
-        setProviders(validProviders);
-        const selected = validProviders.find((p) => p.isDefault) ?? validProviders[0];
-        if (selected) {
-          applyProviderToForm(selected.providerType, validProviders);
+        setProviders(list);
+        const selected = list.find((p) => p.isDefault) ?? list[0];
+        if (selected && AI_PROVIDER_OPTIONS_BY_TYPE[selected.providerType]) {
+          applyProviderToForm(selected.providerType, list);
         } else {
-          applyProviderToForm("openai", validProviders);
+          applyProviderToForm(AI_PROVIDER_OPTIONS[0].type, list);
         }
       }).catch((e) => {
         console.error(e);
@@ -115,10 +169,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     }
   }, [open]);
 
+  useEffect(() => {
+    setFontSizeInput(String(fontSizePx));
+  }, [fontSizePx]);
+
   function applyProviderToForm(providerType: AIProviderType, source: AIProviderConfig[]) {
-    const option = AI_PROVIDER_OPTIONS_BY_TYPE[providerType];
+    const option = AI_PROVIDER_OPTIONS_BY_TYPE[providerType] ?? AI_PROVIDER_OPTIONS[0];
     const existing = source.find((p) => p.providerType === providerType);
-    setSelectedProviderType(providerType);
+    setSelectedProviderType(option.type);
     setProviderBaseUrl(existing?.baseUrl ?? option.baseUrl);
     setProviderModel(existing?.model ?? option.model);
     setProviderApiKey(existing?.apiKey ?? "");
@@ -126,13 +184,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const reloadProviders = async () => {
     const list = await api.ai.providers.list();
-    const validProviders = list.filter((p) => isAIProviderType(p.providerType));
-    setProviders(validProviders);
-    return validProviders;
+    setProviders(list);
+    return list;
   };
 
   const handleProviderTypeChange = (value: string) => {
-    if (!isAIProviderType(value)) return;
     applyProviderToForm(value, providers);
   };
 
@@ -178,7 +234,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       return;
     }
     try {
-      const selectedOption = AI_PROVIDER_OPTIONS_BY_TYPE[selectedProviderType];
+      const selectedOption =
+        AI_PROVIDER_OPTIONS_BY_TYPE[selectedProviderType] ?? AI_PROVIDER_OPTIONS[0];
       const existing = providers.find((p) => p.providerType === selectedProviderType);
       const payload = {
         name: selectedOption.label,
@@ -205,6 +262,24 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         description: e instanceof Error ? e.message : String(e),
       });
     }
+  };
+
+  const commitFontSizeInput = () => {
+    const trimmed = fontSizeInput.trim();
+    if (!trimmed) {
+      setFontSizeInput(String(fontSizePx));
+      return;
+    }
+
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      setFontSizeInput(String(fontSizePx));
+      return;
+    }
+
+    const normalized = clampFontSize(parsed);
+    setFontSizePx(normalized);
+    setFontSizeInput(String(normalized));
   };
 
   return (
@@ -278,6 +353,33 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         <SelectItem value="system">🖥️ System</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 items-center">
+                    <div className="space-y-1">
+                      <Label className="text-base">Font Size</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Adjust global text size across the app (Range: 10-24px)
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={MIN_FONT_SIZE_PX}
+                        max={MAX_FONT_SIZE_PX}
+                        step={1}
+                        value={fontSizeInput}
+                        onChange={(e) => setFontSizeInput(e.target.value)}
+                        onBlur={commitFontSizeInput}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            commitFontSizeInput();
+                          }
+                        }}
+                      />
+                      <span className="text-sm text-muted-foreground">px</span>
+                    </div>
                   </div>
 
                   <div className="space-y-3 pt-2">
@@ -382,7 +484,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </div>
 
                 <div className="rounded-md border p-3 text-xs text-muted-foreground">
-                  <div>Configured providers: {providers.length}/3</div>
+                  <div>Configured providers: {providers.length}</div>
                   <div className="mt-2 border-t border-border/60 pt-2">
                     <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/90">
                       Configured details

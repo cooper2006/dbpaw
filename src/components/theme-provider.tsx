@@ -2,12 +2,17 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { getSetting, saveSetting } from "@/services/store";
 
 export type Theme = "dark" | "light" | "system";
+export const MIN_FONT_SIZE_PX = 10;
+export const MAX_FONT_SIZE_PX = 24;
+export const DEFAULT_FONT_SIZE_PX = 14;
 
 interface ThemeProviderState {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   accentColor: string;
   setAccentColor: (color: string) => void;
+  fontSizePx: number;
+  setFontSizePx: (size: number) => void;
 }
 
 const initialState: ThemeProviderState = {
@@ -15,6 +20,8 @@ const initialState: ThemeProviderState = {
   setTheme: () => null,
   accentColor: "Zinc",
   setAccentColor: () => null,
+  fontSizePx: DEFAULT_FONT_SIZE_PX,
+  setFontSizePx: () => null,
 };
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
@@ -38,22 +45,34 @@ export function ThemeProvider({
 }) {
   const [theme, setThemeState] = useState<Theme>(defaultTheme);
   const [accentColor, setAccentColorState] = useState<string>("Zinc");
+  const [fontSizePx, setFontSizePxState] = useState<number>(DEFAULT_FONT_SIZE_PX);
   const [isLoaded, setIsLoaded] = useState(false);
+
+  const clampFontSize = (size: number) => {
+    if (!Number.isFinite(size)) {
+      return DEFAULT_FONT_SIZE_PX;
+    }
+
+    const rounded = Math.round(size);
+    return Math.min(MAX_FONT_SIZE_PX, Math.max(MIN_FONT_SIZE_PX, rounded));
+  };
 
   // Helper to apply theme to DOM
   const applyTheme = (t: Theme) => {
     const root = document.documentElement;
     root.classList.remove("light", "dark");
 
+    let resolvedTheme: "dark" | "light";
     if (t === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
+      resolvedTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
         ? "dark"
         : "light";
-      root.classList.add(systemTheme);
     } else {
-      root.classList.add(t);
+      resolvedTheme = t;
     }
+
+    root.classList.add(resolvedTheme);
+    root.style.colorScheme = resolvedTheme;
   };
 
   // Helper to apply accent color
@@ -72,19 +91,28 @@ export function ThemeProvider({
     root.style.setProperty("--ring", colorValue);
   };
 
+  const applyFontSizePx = (size: number) => {
+    const root = document.documentElement;
+    root.style.setProperty("--font-size", `${size}px`);
+  };
+
   // 1. Load settings on mount
   useEffect(() => {
     const loadSettings = async () => {
       const savedTheme = await getSetting<Theme>("theme", defaultTheme);
       const savedAccent = await getSetting<string>("accentColor", "Zinc");
-      
+      const savedFontSize = await getSetting<number>("fontSizePx", DEFAULT_FONT_SIZE_PX);
+      const normalizedFontSize = clampFontSize(savedFontSize);
+
       setThemeState(savedTheme);
       setAccentColorState(savedAccent);
-      
+      setFontSizePxState(normalizedFontSize);
+
       // Initial application
       applyTheme(savedTheme);
       applyAccentColor(savedAccent, savedTheme);
-      
+      applyFontSizePx(normalizedFontSize);
+
       setIsLoaded(true);
     };
 
@@ -118,6 +146,13 @@ export function ThemeProvider({
     saveSetting("accentColor", color);
   };
 
+  const setFontSizePx = (size: number) => {
+    const normalizedSize = clampFontSize(size);
+    setFontSizePxState(normalizedSize);
+    applyFontSizePx(normalizedSize);
+    saveSetting("fontSizePx", normalizedSize);
+  };
+
   if (!isLoaded) {
     // Show a minimal loader instead of a blank screen
     return (
@@ -132,6 +167,8 @@ export function ThemeProvider({
     setTheme,
     accentColor,
     setAccentColor,
+    fontSizePx,
+    setFontSizePx,
   };
 
   return (
