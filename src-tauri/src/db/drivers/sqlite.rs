@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use sqlx::{sqlite::SqlitePoolOptions, Column, Row};
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub struct SqliteDriver {
     pub pool: sqlx::SqlitePool,
 }
@@ -225,7 +226,9 @@ impl DatabaseDriver for SqliteDriver {
                 name: row.try_get("name").unwrap_or_default(),
                 r#type: row.try_get("type").unwrap_or_default(),
                 nullable,
-                default_value: row.try_get::<Option<String>, _>("dflt_value").unwrap_or(None),
+                default_value: row
+                    .try_get::<Option<String>, _>("dflt_value")
+                    .unwrap_or(None),
                 primary_key: pk,
                 comment: None,
             });
@@ -313,8 +316,12 @@ impl DatabaseDriver for SqliteDriver {
                 referenced_schema: None,
                 referenced_table: ref_table,
                 referenced_column: ref_col,
-                on_update: row.try_get::<Option<String>, _>("on_update").unwrap_or(None),
-                on_delete: row.try_get::<Option<String>, _>("on_delete").unwrap_or(None),
+                on_update: row
+                    .try_get::<Option<String>, _>("on_update")
+                    .unwrap_or(None),
+                on_delete: row
+                    .try_get::<Option<String>, _>("on_delete")
+                    .unwrap_or(None),
             });
         }
 
@@ -338,7 +345,8 @@ impl DatabaseDriver for SqliteDriver {
         .await
         .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
 
-        let row = row.ok_or_else(|| format!("[QUERY_ERROR] Table or view '{}' not found", table))?;
+        let row =
+            row.ok_or_else(|| format!("[QUERY_ERROR] Table or view '{}' not found", table))?;
         let sql: Option<String> = row.try_get("sql").unwrap_or(None);
         sql.ok_or_else(|| format!("[QUERY_ERROR] Failed to read DDL for '{}'", table))
     }
@@ -455,8 +463,7 @@ impl DatabaseDriver for SqliteDriver {
         let should_fetch_rows = matches!(
             first_keyword.as_deref(),
             Some("select") | Some("pragma") | Some("with") | Some("explain")
-        )
-            || sql_lower.contains(" returning ");
+        ) || sql_lower.contains(" returning ");
 
         if should_fetch_rows {
             let rows = sqlx::query(&sql)
@@ -557,14 +564,52 @@ mod tests {
     }
 
     #[test]
-    fn test_build_dsn_missing_file_path() {
+    fn test_connect_missing_file_path() {
+        let _form = ConnectionForm {
+            driver: "sqlite".to_string(),
+            file_path: None,
+            ..Default::default()
+        };
+        // We need to run this async, but since it returns a future, we can just check the result behavior
+        // Or simpler: verify the logic fails before creating the future if possible,
+        // but our logic is inside async connect.
+        // So we use tokio::test for this.
+    }
+
+    #[tokio::test]
+    async fn test_connect_validation_error() {
         let form = ConnectionForm {
             driver: "sqlite".to_string(),
             file_path: None,
             ..Default::default()
         };
-        let err = build_dsn(&form).unwrap_err();
-        assert!(err.contains("file_path cannot be empty"));
+        let result = SqliteDriver::connect(&form).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("file_path cannot be empty"));
+    }
+
+    #[tokio::test]
+    async fn test_connect_with_space_in_path() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("dbpaw test space {}.db", Uuid::new_v4()));
+        let path_str = path.to_string_lossy().to_string();
+
+        let form = ConnectionForm {
+            driver: "sqlite".to_string(),
+            file_path: Some(path_str.clone()),
+            ..Default::default()
+        };
+
+        let driver = SqliteDriver::connect(&form)
+            .await
+            .expect("Should connect to path with spaces");
+        driver
+            .test_connection()
+            .await
+            .expect("Should execute query");
+        driver.close().await;
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]
@@ -618,7 +663,9 @@ mod tests {
             .unwrap();
 
         let tables = driver.list_tables(None).await.unwrap();
-        assert!(tables.iter().any(|t| t.name == "users" && t.r#type == "table"));
+        assert!(tables
+            .iter()
+            .any(|t| t.name == "users" && t.r#type == "table"));
         assert!(tables
             .iter()
             .any(|t| t.name == "users_view" && t.r#type == "view"));
@@ -774,14 +821,20 @@ mod tests {
             .get_table_structure("public".to_string(), "children".to_string())
             .await
             .unwrap();
-        assert!(structure.columns.iter().any(|c| c.name == "id" && c.primary_key));
+        assert!(structure
+            .columns
+            .iter()
+            .any(|c| c.name == "id" && c.primary_key));
 
         let metadata = driver
             .get_table_metadata("public".to_string(), "children".to_string())
             .await
             .unwrap();
         assert!(metadata.columns.iter().any(|c| c.name == "parent_id"));
-        assert!(metadata.indexes.iter().any(|i| i.name == "idx_children_name"));
+        assert!(metadata
+            .indexes
+            .iter()
+            .any(|i| i.name == "idx_children_name"));
         assert!(metadata
             .foreign_keys
             .iter()
