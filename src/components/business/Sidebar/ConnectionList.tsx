@@ -400,6 +400,7 @@ export function ConnectionList({
   const fetchAndSetTables = async (
     connectionId: string,
     databaseName: string,
+    options?: { force?: boolean },
   ) => {
     try {
       // Use listTables to get table list by ID, passing the currently selected database
@@ -416,7 +417,7 @@ export function ConnectionList({
             ...conn,
             databases: conn.databases.map((db) => {
               if (db.name !== databaseName) return db;
-              if (db.tables.length > 0) return db;
+              if (!options?.force && db.tables.length > 0) return db;
               return {
                 ...db,
                 tables: tables.map((t) => ({ name: t.name, schema: t.schema, columns: [] })),
@@ -428,6 +429,21 @@ export function ConnectionList({
     } catch (e) {
       console.error("listTables failed", e instanceof Error ? e.message : String(e));
     }
+  };
+
+  const handleRefreshDatabaseTables = async (
+    connectionId: string,
+    databaseName: string,
+  ) => {
+    const tableKeyPrefix = `${connectionId}-${databaseName}-`;
+    setExpandedTables((prev) => {
+      const next = new Set(
+        [...prev].filter((key) => !key.startsWith(tableKeyPrefix)),
+      );
+      return next;
+    });
+
+    await fetchAndSetTables(connectionId, databaseName, { force: true });
   };
 
   const toggleDatabase = (key: string) => {
@@ -1348,31 +1364,48 @@ export function ConnectionList({
               </button>
             </>
           ) : contextMenu.type === "database" ? (
-            <button
-              className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
-              onClick={() => {
-                if (
-                  onCreateQuery &&
-                  contextMenu.connectionId &&
-                  contextMenu.databaseName
-                ) {
-                  const conn = connections.find(
-                    (c) => c.id === contextMenu.connectionId,
-                  );
-                  const driver = conn ? conn.type : "postgres";
+            <>
+              <button
+                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                onClick={async () => {
+                  if (contextMenu.connectionId && contextMenu.databaseName) {
+                    await handleRefreshDatabaseTables(
+                      contextMenu.connectionId,
+                      contextMenu.databaseName,
+                    );
+                  }
+                  setContextMenu((prev) => ({ ...prev, visible: false }));
+                }}
+              >
+                <RefreshCw className="w-4 h-4" />
+                Refresh Tables
+              </button>
+              <button
+                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                onClick={() => {
+                  if (
+                    onCreateQuery &&
+                    contextMenu.connectionId &&
+                    contextMenu.databaseName
+                  ) {
+                    const conn = connections.find(
+                      (c) => c.id === contextMenu.connectionId,
+                    );
+                    const driver = conn ? conn.type : "postgres";
 
-                  onCreateQuery(
-                    Number(contextMenu.connectionId),
-                    contextMenu.databaseName,
-                    driver,
-                  );
-                }
-                setContextMenu((prev) => ({ ...prev, visible: false }));
-              }}
-            >
-              <FileCode className="w-4 h-4" />
-              New Query
-            </button>
+                    onCreateQuery(
+                      Number(contextMenu.connectionId),
+                      contextMenu.databaseName,
+                      driver,
+                    );
+                  }
+                  setContextMenu((prev) => ({ ...prev, visible: false }));
+                }}
+              >
+                <FileCode className="w-4 h-4" />
+                New Query
+              </button>
+            </>
           ) : null}
         </div>
       )}
