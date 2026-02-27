@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { save } from "@tauri-apps/plugin-dialog";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import {
   Database,
   Server,
@@ -17,6 +17,7 @@ import {
   FileCode,
   Search,
   Download,
+  FolderOpen,
 } from "lucide-react";
 import { siMysql, siPostgresql, siSqlite, type SimpleIcon } from "simple-icons";
 import { Button } from "@/components/ui/button";
@@ -1070,14 +1071,47 @@ export function ConnectionList({
                       <Label htmlFor="filePath">
                         SQLite File Path <span className="text-red-600">*</span>
                       </Label>
-                      <Input
-                        id="filePath"
-                        placeholder="/path/to/db.sqlite"
-                        value={form.filePath || ""}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, filePath: e.target.value }))
-                        }
-                      />
+                      <div className="flex gap-2">
+                        <Input
+                          id="filePath"
+                          placeholder="/path/to/db.sqlite"
+                          value={form.filePath || ""}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, filePath: e.target.value }))
+                          }
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={async () => {
+                            if (!isTauri()) {
+                              toast.info("File browser is only available in desktop app");
+                              return;
+                            }
+                            try {
+                              const selected = await open({
+                                title: "Select SQLite Database File",
+                                multiple: false,
+                                filters: [
+                                  { name: "SQLite Database", extensions: ["sqlite", "db", "sqlite3", "db3"] },
+                                  { name: "All Files", extensions: ["*"] },
+                                ],
+                              });
+                              if (selected && typeof selected === "string") {
+                                setForm((f) => ({ ...f, filePath: selected }));
+                              }
+                            } catch (e) {
+                              toast.error("Failed to open file dialog", {
+                                description: e instanceof Error ? e.message : String(e),
+                              });
+                            }
+                          }}
+                        >
+                          <FolderOpen className="w-4 h-4 mr-2" />
+                          Browse
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
