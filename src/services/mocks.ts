@@ -1,5 +1,6 @@
 import {
   QueryResult,
+  SqlExecutionLog,
   TableMetadata,
   SchemaOverview,
   ConnectionForm,
@@ -282,6 +283,33 @@ export const mockQueryResult: QueryResult = {
   success: true,
 };
 
+let mockSqlExecutionLogId = 1;
+const mockSqlExecutionLogs: SqlExecutionLog[] = [];
+
+function appendSqlExecutionLog(params: {
+  sql: string;
+  source?: string;
+  connectionId?: number;
+  database?: string;
+  success: boolean;
+  error?: string;
+}) {
+  mockSqlExecutionLogs.unshift({
+    id: mockSqlExecutionLogId++,
+    sql: params.sql,
+    source: params.source || "unknown",
+    connectionId: params.connectionId ?? null,
+    database: params.database ?? null,
+    success: params.success,
+    error: params.error ?? null,
+    executedAt: new Date().toISOString(),
+  });
+
+  if (mockSqlExecutionLogs.length > 100) {
+    mockSqlExecutionLogs.length = 100;
+  }
+}
+
 const mockAiProviders: AIProviderConfig[] = [
   {
     id: 1,
@@ -432,28 +460,60 @@ CREATE INDEX users_username_idx ON public.users USING btree (username);`;
  * Mock query execution
  */
 export async function mockExecuteQuery(
-  _id: number,
+  id: number,
   query: string,
-  _database?: string,
+  database?: string,
+  source?: string,
 ): Promise<QueryResult> {
   // Simulate network latency
   await new Promise((resolve) => setTimeout(resolve, 100));
 
+  const lower = query.toLowerCase();
+  const failed = lower.includes("invalid") || lower.includes("error");
+  if (failed) {
+    const error = "Mock query execution failed";
+    appendSqlExecutionLog({
+      sql: query,
+      source: source || "unknown",
+      connectionId: id,
+      database,
+      success: false,
+      error,
+    });
+    throw new Error(error);
+  }
+
   // Return different data based on query type
-  if (query.toLowerCase().includes("select")) {
-    return {
+  if (lower.includes("select")) {
+    const result = {
       ...mockQueryResult,
       timeTakenMs: Math.floor(Math.random() * 100) + 20,
     };
+    appendSqlExecutionLog({
+      sql: query,
+      source: source || "unknown",
+      connectionId: id,
+      database,
+      success: true,
+    });
+    return result;
   }
 
-  return {
+  const result = {
     data: [],
     rowCount: 0,
     columns: [],
     timeTakenMs: Math.floor(Math.random() * 50) + 10,
     success: true,
   };
+  appendSqlExecutionLog({
+    sql: query,
+    source: source || "unknown",
+    connectionId: id,
+    database,
+    success: true,
+  });
+  return result;
 }
 
 /**
@@ -471,11 +531,25 @@ export async function mockCancelQuery(
  * Mock query execution by connection info
  */
 export async function mockExecuteByConn(
-  _form: ConnectionForm,
-  _sql: string,
+  form: ConnectionForm,
+  sql: string,
 ): Promise<QueryResult> {
   await new Promise((resolve) => setTimeout(resolve, 100));
+  appendSqlExecutionLog({
+    sql,
+    source: "execute_by_conn",
+    database: form.database,
+    success: true,
+  });
   return mockQueryResult;
+}
+
+export async function mockListSqlExecutionLogs(
+  limit = 100,
+): Promise<SqlExecutionLog[]> {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const safeLimit = Math.max(1, Math.min(100, limit));
+  return mockSqlExecutionLogs.slice(0, safeLimit);
 }
 
 /**
@@ -854,13 +928,21 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
   switch (cmd) {
     // Query commands
     case "execute_query":
-      return mockExecuteQuery(args.id, args.query, args.database) as Promise<T>;
+      return mockExecuteQuery(
+        args.id,
+        args.query,
+        args.database,
+        args.source,
+      ) as Promise<T>;
 
     case "cancel_query":
       return mockCancelQuery(args.uuid, args.queryId) as Promise<T>;
 
     case "execute_by_conn":
       return mockExecuteByConn(args.form, args.sql) as Promise<T>;
+
+    case "list_sql_execution_logs":
+      return mockListSqlExecutionLogs(args?.limit) as Promise<T>;
 
     // Metadata commands
     case "list_tables":

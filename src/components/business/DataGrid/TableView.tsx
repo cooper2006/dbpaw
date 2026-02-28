@@ -658,6 +658,7 @@ export function TableView({
           tableContext.connectionId,
           sql,
           tableContext.database,
+          "table_view_save",
         );
       } catch (e) {
         errors.push(

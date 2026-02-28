@@ -10,6 +10,7 @@ import { SqlEditor } from "@/components/business/Editor/SqlEditor";
 import { SaveQueryDialog } from "@/components/business/Editor/SaveQueryDialog";
 import { TableView } from "@/components/business/DataGrid/TableView";
 import { TableMetadataView } from "@/components/business/Metadata/TableMetadataView";
+import { SqlExecutionLogsDropdown } from "@/components/business/SqlLogs/SqlExecutionLogsDialog";
 import { AISidebar } from "@/components/business/Sidebar/AISidebar";
 import { FileCode, Table, X, Settings, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -157,6 +158,7 @@ export default function App() {
       >
         <Settings className="w-4 h-4" />
       </Button>
+      <SqlExecutionLogsDropdown />
       <Button
         variant={aiVisible ? "default" : "ghost"}
         size="sm"
@@ -361,6 +363,7 @@ export default function App() {
         tab.connectionId,
         sql,
         tab.database,
+        "sql_editor",
       );
       const columns = (result.columns || []).map((c) => c.name);
       const execMs = Math.round(

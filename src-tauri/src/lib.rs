@@ -120,6 +120,7 @@ pub fn run() {
             commands::metadata::list_tables_by_conn,
             commands::query::get_table_data_by_conn,
             commands::query::execute_by_conn,
+            commands::query::list_sql_execution_logs,
             commands::connection::list_databases,
             commands::connection::list_databases_by_id,
             commands::storage::save_query,

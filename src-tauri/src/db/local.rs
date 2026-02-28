@@ -1,5 +1,6 @@
 use crate::models::{
     AiConversation, AiMessage, AiProvider, AiProviderForm, Connection, ConnectionForm, SavedQuery,
+    SqlExecutionLog,
 };
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
 use std::fs;
@@ -130,6 +131,36 @@ impl LocalDb {
             .execute(&pool)
             .await
             .map_err(|e| format!("[MIGRATION_008_ERROR] {e}"))?;
+        }
+
+        let has_provider_type_trigger_insert: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='trg_ai_providers_provider_type_insert')",
+        )
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| format!("[MIGRATION_009_CHECK_ERROR] {e}"))?;
+
+        if !has_provider_type_trigger_insert {
+            sqlx::query(include_str!(
+                "../../migrations/009_ai_provider_type_relaxed.sql"
+            ))
+            .execute(&pool)
+            .await
+            .map_err(|e| format!("[MIGRATION_009_ERROR] {e}"))?;
+        }
+
+        let has_sql_execution_logs: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='sql_execution_logs')",
+        )
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| format!("[MIGRATION_010_CHECK_ERROR] {e}"))?;
+
+        if !has_sql_execution_logs {
+            sqlx::query(include_str!("../../migrations/010_sql_execution_logs.sql"))
+                .execute(&pool)
+                .await
+                .map_err(|e| format!("[MIGRATION_010_ERROR] {e}"))?;
         }
 
         Ok(Self { pool })
@@ -358,6 +389,51 @@ impl LocalDb {
         .fetch_one(&self.pool)
         .await
         .map_err(|e| format!("[GET_QUERY_ERROR] {e}"))
+    }
+
+    pub async fn insert_sql_execution_log(
+        &self,
+        sql: String,
+        source: Option<String>,
+        connection_id: Option<i64>,
+        database: Option<String>,
+        success: bool,
+        error: Option<String>,
+    ) -> Result<(), String> {
+        sqlx::query(
+            "INSERT INTO sql_execution_logs (sql, source, connection_id, database, success, error) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(sql)
+        .bind(source)
+        .bind(connection_id)
+        .bind(database)
+        .bind(success)
+        .bind(error)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("[INSERT_SQL_EXECUTION_LOG_ERROR] {e}"))?;
+
+        sqlx::query(
+            "DELETE FROM sql_execution_logs WHERE id NOT IN (SELECT id FROM sql_execution_logs ORDER BY id DESC LIMIT 100)",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("[PRUNE_SQL_EXECUTION_LOGS_ERROR] {e}"))?;
+
+        Ok(())
+    }
+
+    pub async fn list_sql_execution_logs(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<SqlExecutionLog>, String> {
+        sqlx::query_as::<_, SqlExecutionLog>(
+            "SELECT id, sql, source, connection_id, database, success, error, executed_at FROM sql_execution_logs ORDER BY id DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| format!("[LIST_SQL_EXECUTION_LOGS_ERROR] {e}"))
     }
 
     pub async fn list_ai_providers(&self) -> Result<Vec<AiProvider>, String> {

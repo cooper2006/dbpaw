@@ -44,6 +44,23 @@ export interface QueryResult {
   error?: string;
 }
 
+export type SqlExecutionSource =
+  | "sql_editor"
+  | "table_view_save"
+  | "execute_by_conn"
+  | "unknown";
+
+export interface SqlExecutionLog {
+  id: number;
+  sql: string;
+  source?: string | null;
+  connectionId?: number | null;
+  database?: string | null;
+  success: boolean;
+  error?: string | null;
+  executedAt: string;
+}
+
 export type Driver = "postgres" | "sqlite" | "mysql" | "clickhouse";
 export interface ConnectionForm {
   driver: Driver;
@@ -252,12 +269,20 @@ export interface ExportResult {
 
 export const api = {
   query: {
-    execute: (id: number, query: string, database?: string) =>
-      invoke<QueryResult>("execute_query", { id, query, database }),
+    execute: (
+      id: number,
+      query: string,
+      database?: string,
+      source?: SqlExecutionSource,
+    ) => invoke<QueryResult>("execute_query", { id, query, database, source }),
     cancel: (uuid: string, queryId: string) =>
       invoke<boolean>("cancel_query", { uuid, queryId }),
     executeByConn: (form: ConnectionForm, sql: string) =>
       invoke<QueryResult>("execute_by_conn", { form, sql }),
+  },
+  sqlLogs: {
+    list: (limit = 100) =>
+      invoke<SqlExecutionLog[]>("list_sql_execution_logs", { limit }),
   },
   metadata: {
     listTables: (id: number, database?: string, schema?: string) =>

@@ -1,4 +1,4 @@
-use crate::models::{ConnectionForm, QueryResult, TableDataResponse};
+use crate::models::{ConnectionForm, QueryResult, SqlExecutionLog, TableDataResponse};
 use crate::state::AppState;
 use tauri::{Emitter, State};
 
@@ -291,6 +291,30 @@ fn maybe_apply_default_limit(sql: &str) -> String {
     append_limit_1000(normalized)
 }
 
+async fn append_sql_execution_log(
+    state: &State<'_, AppState>,
+    sql: String,
+    source: Option<String>,
+    connection_id: Option<i64>,
+    database: Option<String>,
+    success: bool,
+    error: Option<String>,
+) {
+    let db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+
+    if let Some(local_db) = db {
+        if let Err(e) = local_db
+            .insert_sql_execution_log(sql, source, connection_id, database, success, error)
+            .await
+        {
+            eprintln!("[SQL_LOG_APPEND_ERROR] {}", e);
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn get_table_data_by_conn(
     form: ConnectionForm,
@@ -312,6 +336,7 @@ pub async fn execute_query(
     id: i64,
     query: String,
     database: Option<String>,
+    source: Option<String>,
 ) -> Result<QueryResult, String> {
     let query_id = format!("q-{}", id);
     let _ = app_handle.emit(
@@ -320,7 +345,7 @@ pub async fn execute_query(
     );
     let guarded_query = maybe_apply_default_limit(&query);
 
-    let result = super::execute_with_retry(&state, id, database, |driver| {
+    let result = super::execute_with_retry(&state, id, database.clone(), |driver| {
         let query_clone = guarded_query.clone();
         async move { driver.execute_query(query_clone).await }
     })
@@ -337,6 +362,28 @@ pub async fn execute_query(
                 }),
             );
         }
+
+        append_sql_execution_log(
+            &state,
+            guarded_query.clone(),
+            source,
+            Some(id),
+            database,
+            true,
+            None,
+        )
+        .await;
+    } else if let Err(err) = &result {
+        append_sql_execution_log(
+            &state,
+            guarded_query.clone(),
+            source,
+            Some(id),
+            database,
+            false,
+            Some(err.clone()),
+        )
+        .await;
     }
 
     result
@@ -389,6 +436,7 @@ pub async fn cancel_query(_uuid: String, _query_id: String) -> Result<bool, Stri
 #[tauri::command]
 pub async fn execute_by_conn(
     app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
     form: ConnectionForm,
     sql: String,
 ) -> Result<QueryResult, String> {
@@ -399,8 +447,9 @@ pub async fn execute_by_conn(
     );
     let guarded_sql = maybe_apply_default_limit(&sql);
 
+    let database = form.database.clone();
     let driver = crate::db::drivers::connect(&form).await?;
-    let result = driver.execute_query(guarded_sql).await;
+    let result = driver.execute_query(guarded_sql.clone()).await;
 
     if let Ok(res) = &result {
         if !res.data.is_empty() {
@@ -412,8 +461,48 @@ pub async fn execute_by_conn(
                 }),
             );
         }
+
+        append_sql_execution_log(
+            &state,
+            guarded_sql.clone(),
+            Some("execute_by_conn".to_string()),
+            None,
+            database,
+            true,
+            None,
+        )
+        .await;
+    } else if let Err(err) = &result {
+        append_sql_execution_log(
+            &state,
+            guarded_sql.clone(),
+            Some("execute_by_conn".to_string()),
+            None,
+            database,
+            false,
+            Some(err.clone()),
+        )
+        .await;
     }
     result
+}
+
+#[tauri::command]
+pub async fn list_sql_execution_logs(
+    state: State<'_, AppState>,
+    limit: Option<i64>,
+) -> Result<Vec<SqlExecutionLog>, String> {
+    let safe_limit = limit.unwrap_or(100).clamp(1, 100);
+    let local_db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+
+    if let Some(db) = local_db {
+        db.list_sql_execution_logs(safe_limit).await
+    } else {
+        Err("Local DB not initialized".to_string())
+    }
 }
 
 #[cfg(test)]
