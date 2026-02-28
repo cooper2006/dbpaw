@@ -43,7 +43,10 @@ export function TableSelector({ tables, value, onChange, disabled }: TableSelect
     onChange([...value, item]);
   };
 
-  const label = value.length === 0 ? "选择表结构（可选）" : `已选 ${value.length} 张表`;
+  const label =
+    value.length === 0
+      ? "Select table schema (no data)"
+      : `Schema: ${value.length} selected`;
 
   return (
     <div className="flex min-w-0 items-center gap-1.5">
@@ -53,9 +56,9 @@ export function TableSelector({ tables, value, onChange, disabled }: TableSelect
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 min-w-0 justify-between gap-2 border-border/60 bg-muted/20 text-xs"
+            className="h-8 w-full min-w-0 justify-between gap-2 border-border/60 bg-muted/20 text-xs"
             disabled={disabled || tables.length === 0}
-            aria-label="Select tables"
+            aria-label="Only schema,no data"
           >
             <span className="truncate">{label}</span>
             <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-60" />
@@ -63,9 +66,9 @@ export function TableSelector({ tables, value, onChange, disabled }: TableSelect
         </PopoverTrigger>
         <PopoverContent align="start" className="w-[320px] p-0">
           <Command>
-            <CommandInput placeholder="搜索表..." />
+            <CommandInput placeholder="Search tables..." />
             <CommandList>
-              <CommandEmpty>未找到表</CommandEmpty>
+              <CommandEmpty>No tables found</CommandEmpty>
               <CommandGroup heading="Tables">
                 {tables.map((t) => {
                   const key = toKey(t);
@@ -105,4 +108,3 @@ export function TableSelector({ tables, value, onChange, disabled }: TableSelect
     </div>
   );
 }
-

@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { AIHistoryPopover } from "./AIHistoryPopover";
 import { ChatComposer } from "./chat/ChatComposer";
 import { ChatMessageList } from "./chat/ChatMessageList";
-import { TableSelector, type SelectedTableRef } from "./chat/TableSelector";
+import { type SelectedTableRef } from "./chat/TableSelector";
 
 interface AISidebarProps {
   connectionId?: number;
@@ -438,17 +438,6 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
         </div>
       </div>
 
-      {availableTables.length ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
-          <TableSelector
-            tables={availableTables}
-            value={selectedTables}
-            onChange={setSelectedTables}
-            disabled={isLoading}
-          />
-        </div>
-      ) : null}
-
       <ChatMessageList
         messages={messages}
         isLoading={isLoading}
@@ -467,6 +456,9 @@ export function AISidebar({ connectionId, database, schemaOverview }: AISidebarP
         providers={providers}
         selectedProviderId={selectedProviderId}
         onProviderChange={setSelectedProviderId}
+        availableTables={availableTables}
+        selectedTables={selectedTables}
+        onSelectedTablesChange={setSelectedTables}
       />
     </div>
   );
