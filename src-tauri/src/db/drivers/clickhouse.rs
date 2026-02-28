@@ -217,7 +217,11 @@ fn value_to_string(v: &Value) -> Option<String> {
     match v {
         Value::String(s) => Some(s.clone()),
         Value::Number(n) => Some(n.to_string()),
-        Value::Bool(b) => Some(if *b { "true".to_string() } else { "false".to_string() }),
+        Value::Bool(b) => Some(if *b {
+            "true".to_string()
+        } else {
+            "false".to_string()
+        }),
         _ => None,
     }
 }
@@ -319,15 +323,14 @@ impl ClickHouseDriver {
             } else {
                 body
             };
-            format!("[PARSE_ERROR] Failed to parse ClickHouse JSON response: {} | body: {}", e, snippet)
+            format!(
+                "[PARSE_ERROR] Failed to parse ClickHouse JSON response: {} | body: {}",
+                e, snippet
+            )
         })
     }
 
-    async fn estimate_total_rows(
-        &self,
-        schema: &str,
-        table: &str,
-    ) -> Result<Option<i64>, String> {
+    async fn estimate_total_rows(&self, schema: &str, table: &str) -> Result<Option<i64>, String> {
         let sql = format!(
             "SELECT total_rows FROM system.tables WHERE database = {} AND name = {} FORMAT JSON",
             quote_literal(schema),
@@ -467,17 +470,14 @@ impl DatabaseDriver for ClickHouseDriver {
                         Some(trimmed.to_string())
                     }
                 });
-            let comment = row
-                .get("comment")
-                .and_then(Value::as_str)
-                .and_then(|s| {
-                    let trimmed = s.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(trimmed.to_string())
-                    }
-                });
+            let comment = row.get("comment").and_then(Value::as_str).and_then(|s| {
+                let trimmed = s.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            });
 
             let primary_key = row
                 .get("is_in_primary_key")

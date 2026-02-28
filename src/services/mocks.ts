@@ -434,7 +434,7 @@ CREATE INDEX users_username_idx ON public.users USING btree (username);`;
 export async function mockExecuteQuery(
   _id: number,
   query: string,
-  _database?: string
+  _database?: string,
 ): Promise<QueryResult> {
   // Simulate network latency
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -461,7 +461,7 @@ export async function mockExecuteQuery(
  */
 export async function mockCancelQuery(
   _uuid: string,
-  _queryId: string
+  _queryId: string,
 ): Promise<boolean> {
   await new Promise((resolve) => setTimeout(resolve, 50));
   return true;
@@ -472,7 +472,7 @@ export async function mockCancelQuery(
  */
 export async function mockExecuteByConn(
   _form: ConnectionForm,
-  _sql: string
+  _sql: string,
 ): Promise<QueryResult> {
   await new Promise((resolve) => setTimeout(resolve, 100));
   return mockQueryResult;
@@ -484,7 +484,7 @@ export async function mockExecuteByConn(
 export async function mockListTables(
   _id: number,
   _database?: string,
-  _schema?: string
+  _schema?: string,
 ): Promise<{ schema: string; name: string; type: string }[]> {
   await new Promise((resolve) => setTimeout(resolve, 50));
   return mockTables;
@@ -496,7 +496,7 @@ export async function mockListTables(
 export async function mockGetTableStructure(
   _id: number,
   _schema: string,
-  _table: string
+  _table: string,
 ): Promise<{ columns: { name: string; type: string; nullable: boolean }[] }> {
   await new Promise((resolve) => setTimeout(resolve, 50));
   return mockTableStructure;
@@ -509,7 +509,7 @@ export async function mockGetTableDDL(
   _id: number,
   _database: string | undefined,
   _schema: string,
-  _table: string
+  _table: string,
 ): Promise<string> {
   await new Promise((resolve) => setTimeout(resolve, 50));
   return mockDDL;
@@ -522,7 +522,7 @@ export async function mockGetTableMetadata(
   _id: number,
   _database: string | undefined,
   _schema: string,
-  _table: string
+  _table: string,
 ): Promise<TableMetadata> {
   await new Promise((resolve) => setTimeout(resolve, 50));
   return mockTableMetadata;
@@ -532,7 +532,7 @@ export async function mockGetTableMetadata(
  * Mock list tables by connection info
  */
 export async function mockListTablesByConn(
-  _form: ConnectionForm
+  _form: ConnectionForm,
 ): Promise<{ schema: string; name: string; type: string }[]> {
   await new Promise((resolve) => setTimeout(resolve, 50));
   return mockTables;
@@ -542,7 +542,7 @@ export async function mockListTablesByConn(
  * Mock list databases
  */
 export async function mockListDatabases(
-  _form: ConnectionForm
+  _form: ConnectionForm,
 ): Promise<string[]> {
   await new Promise((resolve) => setTimeout(resolve, 50));
   return mockDatabases;
@@ -562,7 +562,7 @@ export async function mockListDatabasesById(_id: number): Promise<string[]> {
 export async function mockGetSchemaOverview(
   _id: number,
   _database?: string,
-  _schema?: string
+  _schema?: string,
 ): Promise<SchemaOverview> {
   await new Promise((resolve) => setTimeout(resolve, 50));
   return mockSchemaOverview;
@@ -611,7 +611,7 @@ export async function mockGetTableDataByConn(
   _schema: string,
   _table: string,
   page: number,
-  limit: number
+  limit: number,
 ): Promise<{
   data: any[];
   total: number;
@@ -676,7 +676,7 @@ export async function mockCreateConnection(form: ConnectionForm): Promise<any> {
  */
 export async function mockUpdateConnection(
   id: number,
-  form: ConnectionForm
+  form: ConnectionForm,
 ): Promise<any> {
   await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -731,7 +731,7 @@ export async function mockDeleteConnection(id: number): Promise<void> {
  * Mock test connection
  */
 export async function mockTestConnectionEphemeral(
-  _form: ConnectionForm
+  _form: ConnectionForm,
 ): Promise<TestConnectionResult> {
   await new Promise((resolve) => setTimeout(resolve, 200));
 
@@ -791,7 +791,7 @@ export async function mockUpdateSavedQuery(
     description?: string;
     connectionId?: number;
     database?: string;
-  }
+  },
 ): Promise<SavedQuery> {
   await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -835,7 +835,9 @@ export async function mockExportTableData(_params: any): Promise<ExportResult> {
 /**
  * Mock export query result
  */
-export async function mockExportQueryResult(_params: any): Promise<ExportResult> {
+export async function mockExportQueryResult(
+  _params: any,
+): Promise<ExportResult> {
   await new Promise((resolve) => setTimeout(resolve, 120));
   return {
     filePath: `/tmp/dbpaw-query-export-${Date.now()}.csv`,
@@ -862,17 +864,13 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
 
     // Metadata commands
     case "list_tables":
-      return mockListTables(
-        args.id,
-        args.database,
-        args.schema
-      ) as Promise<T>;
+      return mockListTables(args.id, args.database, args.schema) as Promise<T>;
 
     case "get_table_structure":
       return mockGetTableStructure(
         args.id,
         args.schema,
-        args.table
+        args.table,
       ) as Promise<T>;
 
     case "get_table_ddl":
@@ -880,7 +878,7 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
         args.id,
         args.database,
         args.schema,
-        args.table
+        args.table,
       ) as Promise<T>;
 
     case "get_table_metadata":
@@ -888,7 +886,7 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
         args.id,
         args.database,
         args.schema,
-        args.table
+        args.table,
       ) as Promise<T>;
 
     case "list_tables_by_conn":
@@ -904,7 +902,7 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
       return mockGetSchemaOverview(
         args.id,
         args.database,
-        args.schema
+        args.schema,
       ) as Promise<T>;
 
     // Table data commands
@@ -917,7 +915,7 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
         args.schema,
         args.table,
         args.page,
-        args.limit
+        args.limit,
       ) as Promise<T>;
 
     // Connection commands
@@ -968,7 +966,9 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
         mockAiProviders.forEach((p) => (p.isDefault = false));
       }
 
-      const idx = mockAiProviders.findIndex((p) => p.providerType === requestedType);
+      const idx = mockAiProviders.findIndex(
+        (p) => p.providerType === requestedType,
+      );
       if (idx >= 0) {
         mockAiProviders[idx] = {
           ...mockAiProviders[idx],
@@ -1002,10 +1002,10 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
       const idx = mockAiProviders.findIndex((p) => p.id === args.id);
       if (idx < 0) throw new Error("Provider not found");
       const requestedType = String(
-        args.config.providerType || mockAiProviders[idx].providerType
+        args.config.providerType || mockAiProviders[idx].providerType,
       );
       const conflict = mockAiProviders.find(
-        (p) => p.providerType === requestedType && p.id !== args.id
+        (p) => p.providerType === requestedType && p.id !== args.id,
       );
       if (conflict) {
         throw new Error("UNIQUE constraint failed: ai_providers.provider_type");
@@ -1046,7 +1046,9 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
     }
 
     case "ai_delete_conversation": {
-      const idx = mockAiConversations.findIndex((x) => x.id === args.conversationId);
+      const idx = mockAiConversations.findIndex(
+        (x) => x.id === args.conversationId,
+      );
       if (idx >= 0) mockAiConversations.splice(idx, 1);
       delete mockAiMessages[args.conversationId];
       return Promise.resolve(undefined) as Promise<T>;
@@ -1055,7 +1057,10 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
     case "ai_chat_start":
     case "ai_chat_continue": {
       const input = args.request.input as string;
-      const selectedTables = (args.request.selectedTables as Array<{ schema: string; name: string }> | undefined) || [];
+      const selectedTables =
+        (args.request.selectedTables as
+          | Array<{ schema: string; name: string }>
+          | undefined) || [];
       let conversationId = args.request.conversationId as number | undefined;
       if (!conversationId) {
         conversationId = mockAiConversations.length
@@ -1095,7 +1100,9 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
             return `这是一条 mock 解释：SQL 主要从 ${from} 读取数据。`;
           }
           if (selectedTables.length > 0) {
-            const names = selectedTables.map((t) => `${t.schema}.${t.name}`).join(", ");
+            const names = selectedTables
+              .map((t) => `${t.schema}.${t.name}`)
+              .join(", ");
             return `SELECT *\nFROM ${from}\n-- selected tables: ${names}\nLIMIT 50;`;
           }
           return `SELECT *\nFROM ${from}\nLIMIT 50;`;
@@ -1106,7 +1113,10 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
       mockAiMessages[conversationId] = msgs;
       const idx = mockAiConversations.findIndex((x) => x.id === conversationId);
       if (idx >= 0) {
-        mockAiConversations[idx] = { ...mockAiConversations[idx], updatedAt: now };
+        mockAiConversations[idx] = {
+          ...mockAiConversations[idx],
+          updatedAt: now,
+        };
       }
       return Promise.resolve({
         conversationId,

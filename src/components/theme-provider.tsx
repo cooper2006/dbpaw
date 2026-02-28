@@ -48,7 +48,8 @@ export function ThemeProvider({
   const [theme, setThemeState] = useState<Theme>(defaultTheme);
   const [resolvedTheme, setResolvedTheme] = useState<"dark" | "light">("light");
   const [accentColor, setAccentColorState] = useState<string>("Zinc");
-  const [fontSizePx, setFontSizePxState] = useState<number>(DEFAULT_FONT_SIZE_PX);
+  const [fontSizePx, setFontSizePxState] =
+    useState<number>(DEFAULT_FONT_SIZE_PX);
   const [isLoaded, setIsLoaded] = useState(false);
 
   const clampFontSize = (size: number) => {
@@ -62,7 +63,9 @@ export function ThemeProvider({
 
   const resolveTheme = (t: Theme): "dark" | "light" => {
     if (t === "system") {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      return window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
     }
     return t;
   };
@@ -85,7 +88,8 @@ export function ThemeProvider({
     if (!color) return;
 
     const root = document.documentElement;
-    const colorValue = resolveTheme(currentTheme) === "dark" ? color.dark : color.light;
+    const colorValue =
+      resolveTheme(currentTheme) === "dark" ? color.dark : color.light;
     root.style.setProperty("--primary", colorValue);
     root.style.setProperty("--ring", colorValue);
   };
@@ -100,7 +104,10 @@ export function ThemeProvider({
     const loadSettings = async () => {
       const savedTheme = await getSetting<Theme>("theme", defaultTheme);
       const savedAccent = await getSetting<string>("accentColor", "Zinc");
-      const savedFontSize = await getSetting<number>("fontSizePx", DEFAULT_FONT_SIZE_PX);
+      const savedFontSize = await getSetting<number>(
+        "fontSizePx",
+        DEFAULT_FONT_SIZE_PX,
+      );
       const normalizedFontSize = clampFontSize(savedFontSize);
 
       setThemeState(savedTheme);

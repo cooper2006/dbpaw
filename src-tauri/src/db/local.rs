@@ -40,17 +40,19 @@ impl LocalDb {
 
         // Check if database column exists in saved_queries to avoid duplicate column error
         let has_database_column: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('saved_queries') WHERE name='database')"
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('saved_queries') WHERE name='database')",
         )
         .fetch_one(&pool)
         .await
         .map_err(|e| format!("[MIGRATION_003_CHECK_ERROR] {e}"))?;
 
         if !has_database_column {
-            sqlx::query(include_str!("../../migrations/003_add_database_to_saved_queries.sql"))
-                .execute(&pool)
-                .await
-                .map_err(|e| format!("[MIGRATION_003_ERROR] {e}"))?;
+            sqlx::query(include_str!(
+                "../../migrations/003_add_database_to_saved_queries.sql"
+            ))
+            .execute(&pool)
+            .await
+            .map_err(|e| format!("[MIGRATION_003_ERROR] {e}"))?;
         }
 
         // Check if ssh_enabled column exists in connections
@@ -122,10 +124,12 @@ impl LocalDb {
         .map_err(|e| format!("[MIGRATION_008_CHECK_ERROR] {e}"))?;
 
         if !has_provider_type_unique_index {
-            sqlx::query(include_str!("../../migrations/008_ai_provider_vendor_unique.sql"))
-                .execute(&pool)
-                .await
-                .map_err(|e| format!("[MIGRATION_008_ERROR] {e}"))?;
+            sqlx::query(include_str!(
+                "../../migrations/008_ai_provider_vendor_unique.sql"
+            ))
+            .execute(&pool)
+            .await
+            .map_err(|e| format!("[MIGRATION_008_ERROR] {e}"))?;
         }
 
         Ok(Self { pool })
@@ -134,17 +138,20 @@ impl LocalDb {
     pub async fn create_connection(&self, form: ConnectionForm) -> Result<Connection, String> {
         let uuid = uuid::Uuid::new_v4().to_string();
         // Use provided name or fallback to host or "Unknown"
-        let name = form.name.clone()
+        let name = form
+            .name
+            .clone()
             .or_else(|| form.host.clone())
             .unwrap_or_else(|| "Unknown".to_string());
 
         // Check if connection with same name already exists
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM connections WHERE name = ?)")
-            .bind(&name)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| format!("[CHECK_EXIST_ERROR] {e}"))?;
-            
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM connections WHERE name = ?)")
+                .bind(&name)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| format!("[CHECK_EXIST_ERROR] {e}"))?;
+
         if exists {
             return Err(format!("Connection with name '{}' already exists", name));
         }
@@ -223,7 +230,7 @@ impl LocalDb {
                 ssh_enabled, ssh_host, ssh_port, ssh_username, ssh_password, ssh_key_path,
                 created_at, updated_at 
                FROM connections 
-               ORDER BY updated_at DESC"#
+               ORDER BY updated_at DESC"#,
         )
         .fetch_all(&self.pool)
         .await
@@ -238,7 +245,7 @@ impl LocalDb {
                 ssh_enabled, ssh_host, ssh_port, ssh_username, ssh_password, ssh_key_path,
                 created_at, updated_at 
                FROM connections 
-               WHERE id = ?"#
+               WHERE id = ?"#,
         )
         .bind(id)
         .fetch_one(&self.pool)
@@ -406,9 +413,9 @@ impl LocalDb {
         match existing_id {
             Some(id) => {
                 let existing = self.get_ai_provider_by_id(id).await?;
-                let is_default = form
-                    .is_default
-                    .unwrap_or((existing.is_default && enabled) || (!has_default_provider && enabled));
+                let is_default = form.is_default.unwrap_or(
+                    (existing.is_default && enabled) || (!has_default_provider && enabled),
+                );
                 if is_default {
                     sqlx::query("UPDATE ai_providers SET is_default = 0")
                         .execute(&self.pool)
@@ -460,7 +467,11 @@ impl LocalDb {
         }
     }
 
-    pub async fn update_ai_provider(&self, id: i64, form: AiProviderForm) -> Result<AiProvider, String> {
+    pub async fn update_ai_provider(
+        &self,
+        id: i64,
+        form: AiProviderForm,
+    ) -> Result<AiProvider, String> {
         let existing = self.get_ai_provider_by_id(id).await?;
         let provider_type = form
             .provider_type
@@ -506,13 +517,12 @@ impl LocalDb {
     }
 
     pub async fn set_default_ai_provider(&self, id: i64) -> Result<(), String> {
-        let target_enabled = sqlx::query_scalar::<_, bool>(
-            "SELECT enabled FROM ai_providers WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| format!("[SET_DEFAULT_AI_PROVIDER_LOOKUP_ERROR] {e}"))?;
+        let target_enabled =
+            sqlx::query_scalar::<_, bool>("SELECT enabled FROM ai_providers WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| format!("[SET_DEFAULT_AI_PROVIDER_LOOKUP_ERROR] {e}"))?;
 
         let Some(enabled) = target_enabled else {
             return Err("[SET_DEFAULT_AI_PROVIDER_NOT_FOUND] Provider not found".to_string());
@@ -528,11 +538,13 @@ impl LocalDb {
             .execute(&self.pool)
             .await
             .map_err(|e| format!("[SET_DEFAULT_AI_PROVIDER_RESET_ERROR] {e}"))?;
-        sqlx::query("UPDATE ai_providers SET is_default = 1, updated_at = datetime('now') WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| format!("[SET_DEFAULT_AI_PROVIDER_ERROR] {e}"))?;
+        sqlx::query(
+            "UPDATE ai_providers SET is_default = 1, updated_at = datetime('now') WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("[SET_DEFAULT_AI_PROVIDER_ERROR] {e}"))?;
         Ok(())
     }
 

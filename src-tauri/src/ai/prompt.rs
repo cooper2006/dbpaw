@@ -1,4 +1,4 @@
-use super::types::{AiPromptBundle, AiSchemaOverview, AiTableSummary, AiChatMessage};
+use super::types::{AiChatMessage, AiPromptBundle, AiSchemaOverview, AiTableSummary};
 
 const PROMPT_VERSION: &str = "v1.0.0";
 const MAX_TABLES: usize = 8;
@@ -44,9 +44,7 @@ fn build_template(scenario: &str, schema_summary: &str) -> String {
         _ => "Task: generate SQL from natural language. Return SQL only.",
     };
 
-    format!(
-        "{base_rules}\n{scenario_rules}\n\nAvailable tables and schemas:\n{schema_summary}",
-    )
+    format!("{base_rules}\n{scenario_rules}\n\nAvailable tables and schemas:\n{schema_summary}",)
 }
 
 fn select_tables(input: &str, schema_overview: Option<&AiSchemaOverview>) -> Vec<AiTableSummary> {
@@ -102,12 +100,7 @@ fn select_tables(input: &str, schema_overview: Option<&AiSchemaOverview>) -> Vec
     }
 
     if selected.is_empty() {
-        selected = overview
-            .tables
-            .iter()
-            .take(MAX_TABLES)
-            .cloned()
-            .collect();
+        selected = overview.tables.iter().take(MAX_TABLES).cloned().collect();
     }
 
     selected
@@ -194,12 +187,18 @@ mod tests {
         let users = table(
             "public",
             "users",
-            vec![col("id", "int", Some(false)), col("email", "text", Some(true))],
+            vec![
+                col("id", "int", Some(false)),
+                col("email", "text", Some(true)),
+            ],
         );
         let orders = table(
             "public",
             "orders",
-            vec![col("id", "int", Some(false)), col("user_id", "int", Some(false))],
+            vec![
+                col("id", "int", Some(false)),
+                col("user_id", "int", Some(false)),
+            ],
         );
 
         let out = render_schema_summary(&[users, orders]);
@@ -222,7 +221,11 @@ mod tests {
     fn schema_truncates_tables_deterministically() {
         let mut tables = Vec::new();
         for i in 0..(MAX_TABLES + 2) {
-            tables.push(table("public", &format!("t{i}"), vec![col("id", "int", Some(false))]));
+            tables.push(table(
+                "public",
+                &format!("t{i}"),
+                vec![col("id", "int", Some(false))],
+            ));
         }
         let out = render_schema_summary(&tables);
         assert!(out.contains("... (truncated)"));

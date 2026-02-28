@@ -31,9 +31,10 @@ const baseThemeSpec: Parameters<typeof EditorView.theme>[0] = {
   ".cm-activeLineGutter": {
     backgroundColor: "color-mix(in oklab, var(--accent) 70%, transparent)",
   },
-  ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
-    backgroundColor: "color-mix(in oklab, var(--accent) 85%, transparent)",
-  },
+  ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection":
+    {
+      backgroundColor: "color-mix(in oklab, var(--accent) 85%, transparent)",
+    },
   ".cm-tooltip": {
     backgroundColor: "var(--popover)",
     color: "var(--popover-foreground)",
@@ -65,5 +66,9 @@ const baseThemeSpec: Parameters<typeof EditorView.theme>[0] = {
   },
 };
 
-export const sqlEditorThemeLight: Extension = EditorView.theme(baseThemeSpec, { dark: false });
-export const sqlEditorThemeDark: Extension = EditorView.theme(baseThemeSpec, { dark: true });
+export const sqlEditorThemeLight: Extension = EditorView.theme(baseThemeSpec, {
+  dark: false,
+});
+export const sqlEditorThemeDark: Extension = EditorView.theme(baseThemeSpec, {
+  dark: true,
+});

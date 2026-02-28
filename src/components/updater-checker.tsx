@@ -16,7 +16,10 @@ import { toast } from "sonner";
 
 export function UpdaterChecker() {
   const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
-  const [updateInfo, setUpdateInfo] = useState<{ version: string; body?: string } | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<{
+    version: string;
+    body?: string;
+  } | null>(null);
   const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
@@ -76,11 +79,11 @@ export function UpdaterChecker() {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={downloading}>Later</AlertDialogCancel>
-          <AlertDialogAction 
+          <AlertDialogAction
             onClick={(e) => {
-              e.preventDefault(); 
+              e.preventDefault();
               handleUpdate();
-            }} 
+            }}
             disabled={downloading}
           >
             {downloading ? "Updating..." : "Update Now"}

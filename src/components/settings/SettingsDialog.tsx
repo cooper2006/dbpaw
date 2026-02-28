@@ -126,15 +126,21 @@ const GITHUB_URL = "https://github.com/codeErrorSleep/dbpaw";
 const APP_VERSION = packageJson.version;
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { theme, setTheme, accentColor, setAccentColor, fontSizePx, setFontSizePx } =
-    useTheme();
-  const [activeSection, setActiveSection] = useState<SettingsSection>("general");
+  const {
+    theme,
+    setTheme,
+    accentColor,
+    setAccentColor,
+    fontSizePx,
+    setFontSizePx,
+  } = useTheme();
+  const [activeSection, setActiveSection] =
+    useState<SettingsSection>("general");
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [checking, setChecking] = useState(false);
   const [providers, setProviders] = useState<AIProviderConfig[]>([]);
-  const [selectedProviderType, setSelectedProviderType] = useState<AIProviderType>(
-    AI_PROVIDER_OPTIONS[0].type,
-  );
+  const [selectedProviderType, setSelectedProviderType] =
+    useState<AIProviderType>(AI_PROVIDER_OPTIONS[0].type);
   const [providerBaseUrl, setProviderBaseUrl] = useState(
     AI_PROVIDER_OPTIONS[0].baseUrl,
   );
@@ -154,18 +160,21 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       setActiveSection("general");
       setFontSizeInput(String(fontSizePx));
       getSetting("autoUpdate", true).then(setAutoUpdate);
-      api.ai.providers.list().then((list) => {
-        setProviders(list);
-        const selected = list.find((p) => p.isDefault) ?? list[0];
-        if (selected && AI_PROVIDER_OPTIONS_BY_TYPE[selected.providerType]) {
-          applyProviderToForm(selected.providerType, list);
-        } else {
-          applyProviderToForm(AI_PROVIDER_OPTIONS[0].type, list);
-        }
-      }).catch((e) => {
-        console.error(e);
-        toast.error("Failed to load AI providers");
-      });
+      api.ai.providers
+        .list()
+        .then((list) => {
+          setProviders(list);
+          const selected = list.find((p) => p.isDefault) ?? list[0];
+          if (selected && AI_PROVIDER_OPTIONS_BY_TYPE[selected.providerType]) {
+            applyProviderToForm(selected.providerType, list);
+          } else {
+            applyProviderToForm(AI_PROVIDER_OPTIONS[0].type, list);
+          }
+        })
+        .catch((e) => {
+          console.error(e);
+          toast.error("Failed to load AI providers");
+        });
     }
   }, [open]);
 
@@ -173,8 +182,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setFontSizeInput(String(fontSizePx));
   }, [fontSizePx]);
 
-  function applyProviderToForm(providerType: AIProviderType, source: AIProviderConfig[]) {
-    const option = AI_PROVIDER_OPTIONS_BY_TYPE[providerType] ?? AI_PROVIDER_OPTIONS[0];
+  function applyProviderToForm(
+    providerType: AIProviderType,
+    source: AIProviderConfig[],
+  ) {
+    const option =
+      AI_PROVIDER_OPTIONS_BY_TYPE[providerType] ?? AI_PROVIDER_OPTIONS[0];
     const existing = source.find((p) => p.providerType === providerType);
     setSelectedProviderType(option.type);
     setProviderBaseUrl(existing?.baseUrl ?? option.baseUrl);
@@ -209,8 +222,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               } catch (e) {
                 toast.error("Failed to update");
               }
-            }
-          }
+            },
+          },
         });
       } else {
         toast.success("You are on the latest version.");
@@ -229,14 +242,21 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   };
 
   const handleSaveProvider = async () => {
-    if (!providerBaseUrl.trim() || !providerModel.trim() || !providerApiKey.trim()) {
+    if (
+      !providerBaseUrl.trim() ||
+      !providerModel.trim() ||
+      !providerApiKey.trim()
+    ) {
       toast.error("Please fill all provider fields");
       return;
     }
     try {
       const selectedOption =
-        AI_PROVIDER_OPTIONS_BY_TYPE[selectedProviderType] ?? AI_PROVIDER_OPTIONS[0];
-      const existing = providers.find((p) => p.providerType === selectedProviderType);
+        AI_PROVIDER_OPTIONS_BY_TYPE[selectedProviderType] ??
+        AI_PROVIDER_OPTIONS[0];
+      const existing = providers.find(
+        (p) => p.providerType === selectedProviderType,
+      );
       const payload = {
         name: selectedOption.label,
         providerType: selectedProviderType,
@@ -296,30 +316,33 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <div className="border rounded-lg p-2 bg-muted/25 h-fit">
             <div className="space-y-1">
               <button
-                className={`w-full text-left rounded-md px-3 py-2 text-sm transition-colors flex items-center gap-2 ${activeSection === "general"
-                  ? "bg-background shadow-sm text-foreground"
-                  : "text-muted-foreground hover:bg-muted/60"
-                  }`}
+                className={`w-full text-left rounded-md px-3 py-2 text-sm transition-colors flex items-center gap-2 ${
+                  activeSection === "general"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:bg-muted/60"
+                }`}
                 onClick={() => setActiveSection("general")}
               >
                 <Settings2 className="w-4 h-4" />
                 General
               </button>
               <button
-                className={`w-full text-left rounded-md px-3 py-2 text-sm transition-colors flex items-center gap-2 ${activeSection === "ai"
-                  ? "bg-background shadow-sm text-foreground"
-                  : "text-muted-foreground hover:bg-muted/60"
-                  }`}
+                className={`w-full text-left rounded-md px-3 py-2 text-sm transition-colors flex items-center gap-2 ${
+                  activeSection === "ai"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:bg-muted/60"
+                }`}
                 onClick={() => setActiveSection("ai")}
               >
                 <Bot className="w-4 h-4" />
                 AI
               </button>
               <button
-                className={`w-full text-left rounded-md px-3 py-2 text-sm transition-colors flex items-center gap-2 ${activeSection === "about"
-                  ? "bg-background shadow-sm text-foreground"
-                  : "text-muted-foreground hover:bg-muted/60"
-                  }`}
+                className={`w-full text-left rounded-md px-3 py-2 text-sm transition-colors flex items-center gap-2 ${
+                  activeSection === "about"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:bg-muted/60"
+                }`}
                 onClick={() => setActiveSection("about")}
               >
                 <Info className="w-4 h-4" />
@@ -343,7 +366,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         Choose your interface style
                       </p>
                     </div>
-                    <Select value={theme} onValueChange={(v) => setTheme(v as Theme)}>
+                    <Select
+                      value={theme}
+                      onValueChange={(v) => setTheme(v as Theme)}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select theme" />
                       </SelectTrigger>
@@ -390,10 +416,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       {THEME_COLORS.map((color) => (
                         <button
                           key={color.name}
-                          className={`h-8 w-8 rounded-full border-2 flex items-center justify-center transition-all ${accentColor === color.name
-                            ? "border-primary ring-2 ring-ring ring-offset-2 scale-110"
-                            : "border-transparent hover:scale-105"
-                            }`}
+                          className={`h-8 w-8 rounded-full border-2 flex items-center justify-center transition-all ${
+                            accentColor === color.name
+                              ? "border-primary ring-2 ring-ring ring-offset-2 scale-110"
+                              : "border-transparent hover:scale-105"
+                          }`}
                           style={{ backgroundColor: color.value }}
                           onClick={() => setAccentColor(color.name)}
                           title={color.name}
@@ -493,7 +520,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       <div className="space-y-1">
                         {providers.map((provider) => {
                           const label =
-                            AI_PROVIDER_OPTIONS_BY_TYPE[provider.providerType]?.label ||
+                            AI_PROVIDER_OPTIONS_BY_TYPE[provider.providerType]
+                              ?.label ||
                             provider.name ||
                             provider.providerType;
                           return (
@@ -529,13 +557,18 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <div className="bg-muted/50 rounded-lg p-4 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="font-medium">DbPaw</span>
-                    <span className="text-sm text-muted-foreground">v{APP_VERSION}</span>
+                    <span className="text-sm text-muted-foreground">
+                      v{APP_VERSION}
+                    </span>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    A modern database management tool providing a smooth development experience.
+                    A modern database management tool providing a smooth
+                    development experience.
                   </p>
                   <div className="grid grid-cols-[88px_1fr] gap-x-2 gap-y-1 text-xs text-muted-foreground pt-1">
-                    <span className="font-medium text-foreground/90">GitHub</span>
+                    <span className="font-medium text-foreground/90">
+                      GitHub
+                    </span>
                     <a
                       href={GITHUB_URL}
                       target="_blank"
@@ -546,9 +579,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </a>
                     <span className="font-medium text-foreground/90">Tech</span>
                     <span>Tauri + React + TypeScript</span>
-                    <span className="font-medium text-foreground/90">License</span>
+                    <span className="font-medium text-foreground/90">
+                      License
+                    </span>
                     <span>MIT</span>
-                    <span className="font-medium text-foreground/90">Platforms</span>
+                    <span className="font-medium text-foreground/90">
+                      Platforms
+                    </span>
                     <span>macOS / Windows / Linux</span>
                   </div>
                 </div>

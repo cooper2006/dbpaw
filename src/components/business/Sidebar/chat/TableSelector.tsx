@@ -1,8 +1,19 @@
 import { useMemo, useState } from "react";
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/components/ui/utils";
 
 export interface SelectedTableRef {
@@ -21,7 +32,12 @@ function toKey(t: SelectedTableRef) {
   return `${t.schema}.${t.name}`;
 }
 
-export function TableSelector({ tables, value, onChange, disabled }: TableSelectorProps) {
+export function TableSelector({
+  tables,
+  value,
+  onChange,
+  disabled,
+}: TableSelectorProps) {
   const [open, setOpen] = useState(false);
   const selected = useMemo(() => new Set(value.map(toKey)), [value]);
   const byKey = useMemo(() => {
@@ -80,7 +96,12 @@ export function TableSelector({ tables, value, onChange, disabled }: TableSelect
                       onSelect={() => toggle(key)}
                       className="flex items-center gap-2"
                     >
-                      <Check className={cn("h-4 w-4", checked ? "opacity-100" : "opacity-0")} />
+                      <Check
+                        className={cn(
+                          "h-4 w-4",
+                          checked ? "opacity-100" : "opacity-0",
+                        )}
+                      />
                       <span className="truncate">
                         {t.schema}.{t.name}
                       </span>

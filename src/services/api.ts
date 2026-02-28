@@ -26,7 +26,7 @@ const invoke = async <T>(cmd: string, args?: any): Promise<T> => {
   // If not in Tauri and Mock mode is disabled, throw error
   console.warn(`[API] invoke ${cmd}`, args);
   throw new Error(
-    "Tauri API not available. Please run 'bun tauri dev' or enable Mock mode with 'VITE_USE_MOCK=true'."
+    "Tauri API not available. Please run 'bun tauri dev' or enable Mock mode with 'VITE_USE_MOCK=true'.",
   );
 };
 
@@ -132,7 +132,12 @@ export interface SqliteConnectionIssue {
   connectionId: number;
   connectionName: string;
   filePath: string;
-  issueType: "locked" | "corrupted" | "permission_denied" | "not_found" | string;
+  issueType:
+    | "locked"
+    | "corrupted"
+    | "permission_denied"
+    | "not_found"
+    | string;
   description: string;
   detectedAt: string;
   resolvedAt?: string | null;
@@ -278,7 +283,12 @@ export const api = {
       schema: string,
       table: string,
     ) =>
-      invoke<TableMetadata>("get_table_metadata", { id, database, schema, table }),
+      invoke<TableMetadata>("get_table_metadata", {
+        id,
+        database,
+        schema,
+        table,
+      }),
     listTablesByConn: (form: ConnectionForm) =>
       invoke<{ schema: string; name: string; type: string }[]>(
         "list_tables_by_conn",
@@ -355,7 +365,8 @@ export const api = {
   },
   connections: {
     list: () => invoke<any[]>("get_connections"),
-    create: (form: ConnectionForm) => invoke<any>("create_connection", { form }),
+    create: (form: ConnectionForm) =>
+      invoke<any>("create_connection", { form }),
     update: (id: number, form: ConnectionForm) =>
       invoke<any>("update_connection", { id, form }),
     delete: (id: number) => invoke<void>("delete_connection", { id }),

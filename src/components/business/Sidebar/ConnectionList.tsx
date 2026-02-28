@@ -131,7 +131,9 @@ const renderSimpleIcon = (icon: SimpleIcon) => (
 );
 
 const getConnectionIcon = (driver: Driver | string): React.ReactNode => {
-  const normalized = String(driver || "").trim().toLowerCase();
+  const normalized = String(driver || "")
+    .trim()
+    .toLowerCase();
 
   switch (normalized) {
     case "postgres":
@@ -250,13 +252,17 @@ interface ConnectionListProps {
     databaseName: string,
     driver: string,
   ) => void;
-  onExportTable?: (ctx: {
-    connectionId: number;
-    database: string;
-    schema: string;
-    table: string;
-    driver: string;
-  }, format: "csv" | "json" | "sql", filePath: string) => void;
+  onExportTable?: (
+    ctx: {
+      connectionId: number;
+      database: string;
+      schema: string;
+      table: string;
+      driver: string;
+    },
+    format: "csv" | "json" | "sql",
+    filePath: string,
+  ) => void;
 }
 
 export function ConnectionList({
@@ -283,12 +289,16 @@ export function ConnectionList({
   }>({ visible: false, x: 0, y: 0, connectionId: null, type: "connection" });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
-  const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
+  const [editingConnectionId, setEditingConnectionId] = useState<string | null>(
+    null,
+  );
   const [isTesting, setIsTesting] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteTargetConnectionId, setDeleteTargetConnectionId] = useState<string | null>(null);
+  const [deleteTargetConnectionId, setDeleteTargetConnectionId] = useState<
+    string | null
+  >(null);
   const [testMsg, setTestMsg] = useState<{
     ok: boolean;
     text: string;
@@ -379,7 +389,10 @@ export function ConnectionList({
       setExpandedConnections(new Set());
       setExpandedDatabases(new Set());
     } catch (e) {
-      console.error("listConnections failed", e instanceof Error ? e.message : String(e));
+      console.error(
+        "listConnections failed",
+        e instanceof Error ? e.message : String(e),
+      );
     }
   };
 
@@ -396,7 +409,9 @@ export function ConnectionList({
     setExpandedConnections(newExpanded);
   };
 
-  const fetchAndSetDatabases = async (connectionId: string): Promise<boolean> => {
+  const fetchAndSetDatabases = async (
+    connectionId: string,
+  ): Promise<boolean> => {
     try {
       const dbNames = await api.metadata.listDatabasesById(
         Number(connectionId),
@@ -433,7 +448,9 @@ export function ConnectionList({
           };
         }),
       );
-      toast.error("Failed to load databases", { description: sanitizedMessage || message });
+      toast.error("Failed to load databases", {
+        description: sanitizedMessage || message,
+      });
       return false;
     }
   };
@@ -518,14 +535,21 @@ export function ConnectionList({
               if (!options?.force && db.tables.length > 0) return db;
               return {
                 ...db,
-                tables: tables.map((t) => ({ name: t.name, schema: t.schema, columns: [] })),
+                tables: tables.map((t) => ({
+                  name: t.name,
+                  schema: t.schema,
+                  columns: [],
+                })),
               };
             }),
           };
         }),
       );
     } catch (e) {
-      console.error("listTables failed", e instanceof Error ? e.message : String(e));
+      console.error(
+        "listTables failed",
+        e instanceof Error ? e.message : String(e),
+      );
     }
   };
 
@@ -606,7 +630,10 @@ export function ConnectionList({
         }),
       );
     } catch (e) {
-      console.error("getTableMetadata failed", e instanceof Error ? e.message : String(e));
+      console.error(
+        "getTableMetadata failed",
+        e instanceof Error ? e.message : String(e),
+      );
     }
   };
 
@@ -623,7 +650,12 @@ export function ConnectionList({
       newExpanded.add(tableKey);
       // Load column info on first expand
       if (table.columns.length === 0) {
-        fetchAndSetTableColumns(connectionId, databaseName, table.schema, table.name);
+        fetchAndSetTableColumns(
+          connectionId,
+          databaseName,
+          table.schema,
+          table.name,
+        );
       }
     }
     setExpandedTables(newExpanded);
@@ -712,9 +744,7 @@ export function ConnectionList({
   const handleSaveEdit = async () => {
     if (!editingConnectionId) return;
     if (!requiredOk) {
-      const requiredFields = isSqlite
-        ? "File path"
-        : "Host, Port, Username";
+      const requiredFields = isSqlite ? "File path" : "Host, Port, Username";
       setValidationMsg(`Please fill in required fields: ${requiredFields}`);
       return;
     }
@@ -810,13 +840,19 @@ export function ConnectionList({
       });
       setDeleteTargetConnectionId(null);
     } catch (e) {
-      console.error("deleteConnection failed", e instanceof Error ? e.message : String(e));
+      console.error(
+        "deleteConnection failed",
+        e instanceof Error ? e.message : String(e),
+      );
     } finally {
       setIsDeleting(false);
     }
   };
 
-  const getExportDefaultName = (tableName: string, format: "csv" | "json" | "sql") => {
+  const getExportDefaultName = (
+    tableName: string,
+    format: "csv" | "json" | "sql",
+  ) => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     return `${tableName}_${timestamp}.${format}`;
   };
@@ -885,10 +921,17 @@ export function ConnectionList({
 
   const renderConnectionStatusIndicator = (connection: Connection) => {
     if (connection.connectState === "success") {
-      return <CheckCircle2 className="h-3.5 w-3.5 text-green-500" aria-hidden="true" />;
+      return (
+        <CheckCircle2
+          className="h-3.5 w-3.5 text-green-500"
+          aria-hidden="true"
+        />
+      );
     }
     if (connection.connectState === "error") {
-      return <XCircle className="h-3.5 w-3.5 text-red-500" aria-hidden="true" />;
+      return (
+        <XCircle className="h-3.5 w-3.5 text-red-500" aria-hidden="true" />
+      );
     }
     if (connection.connectState === "connecting") {
       return (
@@ -898,7 +941,12 @@ export function ConnectionList({
         />
       );
     }
-    return <CircleDot className="h-3.5 w-3.5 text-muted-foreground/60" aria-hidden="true" />;
+    return (
+      <CircleDot
+        className="h-3.5 w-3.5 text-muted-foreground/60"
+        aria-hidden="true"
+      />
+    );
   };
 
   return (
@@ -959,7 +1007,7 @@ export function ConnectionList({
                                 ? 3306
                                 : v === "clickhouse"
                                   ? 8123
-                                : f.port,
+                                  : f.port,
                         }))
                       }
                     >
@@ -1031,7 +1079,10 @@ export function ConnectionList({
                             id="username"
                             value={form.username || ""}
                             onChange={(e) =>
-                              setForm((f) => ({ ...f, username: e.target.value }))
+                              setForm((f) => ({
+                                ...f,
+                                username: e.target.value,
+                              }))
                             }
                           />
                         </div>
@@ -1052,7 +1103,10 @@ export function ConnectionList({
                             }
                             value={form.password || ""}
                             onChange={(e) =>
-                              setForm((f) => ({ ...f, password: e.target.value }))
+                              setForm((f) => ({
+                                ...f,
+                                password: e.target.value,
+                              }))
                             }
                           />
                         </div>
@@ -1064,7 +1118,10 @@ export function ConnectionList({
                             id="database"
                             value={form.database || ""}
                             onChange={(e) =>
-                              setForm((f) => ({ ...f, database: e.target.value }))
+                              setForm((f) => ({
+                                ...f,
+                                database: e.target.value,
+                              }))
                             }
                           />
                         </div>
@@ -1095,7 +1152,10 @@ export function ConnectionList({
                           id="ssh"
                           checked={form.sshEnabled}
                           onCheckedChange={(checked) =>
-                            setForm((f) => ({ ...f, sshEnabled: checked === true }))
+                            setForm((f) => ({
+                              ...f,
+                              sshEnabled: checked === true,
+                            }))
                           }
                         />
                         <Label htmlFor="ssh">SSH</Label>
@@ -1111,7 +1171,10 @@ export function ConnectionList({
                                 placeholder="ssh.example.com"
                                 value={form.sshHost || ""}
                                 onChange={(e) =>
-                                  setForm((f) => ({ ...f, sshHost: e.target.value }))
+                                  setForm((f) => ({
+                                    ...f,
+                                    sshHost: e.target.value,
+                                  }))
                                 }
                               />
                             </div>
@@ -1124,7 +1187,8 @@ export function ConnectionList({
                                 onChange={(e) =>
                                   setForm((f) => ({
                                     ...f,
-                                    sshPort: Number(e.target.value) || undefined,
+                                    sshPort:
+                                      Number(e.target.value) || undefined,
                                   }))
                                 }
                               />
@@ -1197,7 +1261,9 @@ export function ConnectionList({
                           variant="outline"
                           onClick={async () => {
                             if (!isTauri()) {
-                              toast.info("File browser is only available in desktop app");
+                              toast.info(
+                                "File browser is only available in desktop app",
+                              );
                               return;
                             }
                             try {
@@ -1205,7 +1271,15 @@ export function ConnectionList({
                                 title: "Select SQLite Database File",
                                 multiple: false,
                                 filters: [
-                                  { name: "SQLite Database", extensions: ["sqlite", "db", "sqlite3", "db3"] },
+                                  {
+                                    name: "SQLite Database",
+                                    extensions: [
+                                      "sqlite",
+                                      "db",
+                                      "sqlite3",
+                                      "db3",
+                                    ],
+                                  },
                                   { name: "All Files", extensions: ["*"] },
                                 ],
                               });
@@ -1214,7 +1288,8 @@ export function ConnectionList({
                               }
                             } catch (e) {
                               toast.error("Failed to open file dialog", {
-                                description: e instanceof Error ? e.message : String(e),
+                                description:
+                                  e instanceof Error ? e.message : String(e),
                               });
                             }
                           }}
@@ -1251,7 +1326,10 @@ export function ConnectionList({
                   </Button>
                   <Button
                     type="submit"
-                    disabled={(dialogMode === "edit" ? isSavingEdit : isConnecting) || !requiredOk}
+                    disabled={
+                      (dialogMode === "edit" ? isSavingEdit : isConnecting) ||
+                      !requiredOk
+                    }
                   >
                     {dialogMode === "edit" ? (
                       isSavingEdit ? (
@@ -1284,7 +1362,9 @@ export function ConnectionList({
                   <div className="mt-3">
                     <Alert variant={testMsg.ok ? "default" : "destructive"}>
                       <AlertTitle>
-                        {testMsg.ok ? "Connection Test Successful" : "Connection Test Failed"}
+                        {testMsg.ok
+                          ? "Connection Test Successful"
+                          : "Connection Test Failed"}
                       </AlertTitle>
                       <AlertDescription>
                         {testMsg.text}
@@ -1351,7 +1431,12 @@ export function ConnectionList({
             {connection.connectState === "success" ? (
               <>
                 {connection.databases
-                  .filter((database) => !["information_schema", "performance_schema"].includes(database.name.toLowerCase()))
+                  .filter(
+                    (database) =>
+                      !["information_schema", "performance_schema"].includes(
+                        database.name.toLowerCase(),
+                      ),
+                  )
                   .map((database) => {
                     const dbKey = `${connection.id}-${database.name}`;
                     return (
@@ -1360,7 +1445,8 @@ export function ConnectionList({
                         level={1}
                         icon={<Database className="w-4 h-4" />}
                         label={
-                          connection.type === "sqlite" && database.name === "main"
+                          connection.type === "sqlite" &&
+                          database.name === "main"
                             ? "main (SQLite)"
                             : database.name
                         }
@@ -1392,10 +1478,19 @@ export function ConnectionList({
                                     isExpanded={expandedTables.has(tableKey)}
                                     toggleOnRowClick={false}
                                     onToggle={() => {
-                                      toggleTable(tableKey, connection.id, database.name, table);
+                                      toggleTable(
+                                        tableKey,
+                                        connection.id,
+                                        database.name,
+                                        table,
+                                      );
                                     }}
                                     onDoubleClick={() => {
-                                      handleTableClick(connection, database, table);
+                                      handleTableClick(
+                                        connection,
+                                        database,
+                                        table,
+                                      );
                                     }}
                                     actions={
                                       <div onClick={(e) => e.stopPropagation()}>
@@ -1420,7 +1515,9 @@ export function ConnectionList({
                                       <div
                                         key={column.name}
                                         className="flex items-center gap-1 px-2 py-1 hover:bg-accent text-xs"
-                                        style={{ paddingLeft: `${3 * 12 + 8}px` }}
+                                        style={{
+                                          paddingLeft: `${3 * 12 + 8}px`,
+                                        }}
                                       >
                                         <span className="w-4" />
                                         {column.isPrimaryKey ? (
@@ -1442,7 +1539,12 @@ export function ConnectionList({
                               <ContextMenuContent>
                                 <ContextMenuItem
                                   onClick={() =>
-                                    void handleTableExport(connection, database, table, "csv")
+                                    void handleTableExport(
+                                      connection,
+                                      database,
+                                      table,
+                                      "csv",
+                                    )
                                   }
                                 >
                                   <Download className="w-4 h-4 mr-2" />
@@ -1450,7 +1552,12 @@ export function ConnectionList({
                                 </ContextMenuItem>
                                 <ContextMenuItem
                                   onClick={() =>
-                                    void handleTableExport(connection, database, table, "json")
+                                    void handleTableExport(
+                                      connection,
+                                      database,
+                                      table,
+                                      "json",
+                                    )
                                   }
                                 >
                                   <Download className="w-4 h-4 mr-2" />
@@ -1458,7 +1565,12 @@ export function ConnectionList({
                                 </ContextMenuItem>
                                 <ContextMenuItem
                                   onClick={() =>
-                                    void handleTableExport(connection, database, table, "sql")
+                                    void handleTableExport(
+                                      connection,
+                                      database,
+                                      table,
+                                      "sql",
+                                    )
                                   }
                                 >
                                   <Download className="w-4 h-4 mr-2" />
@@ -1580,8 +1692,8 @@ export function ConnectionList({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Connection</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. The selected connection configuration
-              will be removed.
+              This action cannot be undone. The selected connection
+              configuration will be removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

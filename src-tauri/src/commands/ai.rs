@@ -88,7 +88,9 @@ fn emit_ai_error(
 }
 
 #[tauri::command]
-pub async fn ai_list_providers(state: State<'_, AppState>) -> Result<Vec<crate::models::AiProvider>, String> {
+pub async fn ai_list_providers(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::models::AiProvider>, String> {
     let db = get_db(&state).await?;
     db.list_ai_providers().await
 }
@@ -161,7 +163,12 @@ async fn run_chat(
                 } else {
                     e
                 };
-                emit_ai_error(&app, request.request_id, request.conversation_id, msg.clone());
+                emit_ai_error(
+                    &app,
+                    request.request_id,
+                    request.conversation_id,
+                    msg.clone(),
+                );
                 return Err(msg);
             }
         }
@@ -174,7 +181,12 @@ async fn run_chat(
                 } else {
                     e
                 };
-                emit_ai_error(&app, request.request_id, request.conversation_id, msg.clone());
+                emit_ai_error(
+                    &app,
+                    request.request_id,
+                    request.conversation_id,
+                    msg.clone(),
+                );
                 return Err(msg);
             }
         }
@@ -182,7 +194,12 @@ async fn run_chat(
 
     if !provider_record.enabled {
         let msg = "Selected AI provider is disabled".to_string();
-        emit_ai_error(&app, request.request_id, request.conversation_id, msg.clone());
+        emit_ai_error(
+            &app,
+            request.request_id,
+            request.conversation_id,
+            msg.clone(),
+        );
         return Err(msg);
     }
 
@@ -225,7 +242,8 @@ async fn run_chat(
 
     let mut schema_override: Option<AiSchemaOverview> = None;
     let mut selection_hint = String::new();
-    if let (Some(conn_id), Some(selected)) = (request.connection_id, request.selected_tables.as_ref())
+    if let (Some(conn_id), Some(selected)) =
+        (request.connection_id, request.selected_tables.as_ref())
     {
         if !selected.is_empty() {
             let driver =
