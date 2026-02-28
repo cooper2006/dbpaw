@@ -816,11 +816,13 @@ export function TableView({
 
       const eventTarget = e.target instanceof Node ? e.target : null;
       const eventInsideTable = eventTarget ? container.contains(eventTarget) : false;
-      const hasTableEditingContext =
-        eventInsideTable || !!selectedCell || !!editingCell || hasPendingChanges;
+
+      // Only handle save when actively editing or having pending changes
+      const shouldHandleSave =
+        eventInsideTable || !!editingCell || hasPendingChanges;
 
       if (isModKey(e) && e.key.toLowerCase() === "s") {
-        if (!hasTableEditingContext) return;
+        if (!shouldHandleSave) return;
         e.preventDefault();
         if (hasPendingChanges && !isSaving) {
           saveButtonRef.current?.click();
@@ -828,7 +830,13 @@ export function TableView({
         return;
       }
 
+      // Only handle Escape when actively editing, inside table, or having pending changes
+      const shouldHandleEscape =
+        eventInsideTable || !!editingCell || hasPendingChanges;
+
       if (e.key === "Escape") {
+        if (!shouldHandleEscape) return;
+
         if (editingCell) {
           e.preventDefault();
           cancelEdit();
