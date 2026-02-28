@@ -41,45 +41,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-
-const aiDarkEditorOverrides = EditorView.theme(
-  {
-    "&": {
-      backgroundColor: "#1f2128",
-      color: "#e6eaf2",
-    },
-    ".cm-content": {
-      caretColor: "#e6eaf2",
-    },
-    ".cm-gutters": {
-      backgroundColor: "#242730",
-      color: "#aab2c0",
-      borderRight: "1px solid #353944",
-    },
-    ".cm-activeLine": {
-      backgroundColor: "rgba(255, 255, 255, 0.04)",
-    },
-    ".cm-activeLineGutter": {
-      backgroundColor: "rgba(255, 255, 255, 0.04)",
-    },
-    ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
-      backgroundColor: "rgba(140, 170, 255, 0.25)",
-    },
-    ".cm-cursor, .cm-dropCursor": {
-      borderLeftColor: "#e6eaf2",
-    },
-    ".cm-tooltip": {
-      backgroundColor: "#2a2f3a",
-      color: "#e6eaf2",
-      border: "1px solid #3b4250",
-    },
-    ".cm-tooltip-autocomplete ul li[aria-selected]": {
-      backgroundColor: "rgba(140, 170, 255, 0.20)",
-      color: "#f2f5fb",
-    },
-  },
-  { dark: true },
-);
+import { sqlEditorThemeDark, sqlEditorThemeLight } from "./codemirrorTheme";
 
 const editorFontSizeExtension = EditorView.theme({
   ".cm-scroller": {
@@ -124,7 +86,7 @@ export function SqlEditor({
   onSaveSuccess,
 }: SqlEditorProps) {
   const [internalSql, setInternalSql] = useState("");
-  const { theme } = useTheme();
+  const { resolvedTheme } = useTheme();
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const resultStatus = useMemo(() => {
@@ -455,9 +417,10 @@ export function SqlEditor({
 
   // Theme
   const editorTheme = useMemo(() => {
-    const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    return isDark ? [oneDark, aiDarkEditorOverrides] : [];
-  }, [theme]);
+    return resolvedTheme === "dark"
+      ? [oneDark, sqlEditorThemeDark]
+      : [sqlEditorThemeLight];
+  }, [resolvedTheme]);
 
   return (
     <div className="h-full flex flex-col bg-background">
