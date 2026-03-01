@@ -4,30 +4,52 @@
 
 English | [简体中文](README_CN.md)
 
-> **A modern, AI-powered database client for the new era.**
+> **A fast, modern database client with optional AI assistance.**
 
 [![Release](https://img.shields.io/github/v/release/codeErrorSleep/dbpaw?style=flat-square)](https://github.com/codeErrorSleep/dbpaw/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg?style=flat-square)](https://tauri.app)
 
-**DbPaw** is a lightweight, cross-platform database management tool built with [Tauri](https://tauri.app) and [React](https://react.dev). It combines the performance of a native Rust backend with a beautiful, modern web-based UI to provide a seamless SQL editing and data exploration experience.
+**DbPaw** helps you connect to PostgreSQL, MySQL, SQLite (and ClickHouse in preview), write and run SQL comfortably, and explore data with a clean, modern UI.
+
+## ✅ What You Can Do
+
+- Connect to multiple databases: PostgreSQL, MySQL, SQLite, ClickHouse (preview, read-only)
+- Write and run SQL with syntax highlighting, auto-completion, and formatting
+- Browse, filter, and sort results in an interactive data grid
+- Use the AI sidebar to help draft SQL and explain queries (optional)
+- Access remote databases securely via SSH tunneling
+
+## 🖼️ Screenshots
+
+![DbPaw Main Workspace](docs/screenshots/01-overview.png.png)
+
+![DbPaw Main Workspace (Dark)](docs/screenshots/01-overview-black.png)
+
+_Place screenshots under `docs/screenshots/`._
+
+| Connection | SQL Editor |
+| --- | --- |
+| ![Connection](docs/screenshots/02-connect.png) | ![Editor](docs/screenshots/03-editor.png) |
+
+| Data Grid | AI Assistant |
+| --- | --- |
+| ![Grid](docs/screenshots/04-ddl-grid.png) | ![AI](docs/screenshots/05-ai.png) |
 
 ## ✨ Features
 
-- **🔌 Multi-Database Support**: Connect to **PostgreSQL**, **MySQL**, **SQLite**, and **ClickHouse (Preview, Read-only)** with ease.
-- **🤖 AI-Powered Assistance**: Integrated AI sidebar to help you write complex SQL queries, explain execution plans, and optimize performance.
-- **🔒 Secure Connectivity**: Support for **SSH Tunneling** to securely access remote databases.
-- **📝 Advanced SQL Editor**:
+- **Multi-database support**: PostgreSQL, MySQL, SQLite, ClickHouse (preview, read-only).
+- **AI assistance (optional)**: draft SQL, explain queries, and optimize performance.
+- **Secure connectivity**: SSH tunneling support.
+- **Advanced SQL editor**:
   - Syntax highlighting and auto-completion.
-  - **Saved Queries** library to organize your frequently used scripts.
+  - Saved Queries library to organize your frequently used scripts.
   - Format SQL with a single click.
-- **📊 Interactive Data Grid**:
+- **Interactive data grid**:
   - View, filter, and sort table data efficiently.
   - Visualize data relationships.
-- **🎨 Modern UI**:
-  - Beautifully designed with **TailwindCSS** and **Shadcn/UI**.
-  - Built-in **Dark Mode** support for comfortable coding at night.
-- **🚀 High Performance**: Built on Rust, ensuring low memory usage and blazing fast startup times.
+- **Modern UI**: TailwindCSS + Shadcn/UI, with built-in dark mode.
+- **High performance**: built on Rust for low memory usage and fast startup.
 
 ## 📥 Installation
 
@@ -35,7 +57,17 @@ Go to the [Releases](https://github.com/codeErrorSleep/dbpaw/releases) page to d
 
 ### macOS Users
 
-If you encounter a "DbPaw is damaged" or "Unidentified Developer" warning upon opening the app:
+1. Download `DbPaw` for macOS from [Releases](https://github.com/codeErrorSleep/dbpaw/releases).
+2. Move `DbPaw.app` to your `/Applications` folder.
+3. Open the app.
+
+If macOS blocks the app with an "Unidentified Developer" warning:
+
+1. Open **System Settings** → **Privacy & Security**.
+2. Scroll to the **Security** section and find the message about `DbPaw` being blocked.
+3. Click **Open Anyway**, then confirm **Open**.
+
+If you encounter a "DbPaw is damaged" warning (Gatekeeper quarantine):
 
 1. Move `DbPaw.app` to your `/Applications` folder.
 2. Open **Terminal** and run the following command:
@@ -45,6 +77,25 @@ If you encounter a "DbPaw is damaged" or "Unidentified Developer" warning upon o
 3. You can now open the app normally.
 
 _Note: This is required because the app is not yet notarized by Apple._
+
+### Windows Users
+
+1. Download the installer or portable build from [Releases](https://github.com/codeErrorSleep/dbpaw/releases).
+2. Run the installer / executable.
+
+If Windows shows a security warning such as "Windows protected your PC" (SmartScreen):
+
+1. Click **More info**.
+2. Click **Run anyway**.
+
+If your device is managed by an organization, you may need your IT admin to allow the app.
+
+## 🔐 Security & Privacy
+
+- DbPaw is a local desktop app. Your database connections run from your machine to your database.
+- AI features are optional. When enabled, DbPaw sends your prompt, recent chat context, and (optionally) a schema overview (tables/columns/types) to the AI provider you configured.
+- AI conversations are stored locally. AI provider API keys are stored encrypted on disk.
+- No built-in telemetry/analytics SDK is included in the desktop app.
 
 ## 🛠️ Development
 
@@ -119,3 +170,7 @@ If you want to contribute or build from source, follow these steps:
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## ❤️ Thanks
+
+Thanks for trying DbPaw. If you find it useful, please consider giving this repository a star — it helps a lot!

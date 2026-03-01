@@ -4,30 +4,52 @@
 
 [English](README.md) | 简体中文
 
-> **一个现代化的 AI 驱动数据库客户端，适用于新时代。**
+> **一个快速、现代的数据库客户端，并提供可选的 AI 助手。**
 
 [![Release](https://img.shields.io/github/v/release/codeErrorSleep/dbpaw?style=flat-square)](https://github.com/codeErrorSleep/dbpaw/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg?style=flat-square)](https://tauri.app)
 
-**DbPaw** 是一个轻量级、跨平台的数据库管理工具，基于 [Tauri](https://tauri.app) 和 [React](https://react.dev) 构建。它结合了原生 Rust 后端的高性能和现代化 Web UI，为您提供无缝的 SQL 编辑和数据探索体验。
+**DbPaw** 帮助你连接 PostgreSQL、MySQL、SQLite（以及 ClickHouse 预览版），更舒适地编写与执行 SQL，并用清爽的现代 UI 进行数据探索。
+
+## ✅ 你可以用它做什么
+
+- 连接多种数据库：PostgreSQL、MySQL、SQLite、ClickHouse（预览版，只读）
+- 编写与执行 SQL：语法高亮、自动补全、一键格式化
+- 浏览查询结果：在数据网格中快速过滤、排序与查看
+- 使用 AI 侧边栏辅助写 SQL、解释查询（可选）
+- 通过 SSH 隧道安全访问远程数据库
+
+## 🖼️ 界面预览
+
+![DbPaw 主工作区](docs/screenshots/01-overview.png.png)
+
+![DbPaw 主工作区（深色模式）](docs/screenshots/01-overview-black.png)
+
+_截图放在 `docs/screenshots/` 目录。_
+
+| 连接管理 | SQL 编辑器 |
+| --- | --- |
+| ![连接管理](docs/screenshots/02-connect.png) | ![SQL 编辑器](docs/screenshots/03-editor.png) |
+
+| 数据网格 | AI 助手 |
+| --- | --- |
+| ![数据网格](docs/screenshots/04-ddl-grid.png) | ![AI 助手](docs/screenshots/05-ai.png) |
 
 ## ✨ 特性
 
-- **🔌 多数据库支持**：轻松连接 **PostgreSQL**、**MySQL**、**SQLite** 和 **ClickHouse（预览版，只读）** 数据库。
-- **🤖 AI 智能辅助**：集成 AI 侧边栏，帮助您编写复杂的 SQL 查询、解释执行计划并优化性能。
-- **🔒 安全连接**：支持 **SSH 隧道**，安全访问远程数据库。
-- **📝 高级 SQL 编辑器**：
+- **多数据库支持**：PostgreSQL、MySQL、SQLite、ClickHouse（预览版，只读）。
+- **AI 智能辅助（可选）**：辅助编写 SQL、解释查询并优化性能。
+- **安全连接**：支持 SSH 隧道，安全访问远程数据库。
+- **高级 SQL 编辑器**：
   - 语法高亮和自动补全。
-  - **已保存查询**库，用于组织您常用的脚本。
+  - 已保存查询库，用于组织你常用的脚本。
   - 一键格式化 SQL。
-- **📊 交互式数据网格**：
+- **交互式数据网格**：
   - 高效查看、过滤和排序表数据。
   - 可视化数据关系。
-- **🎨 现代化 UI**：
-  - 使用 **TailwindCSS** 和 **Shadcn/UI** 精心设计。
-  - 内置**深色模式**支持，夜间编码更舒适。
-- **🚀 高性能**：基于 Rust 构建，确保低内存占用和极速启动。
+- **现代化 UI**：TailwindCSS + Shadcn/UI，内置深色模式。
+- **高性能**：基于 Rust 构建，低内存占用与快速启动。
 
 ## 📥 安装
 
@@ -35,7 +57,17 @@
 
 ### macOS 用户
 
-如果在打开应用时遇到"DbPaw 已损坏"或"无法识别的开发者"警告：
+1. 从 [Releases](https://github.com/codeErrorSleep/dbpaw/releases) 下载 macOS 版本的 `DbPaw`。
+2. 将 `DbPaw.app` 移动到 `/Applications` 文件夹。
+3. 打开应用。
+
+如果 macOS 提示“无法识别的开发者”并阻止打开：
+
+1. 打开 **系统设置** → **隐私与安全性**。
+2. 滚动到下方 **安全性** 区域，找到关于 `DbPaw` 被阻止的提示。
+3. 点击 **仍要打开**，并在弹窗中确认 **打开**。
+
+如果在打开应用时遇到“DbPaw 已损坏”（Gatekeeper 隔离标记）：
 
 1. 将 `DbPaw.app` 移动到 `/Applications` 文件夹。
 2. 打开**终端**并运行以下命令：
@@ -45,6 +77,25 @@
 3. 现在可以正常打开应用。
 
 _注意：这是因为应用尚未经过 Apple 公证。_
+
+### Windows 用户
+
+1. 从 [Releases](https://github.com/codeErrorSleep/dbpaw/releases) 下载 Windows 安装包或可执行文件。
+2. 运行安装程序/可执行文件。
+
+如果 Windows 弹出“Windows 已保护你的电脑”（SmartScreen）等安全警告：
+
+1. 点击 **更多信息**。
+2. 点击 **仍要运行**。
+
+若设备由组织统一管理，可能需要管理员允许该应用运行。
+
+## 🔐 安全与隐私
+
+- DbPaw 是本地桌面应用：数据库连接从你的设备直接访问数据库。
+- AI 功能为可选：启用后会向你配置的 AI 服务商发送你的输入、最近对话上下文，以及（可选）schema 概览（表/列/类型等元信息）。
+- AI 对话会保存在本地；AI 服务商的 API Key 会在本地加密存储。
+- 桌面端未内置遥测/分析 SDK。
 
 ## 🛠️ 开发
 
@@ -119,3 +170,7 @@ _注意：这是因为应用尚未经过 Apple 公证。_
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 详情请参阅 [LICENSE](LICENSE) 文件。
+
+## ❤️ 致谢
+
+感谢你试用 DbPaw。若它对你有帮助，欢迎给本仓库点个 Star 支持一下，这对项目发展很重要！

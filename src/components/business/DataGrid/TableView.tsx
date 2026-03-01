@@ -55,6 +55,15 @@ import {
 import { api, isTauri } from "@/services/api";
 import type { TransferFormat } from "@/services/api";
 import { isEditableTarget, isModKey } from "@/lib/keyboard";
+import {
+  calculateAutoColumnWidths,
+  collectSearchMatches,
+  escapeSQL,
+  formatSQLValue,
+  getQualifiedTableName,
+  quoteIdent,
+  sortRows,
+} from "./tableView/utils";
 import { toast } from "sonner";
 
 interface PendingChange {
@@ -62,12 +71,6 @@ interface PendingChange {
   column: string;
   originalValue: any;
   newValue: string;
-}
-
-interface SearchMatch {
-  row: number;
-  col: string;
-  colIndex: number;
 }
 
 interface TableViewProps {
@@ -146,49 +149,12 @@ export function TableView({
 
   // Auto-calculate column widths based on content
   useEffect(() => {
-    if (!data.length || !columns.length) return;
-
-    const newWidths: Record<string, number> = {};
-    let hasChanges = false;
-
-    // Configuration for auto-sizing
-    const DATA_CHAR_WIDTH = 9; // Approximate width per character in px
-    const DATA_PADDING = 36; // Padding for cell content
-    const HEADER_CHAR_WIDTH = 9; // Approximate width per character in px
-    const HEADER_PADDING = 56; // Header padding + sort icon + resize affordance
-    // Dynamically adjust min width based on column count to fill space better for small tables
-    const MIN_WIDTH = columns.length <= 3 ? 250 : 100;
-    const MAX_WIDTH = 900;
-
-    columns.forEach((col) => {
-      // Only calculate if width is not already set (preserve manual resizes and previous calcs)
-      if (columnWidths[col] !== undefined) return;
-
-      let sampledMaxLen = 0;
-      // Sample up to 20 rows to estimate width
-      const sampleSize = Math.min(data.length, 20);
-
-      for (let i = 0; i < sampleSize; i++) {
-        const val = data[i][col];
-        if (val !== null && val !== undefined) {
-          const str = String(val);
-          // Simple length check, capping at 100 chars
-          const len = str.length > 100 ? 100 : str.length;
-          if (len > sampledMaxLen) sampledMaxLen = len;
-        }
-      }
-
-      const headerRequiredWidth =
-        col.length * HEADER_CHAR_WIDTH + HEADER_PADDING;
-      const sampledDataWidth = sampledMaxLen * DATA_CHAR_WIDTH + DATA_PADDING;
-      const calculatedWidth = Math.min(
-        MAX_WIDTH,
-        Math.max(MIN_WIDTH, headerRequiredWidth, sampledDataWidth),
-      );
-
-      newWidths[col] = calculatedWidth;
-      hasChanges = true;
+    const newWidths = calculateAutoColumnWidths({
+      data,
+      columns,
+      columnWidths,
     });
+    const hasChanges = Object.keys(newWidths).length > 0;
 
     if (hasChanges) {
       setColumnWidths((prev) => ({ ...prev, ...newWidths }));
@@ -515,72 +481,6 @@ export function TableView({
   }, []);
 
   // --- SQL generation & save ---
-  const escapeSQL = (value: string): string => {
-    return value.replace(/'/g, "''");
-  };
-
-  // MySQL uses backticks, PostgreSQL uses double quotes
-  const quoteIdent = useCallback(
-    (name: string): string => {
-      if (
-        tableContext?.driver === "mysql" ||
-        tableContext?.driver === "clickhouse"
-      ) {
-        return `\`${name}\``;
-      }
-      return `"${name}"`;
-    },
-    [tableContext?.driver],
-  );
-
-  const formatSQLValue = (
-    value: string,
-    originalValue: any,
-    context: "execution" | "copy" = "execution",
-  ): string => {
-    // Handle NULL
-    if (
-      value === "" &&
-      (originalValue === null || originalValue === undefined)
-    ) {
-      return "NULL";
-    }
-
-    const trimmed = value.trim();
-    const numericRegex = /^-?\d+(\.\d+)?$/;
-
-    // Check if originally numeric
-    if (typeof originalValue === "number") {
-      if (numericRegex.test(trimmed)) {
-        return trimmed;
-      }
-      if (context === "execution") {
-        throw new Error(`Invalid numeric value: "${value}"`);
-      }
-      // Fallback: quote for copy
-    }
-    // Check if it looks like a number (for cases where originalValue might be null)
-    else if (!isNaN(Number(value)) && trimmed !== "") {
-      // Only return raw if it passes strict regex
-      if (numericRegex.test(trimmed)) {
-        return trimmed;
-      }
-    }
-
-    // Check for boolean
-    if (typeof originalValue === "boolean") {
-      const lower = value.toLowerCase();
-      if (["true", "t", "1"].includes(lower)) return "TRUE";
-      if (["false", "f", "0"].includes(lower)) return "FALSE";
-
-      if (context === "execution") {
-        throw new Error(`Invalid boolean value: "${value}"`);
-      }
-    }
-
-    // Default: string with quotes
-    return `'${escapeSQL(value)}'`;
-  };
 
   const generateUpdateSQL = useCallback(() => {
     if (!tableContext || primaryKeys.length === 0) return [];
@@ -603,33 +503,29 @@ export function TableView({
       // Build SET clause - only modified columns
       const setClauses = changes.map((c) => {
         const formattedValue = formatSQLValue(c.newValue, c.originalValue);
-        return `${quoteIdent(c.column)} = ${formattedValue}`;
+        return `${quoteIdent(tableContext.driver, c.column)} = ${formattedValue}`;
       });
 
       // Build WHERE clause using primary keys
       const whereClauses = primaryKeys.map((pk) => {
         const pkValue = row[pk];
         if (pkValue === null || pkValue === undefined) {
-          return `${quoteIdent(pk)} IS NULL`;
+          return `${quoteIdent(tableContext.driver, pk)} IS NULL`;
         }
         if (typeof pkValue === "number") {
-          return `${quoteIdent(pk)} = ${pkValue}`;
+          return `${quoteIdent(tableContext.driver, pk)} = ${pkValue}`;
         }
-        return `${quoteIdent(pk)} = '${escapeSQL(String(pkValue))}'`;
+        return `${quoteIdent(tableContext.driver, pk)} = '${escapeSQL(String(pkValue))}'`;
       });
 
-      // MySQL: `schema`.`table`, PostgreSQL: "schema"."table"
-      const tableName =
-        driver === "mysql"
-          ? `${quoteIdent(table)}`
-          : `${quoteIdent(schema)}.${quoteIdent(table)}`;
+      const tableName = getQualifiedTableName(driver, schema, table);
 
       const sql = `UPDATE ${tableName} SET ${setClauses.join(", ")} WHERE ${whereClauses.join(" AND ")}`;
       sqls.push(sql);
     });
 
     return sqls;
-  }, [tableContext, primaryKeys, pendingChanges, data, quoteIdent]);
+  }, [tableContext, primaryKeys, pendingChanges, data]);
 
   const handleSave = useCallback(async () => {
     if (!tableContext || !hasPendingChanges) return;
@@ -769,27 +665,7 @@ export function TableView({
     if (isControlledSort || !activeSortColumn || !activeSortDirection) {
       return data;
     }
-    const col = activeSortColumn;
-    const dir = activeSortDirection;
-    return [...data].sort((a, b) => {
-      const va = a[col];
-      const vb = b[col];
-      // NULL/undefined always goes to the end
-      if (va == null && vb == null) return 0;
-      if (va == null) return 1;
-      if (vb == null) return -1;
-      // Try numeric comparison
-      const numA = Number(va);
-      const numB = Number(vb);
-      if (!isNaN(numA) && !isNaN(numB)) {
-        return dir === "asc" ? numA - numB : numB - numA;
-      }
-      // String comparison
-      const strA = String(va);
-      const strB = String(vb);
-      const cmp = strA.localeCompare(strB);
-      return dir === "asc" ? cmp : -cmp;
-    });
+    return sortRows(data, activeSortColumn, activeSortDirection);
   }, [data, isControlledSort, activeSortColumn, activeSortDirection]);
 
   // If using external pagination, totalPages is based on total count
@@ -805,22 +681,12 @@ export function TableView({
   const normalizedSearchKeyword = searchKeyword.trim().toLowerCase();
 
   const searchMatches = useMemo(() => {
-    if (!normalizedSearchKeyword) {
-      return [] as SearchMatch[];
-    }
-
-    const matches: SearchMatch[] = [];
-    currentData.forEach((row, rowIndex) => {
-      columns.forEach((column, colIndex) => {
-        const value = getCellDisplayValue(rowIndex, column, row[column]);
-        if (value === null || value === undefined) return;
-        const content = String(value).toLowerCase();
-        if (content.includes(normalizedSearchKeyword)) {
-          matches.push({ row: rowIndex, col: column, colIndex });
-        }
-      });
-    });
-    return matches;
+    return collectSearchMatches(
+      currentData,
+      columns,
+      normalizedSearchKeyword,
+      getCellDisplayValue,
+    );
   }, [normalizedSearchKeyword, currentData, columns, getCellDisplayValue]);
 
   const matchedRows = useMemo(() => {
@@ -1674,13 +1540,14 @@ export function TableView({
                           onClick={() => {
                             if (!tableContext) return;
                             const { schema, table, driver } = tableContext;
-                            const tableName =
-                              driver === "mysql"
-                                ? `${quoteIdent(table)}`
-                                : `${quoteIdent(schema)}.${quoteIdent(table)}`;
+                            const tableName = getQualifiedTableName(
+                              driver,
+                              schema,
+                              table,
+                            );
 
                             const cols = columns
-                              .map((c) => quoteIdent(c))
+                              .map((c) => quoteIdent(driver, c))
                               .join(", ");
                             const vals = columns
                               .map((col) => {
@@ -1710,10 +1577,11 @@ export function TableView({
                               if (!tableContext || primaryKeys.length === 0)
                                 return;
                               const { schema, table, driver } = tableContext;
-                              const tableName =
-                                driver === "mysql"
-                                  ? `${quoteIdent(table)}`
-                                  : `${quoteIdent(schema)}.${quoteIdent(table)}`;
+                              const tableName = getQualifiedTableName(
+                                driver,
+                                schema,
+                                table,
+                              );
 
                               const setClauses = columns.map((col) => {
                                 const val = getCellDisplayValue(
@@ -1728,18 +1596,18 @@ export function TableView({
                                   row[col],
                                   "copy",
                                 );
-                                return `${quoteIdent(col)} = ${formattedValue}`;
+                                return `${quoteIdent(driver, col)} = ${formattedValue}`;
                               });
 
                               const whereClauses = primaryKeys.map((pk) => {
                                 const pkValue = row[pk];
                                 if (pkValue === null || pkValue === undefined) {
-                                  return `${quoteIdent(pk)} IS NULL`;
+                                  return `${quoteIdent(driver, pk)} IS NULL`;
                                 }
                                 if (typeof pkValue === "number") {
-                                  return `${quoteIdent(pk)} = ${pkValue}`;
+                                  return `${quoteIdent(driver, pk)} = ${pkValue}`;
                                 }
-                                return `${quoteIdent(pk)} = '${escapeSQL(String(pkValue))}'`;
+                                return `${quoteIdent(driver, pk)} = '${escapeSQL(String(pkValue))}'`;
                               });
 
                               const sql = `UPDATE ${tableName} SET ${setClauses.join(
