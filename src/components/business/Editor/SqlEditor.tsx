@@ -308,7 +308,6 @@ export function SqlEditor({
 
   const triggerSave = useCallback(() => {
     const currentId = savedQueryIdRef.current;
-    console.log("triggerSave called. currentId:", currentId);
     if (currentId) {
       executeSave(initialName || "Untitled", initialDescription || "");
     } else {

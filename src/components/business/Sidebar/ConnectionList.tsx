@@ -2,12 +2,6 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import {
   Database,
-  Server,
-  ChevronRight,
-  ChevronDown,
-  CircleDot,
-  CheckCircle2,
-  XCircle,
   Table,
   Key,
   Plus,
@@ -22,7 +16,6 @@ import {
   Download,
   FolderOpen,
 } from "lucide-react";
-import { siMysql, siPostgresql, siSqlite, type SimpleIcon } from "simple-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -61,6 +54,15 @@ import {
 import { api, isTauri } from "@/services/api";
 import type { ConnectionForm, Driver } from "@/services/api";
 import { toast } from "sonner";
+import { TreeNode } from "./connection-list/TreeNode";
+import {
+  getConnectionIcon,
+  getConnectionStatusLabel,
+  getExportDefaultName,
+  getExportFilter,
+  renderConnectionStatusIndicator,
+  sanitizeConnectionErrorMessage,
+} from "./connection-list/helpers";
 
 interface Column {
   name: string;
@@ -115,127 +117,6 @@ const defaultForm: ConnectionForm = {
   sshEnabled: false,
   sshPort: undefined,
   sshUsername: "",
-};
-
-const renderSimpleIcon = (icon: SimpleIcon) => (
-  <svg
-    viewBox="0 0 24 24"
-    width="16"
-    height="16"
-    aria-hidden="true"
-    className="shrink-0"
-    role="img"
-  >
-    <path d={icon.path} fill="currentColor" />
-  </svg>
-);
-
-const getConnectionIcon = (driver: Driver | string): React.ReactNode => {
-  const normalized = String(driver || "")
-    .trim()
-    .toLowerCase();
-
-  switch (normalized) {
-    case "postgres":
-    case "postgresql":
-    case "pgsql":
-      return renderSimpleIcon(siPostgresql);
-    case "mysql":
-    case "mariadb":
-      return renderSimpleIcon(siMysql);
-    case "sqlite":
-    case "sqlite3":
-      return renderSimpleIcon(siSqlite);
-    case "clickhouse":
-      return <Database className="w-4 h-4" />;
-    default:
-      return <Server className="w-4 h-4" />;
-  }
-};
-
-const sanitizeConnectionErrorMessage = (message: string) =>
-  message.replace(/^(?:\s*\[[^\]]+\])+\s*/g, "").trim();
-
-interface TreeNodeProps {
-  level: number;
-  children: React.ReactNode;
-  icon: React.ReactNode;
-  label: string;
-  isExpanded?: boolean;
-  onToggle?: () => void;
-  canToggle?: boolean;
-  forceShowToggle?: boolean;
-  toggleOnRowClick?: boolean;
-  onDoubleClick?: () => void;
-  onContextMenu?: (e: React.MouseEvent) => void;
-  leadingIndicator?: React.ReactNode;
-  statusIndicator?: React.ReactNode;
-  actions?: React.ReactNode;
-}
-
-const TreeNode = ({
-  level,
-  children,
-  icon,
-  label,
-  isExpanded,
-  onToggle,
-  canToggle = true,
-  forceShowToggle = false,
-  toggleOnRowClick = true,
-  onDoubleClick,
-  onContextMenu,
-  leadingIndicator,
-  statusIndicator,
-  actions,
-}: TreeNodeProps) => {
-  const hasChildren = children !== null && children !== undefined;
-  const showToggle = forceShowToggle || hasChildren;
-
-  return (
-    <div>
-      <div
-        className="flex items-center gap-1 px-2 py-1 hover:bg-accent cursor-pointer group select-none"
-        style={{ paddingLeft: `${level * 12 + 8}px` }}
-        onClick={toggleOnRowClick ? onToggle : undefined}
-        onDoubleClick={onDoubleClick}
-        onContextMenu={onContextMenu}
-      >
-        {leadingIndicator ? (
-          <span className="inline-flex w-4 items-center justify-center shrink-0">
-            {leadingIndicator}
-          </span>
-        ) : showToggle ? (
-          <button
-            type="button"
-            className={`text-muted-foreground ${!canToggle ? "opacity-50 cursor-not-allowed" : ""}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!canToggle) return;
-              onToggle?.();
-            }}
-            disabled={!canToggle}
-            aria-label={isExpanded ? "Collapse" : "Expand"}
-          >
-            {isExpanded ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
-          </button>
-        ) : (
-          <span className="w-4" />
-        )}
-        <span className="text-muted-foreground">{icon}</span>
-        <span className="flex-1 text-sm truncate">{label}</span>
-        {statusIndicator}
-        {actions && (
-          <span className="opacity-0 group-hover:opacity-100">{actions}</span>
-        )}
-      </div>
-      {isExpanded && children}
-    </div>
-  );
 };
 
 interface ConnectionListProps {
@@ -849,24 +730,6 @@ export function ConnectionList({
     }
   };
 
-  const getExportDefaultName = (
-    tableName: string,
-    format: "csv" | "json" | "sql",
-  ) => {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    return `${tableName}_${timestamp}.${format}`;
-  };
-
-  const getExportFilter = (format: "csv" | "json" | "sql") => {
-    if (format === "csv") {
-      return [{ name: "CSV", extensions: ["csv"] }];
-    }
-    if (format === "json") {
-      return [{ name: "JSON", extensions: ["json"] }];
-    }
-    return [{ name: "SQL", extensions: ["sql"] }];
-  };
-
   const handleTableExport = async (
     connection: Connection,
     database: DatabaseInfo,
@@ -905,48 +768,6 @@ export function ConnectionList({
         description: e instanceof Error ? e.message : String(e),
       });
     }
-  };
-
-  const getConnectionStatusLabel = (connection: Connection) => {
-    if (connection.connectState === "success") return "Connected";
-    if (connection.connectState === "error") {
-      if (connection.connectError) {
-        return `Connection failed: ${connection.connectError}`;
-      }
-      return "Connection failed";
-    }
-    if (connection.connectState === "connecting") return "Connecting";
-    return "Not connected";
-  };
-
-  const renderConnectionStatusIndicator = (connection: Connection) => {
-    if (connection.connectState === "success") {
-      return (
-        <CheckCircle2
-          className="h-3.5 w-3.5 text-green-500"
-          aria-hidden="true"
-        />
-      );
-    }
-    if (connection.connectState === "error") {
-      return (
-        <XCircle className="h-3.5 w-3.5 text-red-500" aria-hidden="true" />
-      );
-    }
-    if (connection.connectState === "connecting") {
-      return (
-        <Loader2
-          className="h-3.5 w-3.5 text-muted-foreground animate-spin"
-          aria-hidden="true"
-        />
-      );
-    }
-    return (
-      <CircleDot
-        className="h-3.5 w-3.5 text-muted-foreground/60"
-        aria-hidden="true"
-      />
-    );
   };
 
   return (
