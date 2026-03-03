@@ -94,7 +94,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-latest, ubuntu-22.04, windows-latest]
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.platform }}
 
     steps:
@@ -164,3 +172,59 @@ jobs:
           releaseName: 'DbPaw ${{ inputs.tag || github.ref_name }}'
           releaseDraft: true
           prerelease: false
+          args: --target ${{ matrix.target }}
+
+      - name: Upload latest.json artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-json-${{ matrix.target }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/**/latest.json
+          if-no-files-found: error
+
+  merge-updater-json:
+    needs: release
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Download updater metadata artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: updater-json-*
+          path: updater-json
+
+      - name: Merge latest.json platforms
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t files < <(find updater-json -type f -name latest.json)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No latest.json files found in artifacts."
+            exit 1
+          fi
+
+          mkdir -p merged
+          jq -s '
+            reduce .[] as $item (
+              {version: null, notes: null, pub_date: null, platforms: {}};
+              .version = (.version // $item.version) |
+              .notes = (.notes // $item.notes) |
+              .pub_date = (.pub_date // $item.pub_date) |
+              .platforms += ($item.platforms // {})
+            )
+          ' "${files[@]}" > merged/latest.json
+
+          echo "Merged platform keys:"
+          jq '.platforms | keys' merged/latest.json
+
+      - name: Upload merged latest.json to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: merged/latest.json
+          draft: true
+          overwrite_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
