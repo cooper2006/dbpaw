@@ -161,6 +161,9 @@ jobs:
           workspaces: |
             src-tauri -> target
 
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
         env:
