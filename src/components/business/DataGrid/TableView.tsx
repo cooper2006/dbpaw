@@ -187,6 +187,11 @@ export function TableView({
     row: number;
     col: string;
   } | null>(null);
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [rowSelectionAnchor, setRowSelectionAnchor] = useState<number | null>(
+    null,
+  );
+  const [isRowSelecting, setIsRowSelecting] = useState(false);
   const [editingCell, setEditingCell] = useState<{
     row: number;
     col: string;
@@ -378,6 +383,9 @@ export function TableView({
     setPendingChanges(new Map());
     setEditingCell(null);
     setSelectedCell(null);
+    setSelectedRows(new Set());
+    setRowSelectionAnchor(null);
+    setIsRowSelecting(false);
     setSaveError(null);
   }, [data, page]);
 
@@ -396,6 +404,9 @@ export function TableView({
       ) {
         commitEdit();
       }
+      setSelectedRows(new Set());
+      setRowSelectionAnchor(null);
+      setIsRowSelecting(false);
       setSelectedCell({ row: rowIndex, col });
     },
     [editingCell],
@@ -479,6 +490,40 @@ export function TableView({
   const handleCopy = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
   }, []);
+
+  const selectSingleRow = useCallback((rowIndex: number) => {
+    setSelectedRows(new Set([rowIndex]));
+  }, []);
+
+  const selectRowRange = useCallback((anchor: number, current: number) => {
+    const start = Math.min(anchor, current);
+    const end = Math.max(anchor, current);
+    const next = new Set<number>();
+    for (let i = start; i <= end; i++) {
+      next.add(i);
+    }
+    setSelectedRows(next);
+  }, []);
+
+  const handleIndexMouseDown = useCallback(
+    (e: React.MouseEvent, rowIndex: number) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      setSelectedCell(null);
+      setIsRowSelecting(true);
+      setRowSelectionAnchor(rowIndex);
+      selectSingleRow(rowIndex);
+    },
+    [selectSingleRow],
+  );
+
+  const handleIndexMouseEnter = useCallback(
+    (rowIndex: number) => {
+      if (!isRowSelecting || rowSelectionAnchor === null) return;
+      selectRowRange(rowSelectionAnchor, rowIndex);
+    },
+    [isRowSelecting, rowSelectionAnchor, selectRowRange],
+  );
 
   // --- SQL generation & save ---
 
@@ -678,6 +723,26 @@ export function TableView({
     ? sortedData
     : sortedData.slice((page - 1) * pageSize, page * pageSize);
 
+  const buildRowsTSV = useCallback(
+    (rowIndexes: number[]) => {
+      const orderedRows = [...rowIndexes].sort((a, b) => a - b);
+      return orderedRows
+        .map((rowIndex) => {
+          const row = currentData[rowIndex];
+          if (!row) return "";
+          return columns
+            .map((col) => {
+              const value = getCellDisplayValue(rowIndex, col, row[col]);
+              return value === null || value === undefined ? "" : String(value);
+            })
+            .join("\t");
+        })
+        .filter((line) => line.length > 0)
+        .join("\n");
+    },
+    [columns, currentData, getCellDisplayValue],
+  );
+
   const normalizedSearchKeyword = searchKeyword.trim().toLowerCase();
 
   const searchMatches = useMemo(() => {
@@ -845,6 +910,16 @@ export function TableView({
   }, [isSearchOpen, focusSearchInput]);
 
   useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      setIsRowSelecting(false);
+    };
+    window.addEventListener("mouseup", handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener("mouseup", handleGlobalMouseUp);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleTableHotkeys = (e: KeyboardEvent) => {
       const container = containerRef.current;
       if (!container) return;
@@ -875,6 +950,19 @@ export function TableView({
         return;
       }
 
+      if (isModKey(e) && e.key.toLowerCase() === "c") {
+        if (!selectedRows.size) return;
+        if (isEditableTarget(e.target)) {
+          return;
+        }
+        e.preventDefault();
+        const tsv = buildRowsTSV(Array.from(selectedRows));
+        if (tsv) {
+          handleCopy(tsv);
+        }
+        return;
+      }
+
       // Only handle Escape when actively editing, inside table, or having pending changes
       const shouldHandleEscape =
         eventInsideTable || !!editingCell || hasPendingChanges;
@@ -901,12 +989,15 @@ export function TableView({
     };
   }, [
     selectedCell,
+    selectedRows,
     hasPendingChanges,
     isSaving,
     editingCell,
     cancelEdit,
     handleDiscardChanges,
     focusSearchInput,
+    buildRowsTSV,
+    handleCopy,
   ]);
 
   return (
@@ -1345,12 +1436,26 @@ export function TableView({
                 editingCell?.row === rowIndex && editingCell?.col === col;
               const isSelected = (col: string) =>
                 selectedCell?.row === rowIndex && selectedCell?.col === col;
+              const isRowSelected = selectedRows.has(rowIndex);
+              const isMultiRowCopyTarget =
+                isRowSelected && selectedRows.size > 1;
 
               return (
                 <ContextMenu key={rowIndex}>
                   <ContextMenuTrigger asChild>
                     <tr className="hover:bg-muted/50 border-b border-border group">
-                      <td className="px-4 py-2 text-xs text-muted-foreground border-r border-border">
+                      <td
+                        className={[
+                          "px-4 py-2 text-xs text-muted-foreground border-r border-border cursor-pointer select-none",
+                          isRowSelected
+                            ? "bg-primary/15 dark:bg-primary/45 text-foreground dark:text-primary-foreground"
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onMouseDown={(e) => handleIndexMouseDown(e, rowIndex)}
+                        onMouseEnter={() => handleIndexMouseEnter(rowIndex)}
+                      >
                         {startIndex + rowIndex + 1}
                       </td>
                       {columns.map((column, colIndex) => {
@@ -1377,7 +1482,12 @@ export function TableView({
                             data-col-index={colIndex}
                             className={[
                               "px-0 py-0 text-sm text-foreground font-mono border-r border-border relative transition-all duration-150 ease-out",
-                              selected && !editing ? "bg-primary/10" : "",
+                              selected && !editing
+                                ? "bg-primary/15 dark:bg-primary/50 dark:text-primary-foreground"
+                                : "",
+                              isRowSelected && !selected && !editing
+                                ? "bg-primary/10 dark:bg-primary/30"
+                                : "",
                               matched && !editing
                                 ? "bg-amber-100/60 dark:bg-amber-900/20"
                                 : "",
@@ -1465,21 +1575,27 @@ export function TableView({
                     </ContextMenuItem>
                     <ContextMenuItem
                       onClick={() => {
-                        const values = columns.map((col) => {
-                          const val = getCellDisplayValue(
-                            rowIndex,
-                            col,
-                            row[col],
-                          );
-                          return val === null || val === undefined
-                            ? ""
-                            : String(val);
-                        });
-                        handleCopy(values.join("\t"));
+                        if (isMultiRowCopyTarget) {
+                          handleCopy(buildRowsTSV(Array.from(selectedRows)));
+                          return;
+                        }
+                        const values = columns
+                          .map((col) => {
+                            const val = getCellDisplayValue(
+                              rowIndex,
+                              col,
+                              row[col],
+                            );
+                            return val === null || val === undefined
+                              ? ""
+                              : String(val);
+                          })
+                          .join("\t");
+                        handleCopy(values);
                       }}
                     >
                       <TableIcon className="w-4 h-4 mr-2" />
-                      Copy Row
+                      {isMultiRowCopyTarget ? "Copy Selected Rows" : "Copy Row"}
                     </ContextMenuItem>
                     <ContextMenuSeparator />
                     {isEditable &&
