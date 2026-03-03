@@ -30,6 +30,7 @@ fn build_config(form: &ConnectionForm) -> Result<MssqlConfig, String> {
     let host = form
         .host
         .clone()
+        .map(|v| v.trim().to_string())
         .filter(|v| !v.trim().is_empty())
         .ok_or("[VALIDATION_ERROR] host cannot be empty")?;
     let port = form.port.unwrap_or(1433);
@@ -39,11 +40,13 @@ fn build_config(form: &ConnectionForm) -> Result<MssqlConfig, String> {
     let database = form
         .database
         .clone()
+        .map(|v| v.trim().to_string())
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| "master".to_string());
     let username = form
         .username
         .clone()
+        .map(|v| v.trim().to_string())
         .filter(|v| !v.trim().is_empty())
         .ok_or("[VALIDATION_ERROR] username cannot be empty")?;
     let password = form.password.clone().unwrap_or_default();
@@ -128,6 +131,34 @@ fn first_sql_keyword(sql: &str) -> Option<String> {
 }
 
 impl MssqlDriver {
+    fn build_tiberius_config(&self, encryption: EncryptionLevel, trust_cert: bool) -> Config {
+        let mut config = Config::new();
+        config.host(&self.config.host);
+        config.port(self.config.port);
+        config.database(&self.config.database);
+        config.authentication(AuthMethod::sql_server(
+            self.config.username.clone(),
+            self.config.password.clone(),
+        ));
+        config.encryption(encryption);
+        if trust_cert {
+            config.trust_cert();
+        }
+        config
+    }
+
+    async fn connect_with_config(config: Config) -> Result<Client<Compat<TcpStream>>, String> {
+        let tcp = TcpStream::connect(config.get_addr())
+            .await
+            .map_err(|e| format!("[CONN_FAILED] {}", e))?;
+        tcp.set_nodelay(true)
+            .map_err(|e| format!("[CONN_FAILED] {}", e))?;
+
+        Client::connect(config, tcp.compat_write())
+            .await
+            .map_err(|e| format!("[CONN_FAILED] {}", e))
+    }
+
     pub async fn connect(form: &ConnectionForm) -> Result<Self, String> {
         let mut cfg_form = form.clone();
         let mut ssh_tunnel = None;
@@ -146,30 +177,52 @@ impl MssqlDriver {
     }
 
     async fn connect_client(&self) -> Result<Client<Compat<TcpStream>>, String> {
-        let mut config = Config::new();
-        config.host(&self.config.host);
-        config.port(self.config.port);
-        config.database(&self.config.database);
-        config.authentication(AuthMethod::sql_server(
-            self.config.username.clone(),
-            self.config.password.clone(),
-        ));
-        if self.config.ssl {
-            config.encryption(EncryptionLevel::Required);
-            config.trust_cert();
+        let attempts = if self.config.ssl {
+            vec![
+                (EncryptionLevel::On, true, "encrypt=on,trust_cert=true"),
+                (
+                    EncryptionLevel::Required,
+                    true,
+                    "encrypt=required,trust_cert=true",
+                ),
+                (EncryptionLevel::On, false, "encrypt=on,trust_cert=false"),
+                (
+                    EncryptionLevel::NotSupported,
+                    false,
+                    "encrypt=not_supported",
+                ),
+                (EncryptionLevel::Off, false, "encrypt=off"),
+            ]
         } else {
-            config.encryption(EncryptionLevel::Off);
+            vec![
+                (EncryptionLevel::Off, false, "encrypt=off"),
+                (
+                    EncryptionLevel::NotSupported,
+                    false,
+                    "encrypt=not_supported",
+                ),
+                (EncryptionLevel::On, true, "encrypt=on,trust_cert=true"),
+                (
+                    EncryptionLevel::Required,
+                    true,
+                    "encrypt=required,trust_cert=true",
+                ),
+            ]
+        };
+
+        let mut errors = Vec::new();
+        for (encryption, trust_cert, label) in attempts {
+            let config = self.build_tiberius_config(encryption, trust_cert);
+            match Self::connect_with_config(config).await {
+                Ok(client) => return Ok(client),
+                Err(err) => errors.push(format!("{label}: {err}")),
+            }
         }
 
-        let tcp = TcpStream::connect(config.get_addr())
-            .await
-            .map_err(|e| format!("[CONN_FAILED] {}", e))?;
-        tcp.set_nodelay(true)
-            .map_err(|e| format!("[CONN_FAILED] {}", e))?;
-
-        Client::connect(config, tcp.compat_write())
-            .await
-            .map_err(|e| format!("[CONN_FAILED] {}", e))
+        Err(format!(
+            "[CONN_FAILED] MSSQL handshake failed after retries: {}",
+            errors.join(" | ")
+        ))
     }
 
     async fn fetch_rows(&self, sql: &str) -> Result<Vec<Row>, String> {
@@ -199,29 +252,29 @@ impl MssqlDriver {
         for (i, col) in row.columns().iter().enumerate() {
             let key = col.name().to_string();
 
-            let value = if let Some(v) = row.get::<&str, _>(i) {
+            let value = if let Ok(Some(v)) = row.try_get::<&str, _>(i) {
                 serde_json::Value::String(v.to_string())
-            } else if let Some(v) = row.get::<i16, _>(i) {
+            } else if let Ok(Some(v)) = row.try_get::<i16, _>(i) {
                 serde_json::Value::String(v.to_string())
-            } else if let Some(v) = row.get::<i32, _>(i) {
+            } else if let Ok(Some(v)) = row.try_get::<i32, _>(i) {
                 serde_json::Value::String(v.to_string())
-            } else if let Some(v) = row.get::<i64, _>(i) {
+            } else if let Ok(Some(v)) = row.try_get::<i64, _>(i) {
                 serde_json::Value::String(v.to_string())
-            } else if let Some(v) = row.get::<u8, _>(i) {
+            } else if let Ok(Some(v)) = row.try_get::<u8, _>(i) {
                 serde_json::Value::String(v.to_string())
-            } else if let Some(v) = row.get::<f32, _>(i) {
+            } else if let Ok(Some(v)) = row.try_get::<f32, _>(i) {
                 serde_json::Number::from_f64(v as f64)
                     .map(serde_json::Value::Number)
                     .unwrap_or(serde_json::Value::Null)
-            } else if let Some(v) = row.get::<f64, _>(i) {
+            } else if let Ok(Some(v)) = row.try_get::<f64, _>(i) {
                 serde_json::Number::from_f64(v)
                     .map(serde_json::Value::Number)
                     .unwrap_or(serde_json::Value::Null)
-            } else if let Some(v) = row.get::<bool, _>(i) {
+            } else if let Ok(Some(v)) = row.try_get::<bool, _>(i) {
                 serde_json::Value::Bool(v)
-            } else if let Some(v) = row.get::<uuid::Uuid, _>(i) {
+            } else if let Ok(Some(v)) = row.try_get::<uuid::Uuid, _>(i) {
                 serde_json::Value::String(v.to_string())
-            } else if let Some(v) = row.get::<&[u8], _>(i) {
+            } else if let Ok(Some(v)) = row.try_get::<&[u8], _>(i) {
                 serde_json::Value::String(String::from_utf8_lossy(v).to_string())
             } else {
                 serde_json::Value::Null
@@ -234,20 +287,20 @@ impl MssqlDriver {
     }
 
     fn parse_i64(row: &Row, idx: usize) -> i64 {
-        if let Some(v) = row.get::<i64, _>(idx) {
+        if let Ok(Some(v)) = row.try_get::<i64, _>(idx) {
             return v;
         }
-        if let Some(v) = row.get::<i32, _>(idx) {
+        if let Ok(Some(v)) = row.try_get::<i32, _>(idx) {
             return v as i64;
         }
-        if let Some(v) = row.get::<&str, _>(idx) {
+        if let Ok(Some(v)) = row.try_get::<&str, _>(idx) {
             return v.parse::<i64>().unwrap_or(0);
         }
         0
     }
 
     fn parse_string(row: &Row, idx: usize) -> String {
-        if let Some(v) = row.get::<&str, _>(idx) {
+        if let Ok(Some(v)) = row.try_get::<&str, _>(idx) {
             return v.to_string();
         }
         String::new()
