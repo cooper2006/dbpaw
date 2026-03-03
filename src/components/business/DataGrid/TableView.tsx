@@ -547,7 +547,12 @@ export function TableView({
 
       // Build SET clause - only modified columns
       const setClauses = changes.map((c) => {
-        const formattedValue = formatSQLValue(c.newValue, c.originalValue);
+        const formattedValue = formatSQLValue(
+          c.newValue,
+          c.originalValue,
+          "execution",
+          tableContext.driver,
+        );
         return `${quoteIdent(tableContext.driver, c.column)} = ${formattedValue}`;
       });
 
@@ -791,6 +796,7 @@ export function TableView({
                 val === null || val === undefined ? "" : String(val),
                 row[col],
                 "copy",
+                driver,
               );
             })
             .join(", ");
@@ -820,6 +826,7 @@ export function TableView({
               val === null || val === undefined ? "" : String(val),
               row[col],
               "copy",
+              driver,
             );
             return `${quoteIdent(driver, col)} = ${formattedValue}`;
           });

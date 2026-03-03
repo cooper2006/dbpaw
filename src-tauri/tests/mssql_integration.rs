@@ -50,4 +50,50 @@ async fn test_mssql_integration_flow() {
         .await
         .expect("execute_query failed");
     assert!(result.row_count >= 1);
+
+    driver
+        .execute_query(
+            "IF OBJECT_ID('dbo.dbpaw_type_probe', 'U') IS NOT NULL DROP TABLE dbo.dbpaw_type_probe;"
+                .to_string(),
+        )
+        .await
+        .expect("drop table failed");
+
+    driver
+        .execute_query(
+            "CREATE TABLE dbo.dbpaw_type_probe (id INT PRIMARY KEY, flag BIT, amount DECIMAL(10,2), created_at DATETIME2);"
+                .to_string(),
+        )
+        .await
+        .expect("create table failed");
+
+    driver
+        .execute_query(
+            "INSERT INTO dbo.dbpaw_type_probe (id, flag, amount, created_at) VALUES (1, 1, 12.34, '2026-01-02T03:04:05');"
+                .to_string(),
+        )
+        .await
+        .expect("insert failed");
+
+    let typed_result = driver
+        .execute_query(
+            "SELECT TOP 1 flag, amount, created_at FROM dbo.dbpaw_type_probe ORDER BY id DESC"
+                .to_string(),
+        )
+        .await
+        .expect("select typed row failed");
+
+    let row = typed_result
+        .data
+        .first()
+        .expect("typed_result should include at least one row");
+    assert_eq!(row["flag"], serde_json::Value::Bool(true));
+    assert_eq!(row["amount"], serde_json::Value::String("12.34".to_string()));
+    assert!(
+        row["created_at"]
+            .as_str()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false),
+        "created_at should be rendered as a non-empty string"
+    );
 }

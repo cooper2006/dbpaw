@@ -132,6 +132,7 @@ export function formatSQLValue(
   value: string,
   originalValue: any,
   context: "execution" | "copy" = "execution",
+  driver?: string,
 ): string {
   if (value === "" && (originalValue === null || originalValue === undefined)) {
     return "NULL";
@@ -155,8 +156,12 @@ export function formatSQLValue(
 
   if (typeof originalValue === "boolean") {
     const lower = value.toLowerCase();
-    if (["true", "t", "1"].includes(lower)) return "TRUE";
-    if (["false", "f", "0"].includes(lower)) return "FALSE";
+    if (["true", "t", "1"].includes(lower)) {
+      return driver === "mssql" ? "1" : "TRUE";
+    }
+    if (["false", "f", "0"].includes(lower)) {
+      return driver === "mssql" ? "0" : "FALSE";
+    }
 
     if (context === "execution") {
       throw new Error(`Invalid boolean value: "${value}"`);

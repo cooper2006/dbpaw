@@ -4,7 +4,9 @@ use crate::models::{
     SchemaOverview, TableDataResponse, TableInfo, TableMetadata, TableSchema, TableStructure,
 };
 use async_trait::async_trait;
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use futures_util::TryStreamExt;
+use rust_decimal::Decimal;
 use std::collections::{HashMap, HashSet};
 use tiberius::{AuthMethod, Client, Config, EncryptionLevel, QueryItem, Row};
 use tokio::net::TcpStream;
@@ -66,16 +68,14 @@ fn escape_literal(value: &str) -> String {
 }
 
 fn quote_ident(ident: &str) -> Result<String, String> {
-    if ident.is_empty() {
+    let trimmed = ident.trim();
+    if trimmed.is_empty() {
         return Err("[VALIDATION_ERROR] identifier cannot be empty".to_string());
     }
-    if !ident
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
-    {
-        return Err(format!("[VALIDATION_ERROR] Invalid identifier: {}", ident));
+    if trimmed.chars().any(|c| c == '\0') {
+        return Err("[VALIDATION_ERROR] identifier contains null byte".to_string());
     }
-    Ok(format!("[{}]", ident.replace(']', "]]")))
+    Ok(format!("[{}]", trimmed.replace(']', "]]")))
 }
 
 fn table_ref(schema: &str, table: &str) -> Result<String, String> {
@@ -262,6 +262,10 @@ impl MssqlDriver {
                 serde_json::Value::String(v.to_string())
             } else if let Ok(Some(v)) = row.try_get::<u8, _>(i) {
                 serde_json::Value::String(v.to_string())
+            } else if let Ok(Some(v)) = row.try_get::<Decimal, _>(i) {
+                serde_json::Value::String(v.to_string())
+            } else if let Ok(Some(v)) = row.try_get::<tiberius::numeric::Numeric, _>(i) {
+                serde_json::Value::String(v.to_string())
             } else if let Ok(Some(v)) = row.try_get::<f32, _>(i) {
                 serde_json::Number::from_f64(v as f64)
                     .map(serde_json::Value::Number)
@@ -274,6 +278,16 @@ impl MssqlDriver {
                 serde_json::Value::Bool(v)
             } else if let Ok(Some(v)) = row.try_get::<uuid::Uuid, _>(i) {
                 serde_json::Value::String(v.to_string())
+            } else if let Ok(Some(v)) = row.try_get::<NaiveDateTime, _>(i) {
+                serde_json::Value::String(v.to_string())
+            } else if let Ok(Some(v)) = row.try_get::<NaiveDate, _>(i) {
+                serde_json::Value::String(v.to_string())
+            } else if let Ok(Some(v)) = row.try_get::<NaiveTime, _>(i) {
+                serde_json::Value::String(v.to_string())
+            } else if let Ok(Some(v)) = row.try_get::<DateTime<Utc>, _>(i) {
+                serde_json::Value::String(v.to_rfc3339())
+            } else if let Ok(Some(v)) = row.try_get::<DateTime<FixedOffset>, _>(i) {
+                serde_json::Value::String(v.to_rfc3339())
             } else if let Ok(Some(v)) = row.try_get::<&[u8], _>(i) {
                 serde_json::Value::String(String::from_utf8_lossy(v).to_string())
             } else {
@@ -304,6 +318,31 @@ impl MssqlDriver {
             return v.to_string();
         }
         String::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::quote_ident;
+
+    #[test]
+    fn quote_ident_allows_common_mssql_names() {
+        assert_eq!(
+            quote_ident("order-detail 2026").unwrap(),
+            "[order-detail 2026]"
+        );
+        assert_eq!(quote_ident("用户表").unwrap(), "[用户表]");
+    }
+
+    #[test]
+    fn quote_ident_escapes_bracket_and_trims() {
+        assert_eq!(quote_ident("  a]b ").unwrap(), "[a]]b]");
+    }
+
+    #[test]
+    fn quote_ident_rejects_empty_and_null_byte() {
+        assert!(quote_ident("   ").is_err());
+        assert!(quote_ident("abc\0def").is_err());
     }
 }
 
