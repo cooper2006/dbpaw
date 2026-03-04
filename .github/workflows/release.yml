@@ -156,15 +156,47 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
+      - name: Resolve artifact paths
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bundle_dir=""
+          if [ -d "src-tauri/target/${{ matrix.target }}/release/bundle" ]; then
+            bundle_dir="src-tauri/target/${{ matrix.target }}/release/bundle"
+          elif [ -d "src-tauri/target/release/bundle" ]; then
+            bundle_dir="src-tauri/target/release/bundle"
+          fi
+
+          if [ -z "$bundle_dir" ]; then
+            echo "No bundle directory found for target ${{ matrix.target }}"
+            find src-tauri/target -maxdepth 6 -type d -name bundle -print || true
+            exit 1
+          fi
+
+          echo "bundle_dir=$bundle_dir" >> "$GITHUB_OUTPUT"
+
       - name: Collect updater metadata
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           mkdir -p updater-json
 
-          json_file="$(find src-tauri/target/${{ matrix.target }} -type f -name latest.json | head -n 1)"
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY is empty. Updater artifacts (latest.json) will not be generated."
+            exit 1
+          fi
+
+          json_file="$(
+            find "${{ steps.paths.outputs.bundle_dir }}" -type f -name latest.json 2>/dev/null | head -n 1 || true
+          )"
           if [ -z "$json_file" ]; then
             echo "No latest.json found for target ${{ matrix.target }}"
+            echo "Searched in: ${{ steps.paths.outputs.bundle_dir }}"
+            find "${{ steps.paths.outputs.bundle_dir }}" -maxdepth 4 -type f -print || true
             exit 1
           fi
 
@@ -174,7 +206,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.target }}
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/**/*
+          path: ${{ steps.paths.outputs.bundle_dir }}/**/*
           if-no-files-found: error
 
       - name: Upload updater metadata artifact
