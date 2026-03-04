@@ -1,4 +1,4 @@
-import { MouseEvent, useCallback, useEffect, useRef, useState } from "react";
+import { MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -91,6 +91,13 @@ type TableRefreshOverrides = {
   limit?: number;
   filter?: string;
   orderBy?: string;
+};
+
+type ActiveTableTarget = {
+  connectionId: number;
+  database: string;
+  table: string;
+  schema?: string;
 };
 
 const DEFAULT_SQL = "";
@@ -460,6 +467,7 @@ export default function App() {
         title: table,
         connection,
         database,
+        schema,
         tableName: table,
         data: resp.data,
         columns,
@@ -1056,6 +1064,33 @@ export default function App() {
   }, [activeTab, tabs]);
 
   const activeTabItem = tabs.find((t) => t.id === activeTab);
+  const activeTableTarget = useMemo<ActiveTableTarget | undefined>(() => {
+    if (!activeTabItem) return undefined;
+
+    if (
+      (activeTabItem.type === "table" || activeTabItem.type === "ddl") &&
+      activeTabItem.connectionId &&
+      activeTabItem.database &&
+      activeTabItem.tableName
+    ) {
+      return {
+        connectionId: activeTabItem.connectionId,
+        database: activeTabItem.database,
+        table: activeTabItem.tableName,
+        schema: activeTabItem.schema,
+      };
+    }
+
+    return undefined;
+  }, [activeTabItem]);
+  const tableTabTitleCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    tabs.forEach((tab) => {
+      if (tab.type !== "table") return;
+      counts.set(tab.title, (counts.get(tab.title) || 0) + 1);
+    });
+    return counts;
+  }, [tabs]);
   const currentCloseTab = currentCloseTabId
     ? tabs.find((t) => t.id === currentCloseTabId)
     : undefined;
@@ -1103,6 +1138,7 @@ export default function App() {
               onExportTable={handleExportTableFromTree}
               onSelectSavedQuery={handleOpenSavedQuery}
               lastUpdated={queriesLastUpdated}
+              activeTableTarget={activeTableTarget}
             />
           </ResizablePanel>
 
@@ -1132,8 +1168,15 @@ export default function App() {
                         items={tabs.map((t) => t.id)}
                         strategy={horizontalListSortingStrategy}
                       >
-                        {tabs.map((tab) => (
-                          <SortableTab key={tab.id} id={tab.id}>
+                        {tabs.map((tab) => {
+                          const title =
+                            tab.type === "table" &&
+                            (tableTabTitleCounts.get(tab.title) || 0) > 1 &&
+                            tab.database
+                              ? `${tab.database}.${tab.title}`
+                              : tab.title;
+                          return (
+                            <SortableTab key={tab.id} id={tab.id}>
                             <ContextMenu>
                               <ContextMenuTrigger asChild>
                                 {/* Wrapper avoids data-state conflict: ContextMenu and Tabs both set it; only the trigger must get Tabs' data-state=active for the indicator bar */}
@@ -1155,7 +1198,7 @@ export default function App() {
                                     )}
                                     <span className="max-w-[120px] flex items-center">
                                       <span className="truncate">
-                                        {tab.title}
+                                        {title}
                                       </span>
                                       {tab.type === "editor" && tab.isDirty && (
                                         <span
@@ -1166,7 +1209,7 @@ export default function App() {
                                     </span>
                                     <button
                                       type="button"
-                                      aria-label={`Close ${tab.title}`}
+                                      aria-label={`Close ${title}`}
                                       className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 hover:bg-accent rounded-sm cursor-pointer transition-opacity"
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -1192,7 +1235,8 @@ export default function App() {
                               </ContextMenuContent>
                             </ContextMenu>
                           </SortableTab>
-                        ))}
+                          );
+                        })}
                       </SortableContext>
                     </DndContext>
                   </TabsList>

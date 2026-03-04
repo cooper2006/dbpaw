@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import {
   Database,
@@ -144,6 +144,12 @@ interface ConnectionListProps {
     format: "csv" | "json" | "sql",
     filePath: string,
   ) => void;
+  activeTableTarget?: {
+    connectionId: number;
+    database: string;
+    table: string;
+    schema?: string;
+  };
 }
 
 export function ConnectionList({
@@ -151,7 +157,10 @@ export function ConnectionList({
   onConnect,
   onCreateQuery,
   onExportTable,
+  activeTableTarget,
 }: ConnectionListProps) {
+  const tableNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const autoScrollReqIdRef = useRef(0);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [expandedConnections, setExpandedConnections] = useState<Set<string>>(
     new Set(["1"]),
@@ -160,6 +169,11 @@ export function ConnectionList({
     new Set(),
   );
   const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
+  const [selectedTableKey, setSelectedTableKey] = useState<string | null>(null);
+  const [autoScrollRequest, setAutoScrollRequest] = useState<{
+    key: string;
+    id: number;
+  } | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
@@ -433,6 +447,103 @@ export function ConnectionList({
       );
     }
   };
+
+  useEffect(() => {
+    if (!activeTableTarget) {
+      setSelectedTableKey(null);
+      return;
+    }
+
+    const connectionId = String(activeTableTarget.connectionId);
+    const databaseName = activeTableTarget.database;
+    const tableName = activeTableTarget.table;
+    const dbKey = `${connectionId}-${databaseName}`;
+    const nextTableKey = `${dbKey}-${tableName}`;
+    let cancelled = false;
+
+    setExpandedConnections((prev) => {
+      const next = new Set(prev);
+      next.add(connectionId);
+      return next;
+    });
+    setExpandedDatabases((prev) => {
+      const next = new Set(prev);
+      next.add(dbKey);
+      return next;
+    });
+    setSelectedTableKey(nextTableKey);
+    setAutoScrollRequest({
+      key: nextTableKey,
+      id: ++autoScrollReqIdRef.current,
+    });
+
+    const ensureDatabaseTablesLoaded = async () => {
+      const targetConnection = connections.find((conn) => conn.id === connectionId);
+      const targetDatabase = targetConnection?.databases.find(
+        (db) => db.name === databaseName,
+      );
+      if (!targetDatabase || targetDatabase.tables.length > 0) return;
+
+      await fetchAndSetTables(connectionId, databaseName);
+      if (cancelled) return;
+      setSelectedTableKey(nextTableKey);
+      setAutoScrollRequest({
+        key: nextTableKey,
+        id: ++autoScrollReqIdRef.current,
+      });
+    };
+
+    void ensureDatabaseTablesLoaded();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTableTarget, connections]);
+
+  useEffect(() => {
+    if (!autoScrollRequest) return;
+    let cancelled = false;
+    let retriesLeft = 12;
+    let frame1 = 0;
+    let frame2 = 0;
+
+    const run = () => {
+      frame1 = requestAnimationFrame(() => {
+        frame2 = requestAnimationFrame(() => {
+          if (cancelled) return;
+          const target = tableNodeRefs.current[autoScrollRequest.key];
+          if (target) {
+            target.scrollIntoView({
+              block: "center",
+              inline: "nearest",
+              behavior: "smooth",
+            });
+            setAutoScrollRequest((prev) =>
+              prev?.id === autoScrollRequest.id ? null : prev,
+            );
+            return;
+          }
+
+          retriesLeft -= 1;
+          if (retriesLeft > 0) {
+            run();
+            return;
+          }
+
+          setAutoScrollRequest((prev) =>
+            prev?.id === autoScrollRequest.id ? null : prev,
+          );
+        });
+      });
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+      if (frame1) cancelAnimationFrame(frame1);
+      if (frame2) cancelAnimationFrame(frame2);
+    };
+  }, [autoScrollRequest]);
 
   const handleRefreshDatabaseTables = async (
     connectionId: string,
@@ -1294,15 +1405,20 @@ export function ConnectionList({
                         {database.tables.map((table) => {
                           const tableKey = `${dbKey}-${table.name}`;
                           return (
-                            <ContextMenu key={tableKey}>
-                              <ContextMenuTrigger asChild>
-                                <div>
-                                  <TreeNode
-                                    level={2}
-                                    icon={<Table className="w-4 h-4" />}
-                                    label={table.name}
-                                    isExpanded={expandedTables.has(tableKey)}
-                                    toggleOnRowClick={false}
+                      <ContextMenu key={tableKey}>
+                        <ContextMenuTrigger asChild>
+                          <div
+                            ref={(el) => {
+                              tableNodeRefs.current[tableKey] = el;
+                            }}
+                          >
+                            <TreeNode
+                              level={2}
+                              icon={<Table className="w-4 h-4" />}
+                              label={table.name}
+                              isSelected={selectedTableKey === tableKey}
+                              isExpanded={expandedTables.has(tableKey)}
+                              toggleOnRowClick={false}
                                     onToggle={() => {
                                       toggleTable(
                                         tableKey,
