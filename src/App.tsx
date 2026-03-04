@@ -51,6 +51,7 @@ import {
   horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { SortableTab } from "@/components/ui/sortable-tab";
+import { useTranslation } from "react-i18next";
 
 interface TabItem {
   id: string;
@@ -106,6 +107,7 @@ const TAB_TRIGGER_CLASS =
   "gap-2 group relative pr-8 bg-transparent data-[state=active]:bg-background border-b-2 border-b-transparent data-[state=active]:border-b-primary rounded-none h-9 hover:bg-muted/50 border-r border-r-border/40 last:border-r-0 shrink-0";
 
 export default function App() {
+  const { t } = useTranslation();
   const resolveTableScope = (driver: string, database?: string) => {
     const isDatabaseScoped = driver === "mysql" || driver === "clickhouse";
     return {
@@ -125,6 +127,8 @@ export default function App() {
   const [aiVisible, setAiVisible] = useState(false);
   const [openSettings, setOpenSettings] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const isDefaultQueryTitle = (title?: string) =>
+    !!title && /^(Query \(|查询（)/.test(title);
   const [queriesLastUpdated, setQueriesLastUpdated] = useState(0);
   const [pendingCloseTabIds, setPendingCloseTabIds] = useState<string[]>([]);
   const [currentCloseTabId, setCurrentCloseTabId] = useState<string | null>(
@@ -174,8 +178,8 @@ export default function App() {
         size="sm"
         className="h-7 w-7 p-0"
         onClick={() => setOpenSettings(true)}
-        title="Settings (Cmd/Ctrl+,)"
-        aria-label="Open settings"
+        title={t("app.window.settingsTooltip")}
+        aria-label={t("app.window.openSettings")}
       >
         <Settings className="w-4 h-4" />
       </Button>
@@ -187,10 +191,10 @@ export default function App() {
         onClick={() => setAiVisible((v) => !v)}
         title={
           aiVisible
-            ? "Hide AI Panel (Cmd/Ctrl+\\)"
-            : "Show AI Panel (Cmd/Ctrl+\\)"
+            ? t("app.window.hideAiPanel")
+            : t("app.window.showAiPanel")
         }
-        aria-label={aiVisible ? "Hide AI panel" : "Show AI panel"}
+        aria-label={aiVisible ? t("app.window.hideAiPanelAria") : t("app.window.showAiPanelAria")}
       >
         <Sparkles className="w-4 h-4" />
       </Button>
@@ -266,7 +270,7 @@ export default function App() {
     const newTab: TabItem = {
       id: newTabId,
       type: "editor",
-      title: `Query (${databaseName})`,
+      title: t("app.tab.queryTitle", { database: databaseName }),
       connectionId,
       database: databaseName,
       driver,
@@ -374,7 +378,7 @@ export default function App() {
     const tab = tabs.find((t) => t.id === tabId);
     if (!tab || !tab.connectionId) {
       // TODO: Prompt user to select connection if missing
-      alert("Please select a connection first (feature pending)");
+      alert(t("app.error.selectConnectionFirst"));
       return;
     }
 
@@ -489,7 +493,7 @@ export default function App() {
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
       console.error("get_table_data failed", errorMessage);
-      toast.error("Failed to load table data", {
+      toast.error(t("app.error.loadTableData"), {
         description: errorMessage,
       });
     }
@@ -517,11 +521,11 @@ export default function App() {
         scope: "full_table",
         filePath,
       });
-      toast.success(`Export completed (${result.rowCount} rows)`, {
+      toast.success(t("app.success.exportCompleted", { count: result.rowCount }), {
         description: result.filePath,
       });
     } catch (e) {
-      toast.error("Export failed", {
+      toast.error(t("app.error.exportFailed"), {
         description: e instanceof Error ? e.message : String(e),
       });
     }
@@ -543,7 +547,7 @@ export default function App() {
     const newTab: TabItem = {
       id: tabId,
       type: "ddl",
-      title: `DDL: ${ctx.table}`,
+      title: t("app.tab.ddlTitle", { table: ctx.table }),
       connectionId: ctx.connectionId,
       database: ctx.database,
       schema: ctx.schema,
@@ -601,7 +605,7 @@ export default function App() {
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
       console.error("handleTableRefresh failed", errorMessage);
-      toast.error("Failed to refresh table", {
+      toast.error(t("app.error.refreshTable"), {
         description: errorMessage,
       });
     }
@@ -641,7 +645,7 @@ export default function App() {
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
       console.error("handlePageChange failed", errorMessage);
-      toast.error("Failed to change page", {
+      toast.error(t("app.error.changePage"), {
         description: errorMessage,
       });
     }
@@ -682,7 +686,7 @@ export default function App() {
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
       console.error("handlePageSizeChange failed", errorMessage);
-      toast.error("Failed to change page size", {
+      toast.error(t("app.error.changePageSize"), {
         description: errorMessage,
       });
     }
@@ -736,7 +740,7 @@ export default function App() {
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
       console.error("handleSortChange failed", errorMessage);
-      toast.error("Failed to sort table", {
+      toast.error(t("app.error.sortTable"), {
         description: errorMessage,
       });
     }
@@ -793,7 +797,7 @@ export default function App() {
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
       console.error("handleFilterChange failed", errorMessage);
-      toast.error("Failed to filter table", {
+      toast.error(t("app.error.filterTable"), {
         description: errorMessage,
       });
     }
@@ -854,7 +858,7 @@ export default function App() {
           ),
         );
       } catch (e) {
-        toast.error("Failed to save query", {
+        toast.error(t("app.error.saveQuery"), {
           description: e instanceof Error ? e.message : String(e),
         });
         throw e;
@@ -1209,13 +1213,13 @@ export default function App() {
                                       {tab.type === "editor" && tab.isDirty && (
                                         <span
                                           className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 ml-1 shrink-0"
-                                          aria-label="Unsaved changes"
+                                          aria-label={t("app.tab.unsavedChanges")}
                                         />
                                       )}
                                     </span>
                                     <button
                                       type="button"
-                                      aria-label={`Close ${title}`}
+                                      aria-label={t("app.tab.closeAria", { title })}
                                       className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 hover:bg-accent rounded-sm cursor-pointer transition-opacity"
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -1231,12 +1235,12 @@ export default function App() {
                                 <ContextMenuItem
                                   onClick={() => handleCloseTab(tab.id)}
                                 >
-                                  Close Tab
+                                  {t("app.tab.closeTab")}
                                 </ContextMenuItem>
                                 <ContextMenuItem
                                   onClick={() => handleCloseOtherTabs(tab.id)}
                                 >
-                                  Close Other Tabs
+                                  {t("app.tab.closeOtherTabs")}
                                 </ContextMenuItem>
                               </ContextMenuContent>
                             </ContextMenu>
@@ -1263,7 +1267,7 @@ export default function App() {
                     <div className="text-center">
                       <FileCode className="w-12 h-12 mx-auto mb-2 opacity-50" />
                       <p>
-                        Select a table or create a new query from the sidebar
+                        {t("app.empty.hint")}
                       </p>
                     </div>
                   </div>
@@ -1289,7 +1293,7 @@ export default function App() {
                           schemaOverview={tab.schemaOverview}
                           savedQueryId={tab.savedQueryId}
                           initialName={
-                            tab.title.startsWith("Query (") ? "" : tab.title
+                            isDefaultQueryTitle(tab.title) ? "" : tab.title
                           }
                           initialDescription={tab.savedQueryDescription}
                           onSaveSuccess={(savedQuery) => {
@@ -1413,21 +1417,20 @@ export default function App() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+            <AlertDialogTitle>{t("app.dialog.unsavedTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This SQL tab has unsaved changes. Do you want to save before
-              closing?
+              {t("app.dialog.unsavedDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={handleUnsavedCloseCancel}>
-              Cancel
+              {t("common.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction onClick={handleUnsavedCloseWithoutSave}>
-              Don't Save
+              {t("app.dialog.dontSave")}
             </AlertDialogAction>
             <AlertDialogAction onClick={handleUnsavedCloseSave}>
-              Save
+              {t("common.save")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1437,7 +1440,7 @@ export default function App() {
         onOpenChange={handleCloseSaveDialogOpenChange}
         onSave={handleCloseFlowSave}
         initialName={
-          currentCloseTab && !currentCloseTab.title.startsWith("Query (")
+          currentCloseTab && !isDefaultQueryTitle(currentCloseTab.title)
             ? currentCloseTab.title
             : ""
         }

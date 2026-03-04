@@ -57,12 +57,12 @@ import { toast } from "sonner";
 import { TreeNode } from "./connection-list/TreeNode";
 import {
   getConnectionIcon,
-  getConnectionStatusLabel,
   getExportDefaultName,
   getExportFilter,
   renderConnectionStatusIndicator,
   sanitizeConnectionErrorMessage,
 } from "./connection-list/helpers";
+import { useTranslation } from "react-i18next";
 
 interface Column {
   name: string;
@@ -159,6 +159,7 @@ export function ConnectionList({
   onExportTable,
   activeTableTarget,
 }: ConnectionListProps) {
+  const { t } = useTranslation();
   const tableNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const autoScrollReqIdRef = useRef(0);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -202,6 +203,24 @@ export function ConnectionList({
   const [validationMsg, setValidationMsg] = useState<string | null>(null);
   const [form, setForm] = useState<ConnectionForm>(defaultForm);
   const [searchTerm, setSearchTerm] = useState("");
+
+  const getConnectionStatusLabel = (connection: Connection) => {
+    if (connection.connectState === "success") {
+      return t("connection.status.connected");
+    }
+    if (connection.connectState === "error") {
+      if (connection.connectError) {
+        return t("connection.status.failedWithReason", {
+          error: connection.connectError,
+        });
+      }
+      return t("connection.status.failed");
+    }
+    if (connection.connectState === "connecting") {
+      return t("connection.status.connecting");
+    }
+    return t("connection.status.idle");
+  };
 
   const filteredConnections = useMemo(() => {
     if (!searchTerm) return connections;
@@ -261,7 +280,7 @@ export function ConnectionList({
       setConnections(
         conns.map((c) => ({
           id: String(c.id),
-          name: c.name || "Unknown",
+          name: c.name || t("common.unknown"),
           type: (c.dbType as Driver) || "postgres",
           host: c.host || "",
           port: String(c.port || ""),
@@ -343,7 +362,7 @@ export function ConnectionList({
           };
         }),
       );
-      toast.error("Failed to load databases", {
+      toast.error(t("connection.toast.loadDatabasesFailed"), {
         description: sanitizedMessage || message,
       });
       return false;
@@ -690,9 +709,11 @@ export function ConnectionList({
   const handleConnect = async () => {
     if (!requiredOk) {
       const requiredFields = isSqlite
-        ? "File path"
-        : "Host, Port, Username, Password";
-      setValidationMsg(`Please fill in required fields: ${requiredFields}`);
+        ? t("connection.dialog.requiredSqlite")
+        : t("connection.dialog.requiredCreate");
+      setValidationMsg(
+        t("connection.dialog.requiredMessage", { fields: requiredFields }),
+      );
       return;
     }
     setValidationMsg(null);
@@ -702,7 +723,7 @@ export function ConnectionList({
       setConnections((prev) => [
         {
           id: String(res.id),
-          name: res.name || "Unknown",
+          name: res.name || t("common.unknown"),
           type: (res.dbType as Driver) || "postgres",
           host: res.host || "",
           port: String(res.port || ""),
@@ -736,8 +757,12 @@ export function ConnectionList({
   const handleSaveEdit = async () => {
     if (!editingConnectionId) return;
     if (!requiredOk) {
-      const requiredFields = isSqlite ? "File path" : "Host, Port, Username";
-      setValidationMsg(`Please fill in required fields: ${requiredFields}`);
+      const requiredFields = isSqlite
+        ? t("connection.dialog.requiredSqlite")
+        : t("connection.dialog.requiredEdit");
+      setValidationMsg(
+        t("connection.dialog.requiredMessage", { fields: requiredFields }),
+      );
       return;
     }
 
@@ -849,13 +874,13 @@ export function ConnectionList({
   ) => {
     if (!onExportTable) return;
     if (!isTauri()) {
-      toast.error("Export dialog is only available in Tauri desktop mode.");
+      toast.error(t("connection.toast.exportDesktopOnly"));
       return;
     }
 
     try {
       const selected = await save({
-        title: "Save Export File",
+        title: t("connection.toast.saveExportFile"),
         defaultPath: getExportDefaultName(table.name, format),
         filters: getExportFilter(format),
       });
@@ -875,7 +900,7 @@ export function ConnectionList({
         filePath,
       );
     } catch (e) {
-      toast.error("Failed to open save dialog", {
+      toast.error(t("connection.toast.openSaveDialogFailed"), {
         description: e instanceof Error ? e.message : String(e),
       });
     }
@@ -884,7 +909,7 @@ export function ConnectionList({
   return (
     <div className="h-full flex flex-col bg-background border-r border-border">
       <div className="px-2 py-1 border-b border-border flex items-center justify-between h-8">
-        <h2 className="font-semibold text-sm">Connections</h2>
+        <h2 className="font-semibold text-sm">{t("connection.title")}</h2>
         <div className="flex gap-1">
           <Button
             variant="ghost"
@@ -919,13 +944,13 @@ export function ConnectionList({
                 <DialogHeader>
                   <DialogTitle>
                     {dialogMode === "edit"
-                      ? "Edit Database Connection"
-                      : "New Database Connection"}
+                      ? t("connection.dialog.editTitle")
+                      : t("connection.dialog.newTitle")}
                   </DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="type">Database Type</Label>
+                    <Label htmlFor="type">{t("connection.dialog.fields.databaseType")}</Label>
                     <Select
                       value={form.driver}
                       onValueChange={(v: Driver) =>
@@ -946,7 +971,7 @@ export function ConnectionList({
                       }
                     >
                       <SelectTrigger id="type">
-                        <SelectValue placeholder="Select database type" />
+                        <SelectValue placeholder={t("connection.dialog.placeholders.selectDatabaseType")} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="postgres">PostgreSQL</SelectItem>
@@ -958,7 +983,7 @@ export function ConnectionList({
                     </Select>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="name">Connection Name</Label>
+                    <Label htmlFor="name">{t("connection.dialog.fields.connectionName")}</Label>
                     <Input
                       id="name"
                       value={form.name || ""}
@@ -972,7 +997,8 @@ export function ConnectionList({
                       <div className="grid grid-cols-2 gap-2">
                         <div className="grid gap-2">
                           <Label htmlFor="host">
-                            Host <span className="text-red-600">*</span>
+                            {t("connection.dialog.fields.host")}{" "}
+                            <span className="text-red-600">*</span>
                           </Label>
                           <Input
                             id="host"
@@ -984,7 +1010,8 @@ export function ConnectionList({
                         </div>
                         <div className="grid gap-2">
                           <Label htmlFor="port">
-                            Port <span className="text-red-600">*</span>
+                            {t("connection.dialog.fields.port")}{" "}
+                            <span className="text-red-600">*</span>
                           </Label>
                           <Input
                             id="port"
@@ -1010,7 +1037,8 @@ export function ConnectionList({
                       <div className="grid grid-cols-2 gap-2">
                         <div className="grid gap-2">
                           <Label htmlFor="username">
-                            Username <span className="text-red-600">*</span>
+                            {t("connection.dialog.fields.username")}{" "}
+                            <span className="text-red-600">*</span>
                           </Label>
                           <Input
                             id="username"
@@ -1025,7 +1053,7 @@ export function ConnectionList({
                         </div>
                         <div className="grid gap-2">
                           <Label htmlFor="password">
-                            Password{" "}
+                            {t("connection.dialog.fields.password")}{" "}
                             {dialogMode === "create" && (
                               <span className="text-red-600">*</span>
                             )}
@@ -1035,7 +1063,7 @@ export function ConnectionList({
                             type="password"
                             placeholder={
                               dialogMode === "edit"
-                                ? "Leave empty to keep current password"
+                                ? t("connection.dialog.placeholders.keepPassword")
                                 : undefined
                             }
                             value={form.password || ""}
@@ -1050,7 +1078,7 @@ export function ConnectionList({
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="grid gap-2">
-                          <Label htmlFor="database">Database</Label>
+                          <Label htmlFor="database">{t("connection.dialog.fields.database")}</Label>
                           <Input
                             id="database"
                             value={form.database || ""}
@@ -1063,7 +1091,7 @@ export function ConnectionList({
                           />
                         </div>
                         <div className="grid gap-2">
-                          <Label htmlFor="schema">Schema</Label>
+                          <Label htmlFor="schema">{t("connection.dialog.fields.schema")}</Label>
                           <Input
                             id="schema"
                             value={form.schema || ""}
@@ -1081,7 +1109,7 @@ export function ConnectionList({
                             setForm((f) => ({ ...f, ssl: checked === true }))
                           }
                         />
-                        <Label htmlFor="ssl">SSL</Label>
+                        <Label htmlFor="ssl">{t("connection.dialog.fields.ssl")}</Label>
                       </div>
 
                       <div className="flex items-center space-x-2">
@@ -1095,17 +1123,17 @@ export function ConnectionList({
                             }))
                           }
                         />
-                        <Label htmlFor="ssh">SSH</Label>
+                        <Label htmlFor="ssh">{t("connection.dialog.fields.ssh")}</Label>
                       </div>
 
                       {form.sshEnabled && (
                         <div className="border p-3 rounded-md space-y-3 bg-muted/20">
                           <div className="grid grid-cols-2 gap-2">
                             <div className="grid gap-2">
-                              <Label htmlFor="sshHost">SSH Host</Label>
+                              <Label htmlFor="sshHost">{t("connection.dialog.fields.sshHost")}</Label>
                               <Input
                                 id="sshHost"
-                                placeholder="ssh.example.com"
+                                placeholder={t("connection.dialog.placeholders.sshHost")}
                                 value={form.sshHost || ""}
                                 onChange={(e) =>
                                   setForm((f) => ({
@@ -1116,10 +1144,10 @@ export function ConnectionList({
                               />
                             </div>
                             <div className="grid gap-2">
-                              <Label htmlFor="sshPort">SSH Port</Label>
+                              <Label htmlFor="sshPort">{t("connection.dialog.fields.sshPort")}</Label>
                               <Input
                                 id="sshPort"
-                                placeholder="22"
+                                placeholder={t("connection.dialog.placeholders.sshPort")}
                                 value={String(form.sshPort || "")}
                                 onChange={(e) =>
                                   setForm((f) => ({
@@ -1132,10 +1160,10 @@ export function ConnectionList({
                             </div>
                           </div>
                           <div className="grid gap-2">
-                            <Label htmlFor="sshUsername">SSH Username</Label>
+                            <Label htmlFor="sshUsername">{t("connection.dialog.fields.sshUsername")}</Label>
                             <Input
                               id="sshUsername"
-                              placeholder="root"
+                              placeholder={t("connection.dialog.placeholders.sshUsername")}
                               value={form.sshUsername || ""}
                               onChange={(e) =>
                                 setForm((f) => ({
@@ -1146,11 +1174,11 @@ export function ConnectionList({
                             />
                           </div>
                           <div className="grid gap-2">
-                            <Label htmlFor="sshPassword">SSH Password</Label>
+                            <Label htmlFor="sshPassword">{t("connection.dialog.fields.sshPassword")}</Label>
                             <Input
                               id="sshPassword"
                               type="password"
-                              placeholder="Optional if using key"
+                              placeholder={t("connection.dialog.placeholders.sshPassword")}
                               value={form.sshPassword || ""}
                               onChange={(e) =>
                                 setForm((f) => ({
@@ -1161,10 +1189,10 @@ export function ConnectionList({
                             />
                           </div>
                           <div className="grid gap-2">
-                            <Label htmlFor="sshKeyPath">SSH Key Path</Label>
+                            <Label htmlFor="sshKeyPath">{t("connection.dialog.fields.sshKeyPath")}</Label>
                             <Input
                               id="sshKeyPath"
-                              placeholder="/path/to/private_key"
+                              placeholder={t("connection.dialog.placeholders.sshKeyPath")}
                               value={form.sshKeyPath || ""}
                               onChange={(e) =>
                                 setForm((f) => ({
@@ -1181,12 +1209,13 @@ export function ConnectionList({
                   {isSqlite && (
                     <div className="grid gap-2">
                       <Label htmlFor="filePath">
-                        SQLite File Path <span className="text-red-600">*</span>
+                        {t("connection.dialog.fields.sqliteFilePath")}{" "}
+                        <span className="text-red-600">*</span>
                       </Label>
                       <div className="flex gap-2">
                         <Input
                           id="filePath"
-                          placeholder="/path/to/db.sqlite"
+                          placeholder={t("connection.dialog.placeholders.sqlitePath")}
                           value={form.filePath || ""}
                           onChange={(e) =>
                             setForm((f) => ({ ...f, filePath: e.target.value }))
@@ -1199,17 +1228,17 @@ export function ConnectionList({
                           onClick={async () => {
                             if (!isTauri()) {
                               toast.info(
-                                "File browser is only available in desktop app",
+                                t("connection.toast.fileBrowserDesktopOnly"),
                               );
                               return;
                             }
                             try {
                               const selected = await open({
-                                title: "Select SQLite Database File",
+                                title: t("connection.dialog.fileDialogTitle"),
                                 multiple: false,
                                 filters: [
                                   {
-                                    name: "SQLite Database",
+                                    name: t("connection.dialog.fileFilterSqlite"),
                                     extensions: [
                                       "sqlite",
                                       "db",
@@ -1217,14 +1246,14 @@ export function ConnectionList({
                                       "db3",
                                     ],
                                   },
-                                  { name: "All Files", extensions: ["*"] },
+                                  { name: t("connection.dialog.fileFilterAll"), extensions: ["*"] },
                                 ],
                               });
                               if (selected && typeof selected === "string") {
                                 setForm((f) => ({ ...f, filePath: selected }));
                               }
                             } catch (e) {
-                              toast.error("Failed to open file dialog", {
+                              toast.error(t("connection.toast.openFileDialogFailed"), {
                                 description:
                                   e instanceof Error ? e.message : String(e),
                               });
@@ -1232,7 +1261,7 @@ export function ConnectionList({
                           }}
                         >
                           <FolderOpen className="w-4 h-4 mr-2" />
-                          Browse
+                          {t("connection.dialog.browse")}
                         </Button>
                       </div>
                     </div>
@@ -1244,7 +1273,7 @@ export function ConnectionList({
                     variant="outline"
                     onClick={() => setIsDialogOpen(false)}
                   >
-                    Cancel
+                    {t("common.cancel")}
                   </Button>
                   <Button
                     type="button"
@@ -1255,10 +1284,10 @@ export function ConnectionList({
                     {isTesting ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Testing…
+                        {t("connection.dialog.testing")}
                       </>
                     ) : (
-                      "Test"
+                      t("connection.dialog.test")
                     )}
                   </Button>
                   <Button
@@ -1272,25 +1301,25 @@ export function ConnectionList({
                       isSavingEdit ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Saving…
+                          {t("connection.dialog.saving")}
                         </>
                       ) : (
-                        "Save"
+                        t("common.save")
                       )
                     ) : isConnecting ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Connecting…
+                        {t("connection.dialog.connecting")}
                       </>
                     ) : (
-                      "Connect"
+                      t("connection.dialog.connect")
                     )}
                   </Button>
                 </div>
                 {validationMsg && (
                   <div className="mt-3">
                     <Alert variant="destructive">
-                      <AlertTitle>Validation Failed</AlertTitle>
+                      <AlertTitle>{t("connection.dialog.validationFailed")}</AlertTitle>
                       <AlertDescription>{validationMsg}</AlertDescription>
                     </Alert>
                   </div>
@@ -1300,8 +1329,8 @@ export function ConnectionList({
                     <Alert variant={testMsg.ok ? "default" : "destructive"}>
                       <AlertTitle>
                         {testMsg.ok
-                          ? "Connection Test Successful"
-                          : "Connection Test Failed"}
+                          ? t("connection.dialog.testSuccess")
+                          : t("connection.dialog.testFailed")}
                       </AlertTitle>
                       <AlertDescription>
                         {testMsg.text}
@@ -1320,7 +1349,7 @@ export function ConnectionList({
         <div className="relative">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search tables..."
+            placeholder={t("connection.searchTables")}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-8"
@@ -1384,7 +1413,7 @@ export function ConnectionList({
                         label={
                           connection.type === "sqlite" &&
                           database.name === "main"
-                            ? "main (SQLite)"
+                            ? t("connection.sqliteMainLabel")
                             : database.name
                         }
                         isExpanded={expandedDatabases.has(dbKey)}
@@ -1490,7 +1519,7 @@ export function ConnectionList({
                                   }
                                 >
                                   <Download className="w-4 h-4 mr-2" />
-                                  Export as CSV
+                                  {t("connection.menu.exportCsv")}
                                 </ContextMenuItem>
                                 <ContextMenuItem
                                   onClick={() =>
@@ -1503,7 +1532,7 @@ export function ConnectionList({
                                   }
                                 >
                                   <Download className="w-4 h-4 mr-2" />
-                                  Export as JSON
+                                  {t("connection.menu.exportJson")}
                                 </ContextMenuItem>
                                 <ContextMenuItem
                                   onClick={() =>
@@ -1516,7 +1545,7 @@ export function ConnectionList({
                                   }
                                 >
                                   <Download className="w-4 h-4 mr-2" />
-                                  Export as SQL
+                                  {t("connection.menu.exportSql")}
                                 </ContextMenuItem>
                               </ContextMenuContent>
                             </ContextMenu>
@@ -1548,7 +1577,7 @@ export function ConnectionList({
                 }}
               >
                 <Edit3 className="w-4 h-4" />
-                Edit
+                {t("connection.menu.edit")}
               </button>
               <button
                 className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
@@ -1560,7 +1589,7 @@ export function ConnectionList({
                 }}
               >
                 <Plug className="w-4 h-4" />
-                Reconnect
+                {t("connection.menu.reconnect")}
               </button>
               <div className="h-px bg-border my-1" />
               <button
@@ -1573,7 +1602,7 @@ export function ConnectionList({
                 }}
               >
                 <Trash2 className="w-4 h-4" />
-                Delete
+                {t("connection.menu.delete")}
               </button>
             </>
           ) : contextMenu.type === "database" ? (
@@ -1591,7 +1620,7 @@ export function ConnectionList({
                 }}
               >
                 <RefreshCw className="w-4 h-4" />
-                Refresh Tables
+                {t("connection.menu.refreshTables")}
               </button>
               <button
                 className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
@@ -1616,7 +1645,7 @@ export function ConnectionList({
                 }}
               >
                 <FileCode className="w-4 h-4" />
-                New Query
+                {t("connection.menu.newQuery")}
               </button>
             </>
           ) : null}
@@ -1632,14 +1661,13 @@ export function ConnectionList({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Connection</AlertDialogTitle>
+            <AlertDialogTitle>{t("connection.deleteDialog.title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. The selected connection
-              configuration will be removed.
+              {t("connection.deleteDialog.description")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               disabled={isDeleting || !deleteTargetConnectionId}
               onClick={async (e) => {
@@ -1648,7 +1676,7 @@ export function ConnectionList({
                 await handleDeleteConnection(deleteTargetConnectionId);
               }}
             >
-              {isDeleting ? "Deleting..." : "Delete"}
+              {isDeleting ? t("connection.deleteDialog.deleting") : t("common.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
