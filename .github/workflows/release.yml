@@ -177,30 +177,76 @@ jobs:
 
           echo "bundle_dir=$bundle_dir" >> "$GITHUB_OUTPUT"
 
-      - name: Collect updater metadata
+      - name: Generate updater metadata
         shell: bash
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAG_NAME: ${{ inputs.tag || github.ref_name }}
+          BUNDLE_DIR: ${{ steps.paths.outputs.bundle_dir }}
+          TARGET_TRIPLE: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          mkdir -p updater-json
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          import pathlib
+          import sys
 
-          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            echo "TAURI_SIGNING_PRIVATE_KEY is empty. Updater artifacts (latest.json) will not be generated."
-            exit 1
-          fi
+          bundle_dir = pathlib.Path(os.environ["BUNDLE_DIR"])
+          target = os.environ["TARGET_TRIPLE"]
+          tag = os.environ["TAG_NAME"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          base_url = f"https://github.com/{repo}/releases/download/{tag}"
 
-          json_file="$(
-            find "${{ steps.paths.outputs.bundle_dir }}" -type f -name latest.json 2>/dev/null | head -n 1 || true
-          )"
-          if [ -z "$json_file" ]; then
-            echo "No latest.json found for target ${{ matrix.target }}"
-            echo "Searched in: ${{ steps.paths.outputs.bundle_dir }}"
-            find "${{ steps.paths.outputs.bundle_dir }}" -maxdepth 4 -type f -print || true
-            exit 1
-          fi
+          def pick(patterns: list[str]) -> pathlib.Path | None:
+            for pattern in patterns:
+              matches = sorted(bundle_dir.glob(pattern))
+              if matches:
+                return matches[0]
+            return None
 
-          cp "$json_file" "updater-json/latest-${{ matrix.target }}.json"
+          if target in ("aarch64-apple-darwin", "x86_64-apple-darwin"):
+            platform = "darwin-aarch64" if target.startswith("aarch64") else "darwin-x86_64"
+            bundle = pick(["macos/*.app.tar.gz"])
+          elif target == "x86_64-unknown-linux-gnu":
+            platform = "linux-x86_64"
+            bundle = pick(["appimage/*.AppImage"])
+          elif target == "x86_64-pc-windows-msvc":
+            platform = "windows-x86_64"
+            bundle = pick(["nsis/*.exe", "msi/*.msi"])
+          else:
+            raise SystemExit(f"Unsupported target triple: {target}")
+
+          if bundle is None:
+            print(f"No updater bundle found for target {target}", file=sys.stderr)
+            print(f"Searched in: {bundle_dir}", file=sys.stderr)
+            for p in sorted(bundle_dir.rglob("*")):
+              if p.is_file():
+                print(p.relative_to(bundle_dir), file=sys.stderr)
+            raise SystemExit(1)
+
+          sig_path = pathlib.Path(str(bundle) + ".sig")
+          if not sig_path.exists():
+            print(f"Signature file not found: {sig_path}", file=sys.stderr)
+            raise SystemExit(1)
+
+          signature = sig_path.read_text(encoding="utf-8").strip()
+          pub_date = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+          url = f"{base_url}/{bundle.name}"
+
+          data = {
+            "version": tag,
+            "notes": "See the assets to download this version and install.",
+            "pub_date": pub_date,
+            "platforms": {platform: {"url": url, "signature": signature}},
+          }
+
+          out_dir = pathlib.Path("updater-json")
+          out_dir.mkdir(parents=True, exist_ok=True)
+          out_path = out_dir / f"latest-{target}.json"
+          out_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(f"Wrote {out_path}")
+          PY
 
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v4
