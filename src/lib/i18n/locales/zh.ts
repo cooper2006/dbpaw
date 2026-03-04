@@ -63,6 +63,7 @@ export const zh: Translations = {
       description: "选择你偏好的语言",
       en: "English",
       zh: "简体中文",
+      ja: "日本語",
     },
     appearance: {
       title: "外观",
@@ -242,5 +243,33 @@ export const zh: Translations = {
     searchTables: "搜索数据表...",
     noTablesFound: "未找到数据表",
     tablesHeading: "数据表",
+  },
+  sqlEditor: {
+    result: {
+      failed: "结果：执行失败。",
+      success: "结果：执行成功。",
+      rowsSuffix: "（{{count}} 行）",
+      rowsSuffixPlural: "（{{count}} 行）",
+    },
+    tooltip: {
+      runSql: "执行 SQL（Cmd/Ctrl+Enter）",
+      formatSql: "格式化 SQL（Shift+Alt+F）",
+      cancelQuery: "取消查询",
+      saveQuery: "保存查询（Cmd/Ctrl+S）",
+      clearEditor: "清空编辑器",
+    },
+    export: {
+      result: "导出结果",
+      runWithSavedConnection: "请在已保存连接下执行查询后再导出。",
+      desktopOnly: "导出对话框仅在 Tauri 桌面模式可用。",
+      saveFileTitle: "保存导出文件",
+      openSaveDialogFailed: "打开保存对话框失败",
+      completed: "导出完成（{{count}} 行）",
+      failed: "导出失败",
+    },
+    error: {
+      executingQuery: "执行查询出错：",
+    },
+    untitled: "未命名",
   },
 };

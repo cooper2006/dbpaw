@@ -62,6 +62,7 @@ export const en = {
       description: "Choose your preferred language",
       en: "English",
       zh: "简体中文",
+      ja: "日本語",
     },
     appearance: {
       title: "Appearance",
@@ -244,6 +245,35 @@ export const en = {
     searchTables: "Search tables...",
     noTablesFound: "No tables found",
     tablesHeading: "Tables",
+  },
+  sqlEditor: {
+    result: {
+      failed: "Result: Execution failed.",
+      success: "Result: Execution successful.",
+      rowsSuffix: " ({{count}} row)",
+      rowsSuffixPlural: " ({{count}} rows)",
+    },
+    tooltip: {
+      runSql: "Run SQL (Cmd/Ctrl+Enter)",
+      formatSql: "Format SQL (Shift+Alt+F)",
+      cancelQuery: "Cancel Query",
+      saveQuery: "Save Query (Cmd/Ctrl+S)",
+      clearEditor: "Clear Editor",
+    },
+    export: {
+      result: "Export Result",
+      runWithSavedConnection:
+        "Please run query with a saved connection to export.",
+      desktopOnly: "Export dialog is only available in Tauri desktop mode.",
+      saveFileTitle: "Save Export File",
+      openSaveDialogFailed: "Failed to open save dialog",
+      completed: "Export completed ({{count}} rows)",
+      failed: "Export failed",
+    },
+    error: {
+      executingQuery: "Error executing query:",
+    },
+    untitled: "Untitled",
   },
 } as const;
 

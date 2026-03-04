@@ -56,6 +56,7 @@ import {
 import { toast } from "sonner";
 import { sqlEditorThemeDark, sqlEditorThemeLight } from "./codemirrorTheme";
 import { getThemePreset } from "@/theme/themeRegistry";
+import { useTranslation } from "react-i18next";
 
 const editorFontSizeExtension = EditorView.theme({
   ".cm-scroller": {
@@ -99,6 +100,7 @@ export function SqlEditor({
   initialDescription,
   onSaveSuccess,
 }: SqlEditorProps) {
+  const { t } = useTranslation();
   const [internalSql, setInternalSql] = useState("");
   const { theme } = useTheme();
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -107,7 +109,7 @@ export function SqlEditor({
     if (!queryResults) return null;
     if (queryResults.error) {
       return {
-        text: "Result: Execution failed.",
+        text: t("sqlEditor.result.failed"),
         toneClass: "text-destructive",
         Icon: XCircle,
       };
@@ -116,15 +118,17 @@ export function SqlEditor({
     const returnedRows = queryResults.data.length;
     const hasResultSet = queryResults.columns.length > 0;
     const suffix = hasResultSet
-      ? ` (${returnedRows} row${returnedRows === 1 ? "" : "s"})`
+      ? returnedRows === 1
+        ? t("sqlEditor.result.rowsSuffix", { count: returnedRows })
+        : t("sqlEditor.result.rowsSuffixPlural", { count: returnedRows })
       : "";
 
     return {
-      text: `Result: Execution successful.${suffix}`,
+      text: `${t("sqlEditor.result.success")}${suffix}`,
       toneClass: "text-emerald-600 dark:text-emerald-400",
       Icon: CheckCircle2,
     };
-  }, [queryResults]);
+  }, [queryResults, t]);
 
   // Use controlled value if provided, otherwise internal state
   const code = value !== undefined ? value : internalSql;
@@ -253,11 +257,11 @@ export function SqlEditor({
   const handleExportResult = useCallback(
     async (format: TransferFormat) => {
       if (!_connectionId) {
-        toast.error("Please run query with a saved connection to export.");
+        toast.error(t("sqlEditor.export.runWithSavedConnection"));
         return;
       }
       if (!isTauri()) {
-        toast.error("Export dialog is only available in Tauri desktop mode.");
+        toast.error(t("sqlEditor.export.desktopOnly"));
         return;
       }
 
@@ -273,7 +277,7 @@ export function SqlEditor({
       let filePath: string | undefined;
       try {
         const selected = await save({
-          title: "Save Export File",
+          title: t("sqlEditor.export.saveFileTitle"),
           defaultPath,
           filters,
         });
@@ -281,7 +285,7 @@ export function SqlEditor({
         filePath = Array.isArray(selected) ? selected[0] : selected;
         if (!filePath) return;
       } catch (e) {
-        toast.error("Failed to open save dialog", {
+        toast.error(t("sqlEditor.export.openSaveDialogFailed"), {
           description: e instanceof Error ? e.message : String(e),
         });
         return;
@@ -296,26 +300,26 @@ export function SqlEditor({
           format,
           filePath,
         });
-        toast.success(`Export completed (${result.rowCount} rows)`, {
+        toast.success(t("sqlEditor.export.completed", { count: result.rowCount }), {
           description: result.filePath,
         });
       } catch (e) {
-        toast.error("Export failed", {
+        toast.error(t("sqlEditor.export.failed"), {
           description: e instanceof Error ? e.message : String(e),
         });
       }
     },
-    [_connectionId, databaseName, code, driver],
+    [_connectionId, databaseName, code, driver, t],
   );
 
   const triggerSave = useCallback(() => {
     const currentId = savedQueryIdRef.current;
     if (currentId) {
-      executeSave(initialName || "Untitled", initialDescription || "");
+      executeSave(initialName || t("sqlEditor.untitled"), initialDescription || "");
     } else {
       setIsSaveDialogOpen(true);
     }
-  }, [initialName, initialDescription, executeSave]);
+  }, [initialName, initialDescription, executeSave, t]);
 
   // Determine Dialect
   const dialect = useMemo(() => {
@@ -498,7 +502,7 @@ export function SqlEditor({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Run SQL (Cmd/Ctrl+Enter)</p>
+                  <p>{t("sqlEditor.tooltip.runSql")}</p>
                 </TooltipContent>
               </Tooltip>
 
@@ -514,7 +518,7 @@ export function SqlEditor({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Format SQL (Shift+Alt+F)</p>
+                  <p>{t("sqlEditor.tooltip.formatSql")}</p>
                 </TooltipContent>
               </Tooltip>
 
@@ -530,7 +534,7 @@ export function SqlEditor({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Cancel Query</p>
+                  <p>{t("sqlEditor.tooltip.cancelQuery")}</p>
                 </TooltipContent>
               </Tooltip>
 
@@ -546,7 +550,7 @@ export function SqlEditor({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Save Query (Cmd/Ctrl+S)</p>
+                  <p>{t("sqlEditor.tooltip.saveQuery")}</p>
                 </TooltipContent>
               </Tooltip>
 
@@ -562,7 +566,7 @@ export function SqlEditor({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Clear Editor</p>
+                  <p>{t("sqlEditor.tooltip.clearEditor")}</p>
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -586,7 +590,7 @@ export function SqlEditor({
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="h-8 gap-1.5">
                     <Download className="w-4 h-4" />
-                    Export Result
+                    {t("sqlEditor.export.result")}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -643,7 +647,7 @@ export function SqlEditor({
                   {queryResults.error ? (
                     <div className="h-full p-4 bg-destructive/10 text-destructive overflow-auto font-mono text-sm whitespace-pre-wrap">
                       <div className="font-bold mb-2">
-                        Error executing query:
+                        {t("sqlEditor.error.executingQuery")}
                       </div>
                       {queryResults.error}
                     </div>
