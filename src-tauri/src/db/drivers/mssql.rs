@@ -141,7 +141,8 @@ impl MssqlDriver {
             self.config.password.clone(),
         ));
         config.encryption(encryption);
-        if trust_cert {
+        if trust_cert && !matches!(encryption, EncryptionLevel::Off | EncryptionLevel::NotSupported)
+        {
             config.trust_cert();
         }
         config
@@ -179,19 +180,12 @@ impl MssqlDriver {
     async fn connect_client(&self) -> Result<Client<Compat<TcpStream>>, String> {
         let attempts = if self.config.ssl {
             vec![
-                (EncryptionLevel::On, true, "encrypt=on,trust_cert=true"),
                 (
                     EncryptionLevel::Required,
-                    true,
-                    "encrypt=required,trust_cert=true",
+                    false,
+                    "encrypt=required,trust_cert=false",
                 ),
                 (EncryptionLevel::On, false, "encrypt=on,trust_cert=false"),
-                (
-                    EncryptionLevel::NotSupported,
-                    false,
-                    "encrypt=not_supported",
-                ),
-                (EncryptionLevel::Off, false, "encrypt=off"),
             ]
         } else {
             vec![
