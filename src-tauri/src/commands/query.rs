@@ -406,8 +406,11 @@ fn append_mssql_fetch_1000(sql: &str) -> String {
     let has_order_by = collect_top_level_keywords(trimmed)
         .windows(2)
         .any(|pair| pair[0] == "order" && pair[1] == "by");
+    let has_offset_clause = has_top_level_mssql_offset_clause(trimmed);
 
-    let with_fetch = if has_order_by {
+    let with_fetch = if has_offset_clause {
+        format!("{trimmed} FETCH NEXT {DEFAULT_SELECT_LIMIT} ROWS ONLY")
+    } else if has_order_by {
         format!(
             "{trimmed} OFFSET 0 ROWS FETCH NEXT {DEFAULT_SELECT_LIMIT} ROWS ONLY"
         )
@@ -422,6 +425,32 @@ fn append_mssql_fetch_1000(sql: &str) -> String {
     } else {
         with_fetch
     }
+}
+
+fn has_top_level_mssql_offset_clause(sql: &str) -> bool {
+    let tokens = collect_top_level_keywords(sql);
+    let mut order_by_seen = false;
+    let mut i = 0;
+
+    while i < tokens.len() {
+        if i + 1 < tokens.len() && tokens[i] == "order" && tokens[i + 1] == "by" {
+            order_by_seen = true;
+            i += 2;
+            continue;
+        }
+
+        if order_by_seen
+            && i + 1 < tokens.len()
+            && tokens[i] == "offset"
+            && (tokens[i + 1] == "row" || tokens[i + 1] == "rows")
+        {
+            return true;
+        }
+
+        i += 1;
+    }
+
+    false
 }
 
 fn has_top_level_mssql_top(sql: &str) -> bool {
@@ -819,6 +848,22 @@ mod tests {
         assert_eq!(
             maybe_apply_default_limit("SELECT TOP 20 * FROM t", Some("mssql")),
             "SELECT TOP 20 * FROM t"
+        );
+    }
+
+    #[test]
+    fn mssql_adds_fetch_to_existing_offset_clause() {
+        assert_eq!(
+            maybe_apply_default_limit("SELECT * FROM t ORDER BY id OFFSET 10 ROWS", Some("mssql")),
+            "SELECT * FROM t ORDER BY id OFFSET 10 ROWS FETCH NEXT 1000 ROWS ONLY"
+        );
+    }
+
+    #[test]
+    fn mssql_adds_fetch_to_existing_offset_clause_with_semicolon() {
+        assert_eq!(
+            maybe_apply_default_limit("SELECT * FROM t ORDER BY id OFFSET 10 ROWS;", Some("mssql")),
+            "SELECT * FROM t ORDER BY id OFFSET 10 ROWS FETCH NEXT 1000 ROWS ONLY;"
         );
     }
 
