@@ -43,7 +43,6 @@ import {
   TransferFormat,
   isTauri,
 } from "@/services/api";
-import { format } from "sql-formatter";
 import { SaveQueryDialog } from "./SaveQueryDialog";
 import {
   Tooltip,
@@ -110,6 +109,7 @@ export function SqlEditor({
   const { theme } = useTheme();
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
+  const [isFormatting, setIsFormatting] = useState(false);
   const resultStatus = useMemo(() => {
     if (!queryResults) return null;
     if (queryResults.error) {
@@ -196,8 +196,12 @@ export function SqlEditor({
     handleSqlChange("");
   };
 
-  const handleFormat = useCallback(() => {
+  const handleFormat = useCallback(async () => {
+    if (isFormatting) return;
+
+    setIsFormatting(true);
     try {
+      const { format } = await import("sql-formatter");
       const dialectMap: Record<string, string> = {
         postgres: "postgresql",
         postgresql: "postgresql",
@@ -216,8 +220,13 @@ export function SqlEditor({
       handleSqlChange(formatted);
     } catch (e) {
       console.error("Format failed:", e);
+      toast.error(t("sqlEditor.error.formatFailed"), {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setIsFormatting(false);
     }
-  }, [code, driver, handleSqlChange]);
+  }, [code, driver, handleSqlChange, isFormatting, t]);
 
   const savedQueryIdRef = useRef(savedQueryId);
   useEffect(() => {
@@ -469,7 +478,7 @@ export function SqlEditor({
           {
             key: "Shift-Alt-f",
             run: () => {
-              handleFormat();
+              void handleFormat();
               return true;
             },
           },
@@ -557,7 +566,8 @@ export function SqlEditor({
                     variant="outline"
                     size="icon"
                     className="h-8 w-8"
-                    onClick={handleFormat}
+                    onClick={() => void handleFormat()}
+                    disabled={isFormatting}
                   >
                     <Braces className="w-4 h-4" />
                   </Button>

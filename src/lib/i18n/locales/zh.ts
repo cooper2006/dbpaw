@@ -6,6 +6,7 @@ export const zh: Translations = {
     save: "保存",
     delete: "删除",
     close: "关闭",
+    loading: "加载中...",
     unknown: "未知",
     search: "搜索",
   },
@@ -289,6 +290,7 @@ export const zh: Translations = {
     },
     error: {
       executingQuery: "执行查询出错：",
+      formatFailed: "格式化 SQL 失败",
     },
     untitled: "未命名",
   },

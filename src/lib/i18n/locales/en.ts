@@ -4,6 +4,7 @@ export const en = {
     save: "Save",
     delete: "Delete",
     close: "Close",
+    loading: "Loading...",
     unknown: "Unknown",
     search: "Search",
   },
@@ -292,6 +293,7 @@ export const en = {
     },
     error: {
       executingQuery: "Error executing query:",
+      formatFailed: "Failed to format SQL",
     },
     untitled: "Untitled",
   },

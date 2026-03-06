@@ -6,6 +6,7 @@ export const ja: Translations = {
     save: "保存",
     delete: "削除",
     close: "閉じる",
+    loading: "読み込み中...",
     unknown: "不明",
     search: "検索",
   },
@@ -299,6 +300,7 @@ export const ja: Translations = {
     },
     error: {
       executingQuery: "クエリ実行エラー:",
+      formatFailed: "SQL の整形に失敗しました",
     },
     untitled: "無題",
   },
