@@ -59,6 +59,10 @@ import {
 import { SortableTab } from "@/components/ui/sortable-tab";
 import { useTranslation } from "react-i18next";
 import { applyQueryCompletionToTab } from "@/lib/queryExecutionState";
+import {
+  normalizeDatabaseOptions,
+  resolvePreferredDatabase,
+} from "@/lib/sqlEditorDatabase";
 
 interface TabItem {
   id: string;
@@ -93,6 +97,7 @@ interface TabItem {
   schemaOverview?: SchemaOverview;
   savedQueryId?: number;
   savedQueryDescription?: string;
+  availableDatabases?: string[];
 }
 
 type TableRefreshOverrides = {
@@ -160,13 +165,27 @@ export default function App() {
     };
   };
 
+  const fetchEditorDatabases = useCallback(
+    async (connectionId: number, fallbackDatabase?: string) => {
+      const databases = await api.metadata.listDatabasesById(connectionId);
+      return normalizeDatabaseOptions(databases, fallbackDatabase);
+    },
+    [],
+  );
+
+  const fetchEditorSchemaOverview = useCallback(
+    async (connectionId: number, database?: string) =>
+      api.metadata.getSchemaOverview(connectionId, database),
+    [],
+  );
+
   const [tabs, setTabs] = useState<TabItem[]>([]);
   const [activeTab, setActiveTab] = useState<string>("");
   const [aiVisible, setAiVisible] = useState(false);
   const [openSettings, setOpenSettings] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const isDefaultQueryTitle = (title?: string) =>
-    !!title && /^(Query \(|查询（)/.test(title);
+    !!title && /^(Query \(|查询（|クエリ（)/.test(title);
   const [queriesLastUpdated, setQueriesLastUpdated] = useState(0);
   const [pendingCloseTabIds, setPendingCloseTabIds] = useState<string[]>([]);
   const [currentCloseTabId, setCurrentCloseTabId] = useState<string | null>(
@@ -312,6 +331,7 @@ export default function App() {
       connectionId,
       database: databaseName,
       driver,
+      availableDatabases: normalizeDatabaseOptions([databaseName], databaseName),
       sqlContent: DEFAULT_SQL,
       lastSavedSql: DEFAULT_SQL,
       isDirty: false,
@@ -320,20 +340,54 @@ export default function App() {
     setTabs((prev) => [...prev, newTab]);
     setActiveTab(newTabId);
 
-    // Fetch schema overview for completion
-    api.metadata
-      .getSchemaOverview(connectionId, databaseName)
-      .then((schemaOverview) => {
+    Promise.allSettled([
+      fetchEditorDatabases(connectionId, databaseName),
+      fetchEditorSchemaOverview(connectionId, databaseName),
+    ])
+      .then(([availableDatabasesResult, schemaOverviewResult]) => {
+        if (availableDatabasesResult.status === "rejected") {
+          console.error(
+            "Failed to load editor databases:",
+            availableDatabasesResult.reason instanceof Error
+              ? availableDatabasesResult.reason.message
+              : String(availableDatabasesResult.reason),
+          );
+        }
+        if (schemaOverviewResult.status === "rejected") {
+          console.error(
+            "Failed to load schema overview:",
+            schemaOverviewResult.reason instanceof Error
+              ? schemaOverviewResult.reason.message
+              : String(schemaOverviewResult.reason),
+          );
+        }
+
+        const availableDatabases =
+          availableDatabasesResult.status === "fulfilled"
+            ? availableDatabasesResult.value
+            : normalizeDatabaseOptions([databaseName], databaseName);
+        const schemaOverview =
+          schemaOverviewResult.status === "fulfilled"
+            ? schemaOverviewResult.value
+            : undefined;
+
         setTabs((prev) =>
-          prev.map((t) => (t.id === newTabId ? { ...t, schemaOverview } : t)),
+          prev.map((t) =>
+            t.id === newTabId
+              ? {
+                  ...t,
+                  database: resolvePreferredDatabase({
+                    preferredDatabase: databaseName,
+                    connectionDatabase: databaseName,
+                    availableDatabases,
+                  }),
+                  availableDatabases,
+                  schemaOverview,
+                }
+              : t,
+          ),
         );
-      })
-      .catch((e) =>
-        console.error(
-          "Failed to fetch schema overview:",
-          e instanceof Error ? e.message : String(e),
-        ),
-      );
+      });
   };
 
   const handleOpenSavedQuery = async (query: SavedQuery) => {
@@ -375,6 +429,62 @@ export default function App() {
           if (!database) {
             database = conn.database;
           }
+
+          let availableDatabases = normalizeDatabaseOptions(
+            database ? [database] : [],
+            conn.database || database,
+          );
+          try {
+            availableDatabases = await fetchEditorDatabases(
+              connectionId,
+              conn.database || database,
+            );
+          } catch (e) {
+            console.error(
+              "Failed to load editor databases for saved query",
+              e instanceof Error ? e.message : String(e),
+            );
+          }
+          database = resolvePreferredDatabase({
+            preferredDatabase: query.database || undefined,
+            connectionDatabase: conn.database || undefined,
+            availableDatabases,
+          });
+
+          let schemaOverview: SchemaOverview | undefined;
+          if (database) {
+            try {
+              schemaOverview = await fetchEditorSchemaOverview(
+                connectionId,
+                database,
+              );
+            } catch (e) {
+              console.error(
+                "Failed to load schema overview for saved query",
+                e instanceof Error ? e.message : String(e),
+              );
+            }
+          }
+
+          const newTab: TabItem = {
+            id: newTabId,
+            type: "editor",
+            title: query.name,
+            connectionId,
+            database,
+            driver,
+            availableDatabases,
+            schemaOverview,
+            sqlContent: query.query,
+            lastSavedSql: query.query,
+            isDirty: false,
+            savedQueryId: query.id,
+            savedQueryDescription: query.description || undefined,
+            queryResults: null,
+          };
+          setTabs((prev) => [...prev, newTab]);
+          setActiveTab(newTabId);
+          return;
         }
       } catch (e) {
         console.error("Failed to fetch connection details for saved query", e);
@@ -388,6 +498,10 @@ export default function App() {
       connectionId,
       database,
       driver,
+      availableDatabases: normalizeDatabaseOptions(
+        database ? [database] : [],
+        database,
+      ),
       sqlContent: query.query,
       lastSavedSql: query.query,
       isDirty: false,
@@ -398,6 +512,49 @@ export default function App() {
     setTabs((prev) => [...prev, newTab]);
     setActiveTab(newTabId);
   };
+
+  const handleEditorDatabaseChange = useCallback(
+    async (tabId: string, database: string) => {
+      const tab = tabs.find((item) => item.id === tabId);
+      if (!tab || tab.type !== "editor" || !tab.connectionId) return;
+
+      setTabs((prev) =>
+        prev.map((item) =>
+          item.id === tabId
+            ? {
+                ...item,
+                title: isDefaultQueryTitle(item.title)
+                  ? t("app.tab.queryTitle", { database })
+                  : item.title,
+                database,
+                queryResults: null,
+                activeQueryId: undefined,
+                schemaOverview: undefined,
+              }
+            : item,
+        ),
+      );
+
+      try {
+        const schemaOverview = await fetchEditorSchemaOverview(
+          tab.connectionId,
+          database,
+        );
+        setTabs((prev) =>
+          prev.map((item) =>
+            item.id === tabId ? { ...item, schemaOverview } : item,
+          ),
+        );
+      } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        console.error("Failed to switch editor database", errorMessage);
+        toast.error(t("app.error.loadSchemaOverview"), {
+          description: errorMessage,
+        });
+      }
+    },
+    [fetchEditorSchemaOverview, t, tabs],
+  );
 
   const handleSqlChange = (tabId: string, sql: string) => {
     setTabs((prev) =>
@@ -1325,6 +1482,7 @@ export default function App() {
                         >
                           <SqlEditor
                             databaseName={tab.database}
+                            availableDatabases={tab.availableDatabases}
                             onExecute={(sql) => handleExecuteQuery(tab.id, sql)}
                             onCancel={() =>
                               tab.connectionId && tab.activeQueryId
@@ -1337,6 +1495,9 @@ export default function App() {
                             queryResults={tab.queryResults}
                             value={tab.sqlContent}
                             onChange={(sql) => handleSqlChange(tab.id, sql)}
+                            onDatabaseChange={(database) =>
+                              void handleEditorDatabaseChange(tab.id, database)
+                            }
                             connectionId={tab.connectionId}
                             driver={tab.driver}
                             schemaOverview={tab.schemaOverview}

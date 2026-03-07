@@ -36,6 +36,7 @@ export const en = {
     },
     error: {
       selectConnectionFirst: "Please select a connection first",
+      loadSchemaOverview: "Failed to load schema overview",
       loadTableData: "Failed to load table data",
       exportFailed: "Export failed",
       refreshTable: "Failed to refresh table",
@@ -268,6 +269,10 @@ export const en = {
     tablesHeading: "Tables",
   },
   sqlEditor: {
+    database: {
+      ariaLabel: "Switch database",
+      placeholder: "Select database",
+    },
     result: {
       failed: "Result: Execution failed.",
       success: "Result: Execution successful.",

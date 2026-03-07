@@ -38,6 +38,7 @@ export const ja: Translations = {
     },
     error: {
       selectConnectionFirst: "先に接続を選択してください",
+      loadSchemaOverview: "スキーマ概要の読み込みに失敗しました",
       loadTableData: "テーブルデータの読み込みに失敗しました",
       exportFailed: "エクスポートに失敗しました",
       refreshTable: "テーブルの再読み込みに失敗しました",
@@ -274,6 +275,10 @@ export const ja: Translations = {
     tablesHeading: "テーブル",
   },
   sqlEditor: {
+    database: {
+      ariaLabel: "データベースを切り替える",
+      placeholder: "データベースを選択",
+    },
     result: {
       failed: "結果: 実行に失敗しました。",
       success: "結果: 実行に成功しました。",

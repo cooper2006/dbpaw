@@ -37,6 +37,7 @@ export const zh: Translations = {
     },
     error: {
       selectConnectionFirst: "请先选择连接",
+      loadSchemaOverview: "加载 Schema 概览失败",
       loadTableData: "加载表数据失败",
       exportFailed: "导出失败",
       refreshTable: "刷新表失败",
@@ -266,6 +267,10 @@ export const zh: Translations = {
     tablesHeading: "数据表",
   },
   sqlEditor: {
+    database: {
+      ariaLabel: "切换数据库",
+      placeholder: "选择数据库",
+    },
     result: {
       failed: "结果：执行失败。",
       success: "结果：执行成功。",
