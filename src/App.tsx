@@ -58,6 +58,7 @@ import {
 } from "@dnd-kit/sortable";
 import { SortableTab } from "@/components/ui/sortable-tab";
 import { useTranslation } from "react-i18next";
+import { applyQueryCompletionToTab } from "@/lib/queryExecutionState";
 
 interface TabItem {
   id: string;
@@ -440,36 +441,26 @@ export default function App() {
       );
 
       setTabs((prev) =>
-        prev.map((t) => {
-          if (t.id !== tabId) return t;
-          return {
-            ...t,
-            queryResults: {
-              data: result.data || [],
-              columns,
-              executionTime: `${execMs}ms`,
-            },
-            activeQueryId: undefined,
-          };
-        }),
+        prev.map((t) =>
+          applyQueryCompletionToTab(t, tabId, queryId, {
+            data: result.data || [],
+            columns,
+            executionTime: `${execMs}ms`,
+          }),
+        ),
       );
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
       console.error("execute_query failed:", errorMessage);
       setTabs((prev) =>
-        prev.map((t) => {
-          if (t.id !== tabId) return t;
-          return {
-            ...t,
-            queryResults: {
-              data: [],
-              columns: [],
-              executionTime: "0ms",
-              error: errorMessage,
-            },
-            activeQueryId: undefined,
-          };
-        }),
+        prev.map((t) =>
+          applyQueryCompletionToTab(t, tabId, queryId, {
+            data: [],
+            columns: [],
+            executionTime: "0ms",
+            error: errorMessage,
+          }),
+        ),
       );
     }
   };
