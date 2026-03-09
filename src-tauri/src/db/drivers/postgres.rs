@@ -346,8 +346,8 @@ impl DatabaseDriver for PostgresDriver {
 
         let mut columns = Vec::new();
         for row in column_rows {
-            let name: String = row.try_get(0).unwrap_or_default();
-            let comment: Option<String> = row.try_get::<Option<String>, _>(4).unwrap_or(None);
+            let name = decode_postgres_text_cell(&row, 0)?;
+            let comment = decode_postgres_optional_text_cell(&row, 4)?;
             let comment = comment.and_then(|c| {
                 let trimmed = c.trim().to_string();
                 if trimmed.is_empty() {
@@ -360,9 +360,9 @@ impl DatabaseDriver for PostgresDriver {
 
             columns.push(ColumnInfo {
                 name: name.clone(),
-                r#type: row.try_get(1).unwrap_or_default(),
+                r#type: decode_postgres_text_cell(&row, 1)?,
                 nullable: !not_null,
-                default_value: row.try_get::<Option<String>, _>(3).unwrap_or(None),
+                default_value: decode_postgres_optional_text_cell(&row, 3)?,
                 primary_key: pk_set.contains(&name),
                 comment,
             });

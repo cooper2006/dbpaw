@@ -359,8 +359,8 @@ impl DatabaseDriver for MysqlDriver {
 
         let mut columns = Vec::new();
         for row in column_rows {
-            let name: String = row.try_get(0).unwrap_or_default();
-            let comment: Option<String> = row.try_get::<Option<String>, _>(4).unwrap_or(None);
+            let name = decode_mysql_text_cell(&row, 0)?;
+            let comment = decode_mysql_optional_text_cell(&row, 4)?;
             let comment = comment.and_then(|c| {
                 let trimmed = c.trim().to_string();
                 if trimmed.is_empty() {
@@ -371,9 +371,9 @@ impl DatabaseDriver for MysqlDriver {
             });
             columns.push(ColumnInfo {
                 name: name.clone(),
-                r#type: row.try_get(1).unwrap_or_default(),
-                nullable: row.try_get::<String, _>(2).unwrap_or_default() == "YES",
-                default_value: row.try_get::<Option<String>, _>(3).unwrap_or(None),
+                r#type: decode_mysql_text_cell(&row, 1)?,
+                nullable: decode_mysql_text_cell(&row, 2)? == "YES",
+                default_value: decode_mysql_optional_text_cell(&row, 3)?,
                 primary_key: pk_set.contains(&name),
                 comment,
             });
