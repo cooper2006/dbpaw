@@ -798,12 +798,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     >
                       {GITHUB_URL}
                     </a>
-                    <span className="font-medium text-foreground/90">{t("settings.about.tech")}</span>
-                    <span>Tauri + React + TypeScript</span>
                     <span className="font-medium text-foreground/90">
                       {t("settings.about.license")}
                     </span>
-                    <span>MIT</span>
+                    <span>Apache-2.0</span>
                     <span className="font-medium text-foreground/90">
                       {t("settings.about.platforms")}
                     </span>
