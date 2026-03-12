@@ -151,20 +151,26 @@ function LazyPanelFallback({
 
 export default function App() {
   const { t } = useTranslation();
-  const resolveTableScope = (driver: string, database?: string) => {
+  const resolveTableScope = (
+    driver: string,
+    database?: string,
+    schemaOverride?: string,
+  ) => {
     const isDatabaseScoped =
       driver === "mysql" ||
       driver === "tidb" ||
       driver === "mariadb" ||
       driver === "clickhouse";
+    const normalizedSchemaOverride = (schemaOverride || "").trim();
     return {
       schema: isDatabaseScoped
         ? database || ""
-        : driver === "mssql"
-          ? "dbo"
-          : driver === "sqlite" || driver === "duckdb"
-            ? "main"
-            : "public",
+        : normalizedSchemaOverride ||
+          (driver === "mssql"
+            ? "dbo"
+            : driver === "sqlite" || driver === "duckdb"
+              ? "main"
+              : "public"),
       dbParam: isDatabaseScoped ? undefined : database,
     };
   };
@@ -642,15 +648,20 @@ export default function App() {
     table: string,
     connectionId: number,
     driver: string,
+    schemaName?: string,
   ) => {
-    const tabId = `${connection}-${database}-${table}`;
+    const tabId = `${connection}-${database}-${schemaName || ""}-${table}`;
     const existingTab = tabs.find((t) => t.id === tabId);
     if (existingTab) {
       setActiveTab(tabId);
       return;
     }
     try {
-      const { schema, dbParam } = resolveTableScope(driver, database);
+      const { schema, dbParam } = resolveTableScope(
+        driver,
+        database,
+        schemaName,
+      );
 
       const resp = await api.tableData.get({
         id: connectionId,

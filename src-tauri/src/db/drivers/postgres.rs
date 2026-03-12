@@ -237,22 +237,35 @@ impl DatabaseDriver for PostgresDriver {
     }
 
     async fn list_tables(&self, schema: Option<String>) -> Result<Vec<TableInfo>, String> {
-        let schema = schema.unwrap_or_else(|| "public".to_string());
-        let rows = sqlx::query(
-            "SELECT table_schema, table_name, table_type \
-             FROM information_schema.tables \
-             WHERE table_schema = $1 AND table_type IN ('BASE TABLE','VIEW') \
-             ORDER BY table_name",
-        )
-        .bind(&schema)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+        let rows = if let Some(schema) = schema {
+            sqlx::query(
+                "SELECT table_schema, table_name, table_type \
+                 FROM information_schema.tables \
+                 WHERE table_schema = $1 AND table_type IN ('BASE TABLE','VIEW') \
+                 ORDER BY table_name",
+            )
+            .bind(&schema)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| format!("[QUERY_ERROR] {e}"))?
+        } else {
+            sqlx::query(
+                "SELECT table_schema, table_name, table_type \
+                 FROM information_schema.tables \
+                 WHERE table_schema NOT IN ('information_schema', 'pg_catalog') \
+                   AND table_schema NOT LIKE 'pg_toast%' \
+                   AND table_type IN ('BASE TABLE','VIEW') \
+                 ORDER BY table_schema, table_name",
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| format!("[QUERY_ERROR] {e}"))?
+        };
 
         let mut res = Vec::new();
         for row in rows {
             res.push(TableInfo {
-                schema: decode_postgres_text_cell(&row, 0).unwrap_or_else(|_| schema.clone()),
+                schema: decode_postgres_text_cell(&row, 0).unwrap_or_else(|_| "public".to_string()),
                 name: decode_postgres_text_cell(&row, 1).unwrap_or_default(),
                 r#type: decode_postgres_text_cell(&row, 2).unwrap_or_else(|_| "table".to_string()),
             });
