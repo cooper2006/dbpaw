@@ -251,7 +251,8 @@ export function ConnectionList({
     y: number;
     connectionId: string | null;
     databaseName?: string | null;
-    type: "connection" | "database";
+    schemaName?: string | null;
+    type: "connection" | "database" | "schema";
   }>({ visible: false, x: 0, y: 0, connectionId: null, type: "connection" });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
@@ -2222,6 +2223,19 @@ export function ConnectionList({
                                   label={schemaNode.name}
                                   isExpanded={expandedSchemas.has(schemaKey)}
                                   onToggle={() => toggleSchema(schemaKey)}
+                                  onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setContextMenu({
+                                      visible: true,
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                      connectionId: connection.id,
+                                      databaseName: database.name,
+                                      schemaName: schemaNode.name,
+                                      type: "schema",
+                                    });
+                                  }}
                                 >
                                   {schemaNode.tables.map((table) =>
                                     renderTableNode(table, 3),
@@ -2322,6 +2336,37 @@ export function ConnectionList({
               </button>
             </>
           ) : contextMenu.type === "database" ? (
+            <>
+              <button
+                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                onClick={async () => {
+                  if (contextMenu.connectionId && contextMenu.databaseName) {
+                    await handleRefreshDatabaseTables(
+                      contextMenu.connectionId,
+                      contextMenu.databaseName,
+                    );
+                  }
+                  setContextMenu((prev) => ({ ...prev, visible: false }));
+                }}
+              >
+                <RefreshCw className="w-4 h-4" />
+                {t("connection.menu.refreshTables")}
+              </button>
+              <button
+                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                onClick={() => {
+                  handleCreateQueryFromContext(
+                    contextMenu.connectionId,
+                    contextMenu.databaseName,
+                  );
+                  setContextMenu((prev) => ({ ...prev, visible: false }));
+                }}
+              >
+                <FileCode className="w-4 h-4" />
+                {t("connection.menu.newQuery")}
+              </button>
+            </>
+          ) : contextMenu.type === "schema" ? (
             <>
               <button
                 className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
