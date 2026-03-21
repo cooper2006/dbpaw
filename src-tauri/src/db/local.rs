@@ -142,21 +142,15 @@ impl LocalDb {
             .map_err(|e| format!("[MIGRATION_008_ERROR] {e}"))?;
         }
 
-        let has_provider_type_trigger_insert: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='trg_ai_providers_provider_type_insert')",
-        )
-        .fetch_one(&pool)
+        // Migration 009: Always execute — its SQL is idempotent (DROP IF EXISTS + CREATE IF NOT EXISTS).
+        // The previous conditional check based on trigger name was buggy because migration 008
+        // already created a trigger with the same name, causing migration 009 to be skipped.
+        sqlx::query(include_str!(
+            "../../migrations/009_ai_provider_type_relaxed.sql"
+        ))
+        .execute(&pool)
         .await
-        .map_err(|e| format!("[MIGRATION_009_CHECK_ERROR] {e}"))?;
-
-        if !has_provider_type_trigger_insert {
-            sqlx::query(include_str!(
-                "../../migrations/009_ai_provider_type_relaxed.sql"
-            ))
-            .execute(&pool)
-            .await
-            .map_err(|e| format!("[MIGRATION_009_ERROR] {e}"))?;
-        }
+        .map_err(|e| format!("[MIGRATION_009_ERROR] {e}"))?;
 
         let has_sql_execution_logs: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='sql_execution_logs')",
