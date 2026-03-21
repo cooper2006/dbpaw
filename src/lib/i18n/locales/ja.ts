@@ -232,6 +232,22 @@ export const ja: Translations = {
       sslValidation: {
         caRequired: "CA 検証モードでは CA 証明書が必須です。",
       },
+      inputValidation: {
+        filePathRequired: "ファイルパスを入力してください。",
+        hostRequired: "ホストを入力してください。",
+        usernameRequired: "ユーザー名を入力してください。",
+        passwordRequired: "パスワードを入力してください。",
+        portRange: "ポートは 1 から 65535 の整数で入力してください。",
+        hostWhitespace: "ホストには空白文字を含められません。",
+        hostPortNotAllowed:
+          "このデータベースタイプではホスト欄に host:port は使えません。ポート欄に入力してください。",
+        sshHostRequired: "SSH を有効にしたため、SSH ホストを入力してください。",
+        sshUsernameRequired:
+          "SSH を有効にしたため、SSH ユーザー名を入力してください。",
+        sshPortRange: "SSH ポートは 1 から 65535 の整数で入力してください。",
+        sshAuthRequired:
+          "SSH を有効にしたため、SSH パスワードまたは SSH 鍵パスを入力してください。",
+      },
     },
     menu: {
       edit: "編集",

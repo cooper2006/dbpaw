@@ -169,6 +169,7 @@ fn normalize_create_database_error(err: String, db_name: &str) -> String {
 
 #[tauri::command]
 pub async fn list_databases(form: ConnectionForm) -> Result<Vec<String>, String> {
+    let form = crate::connection_input::normalize_connection_form(form)?;
     let driver = crate::db::drivers::connect(&form).await?;
     driver.list_databases().await
 }
@@ -262,6 +263,7 @@ pub async fn create_database_by_id(
 pub async fn test_connection_ephemeral(
     form: ConnectionForm,
 ) -> Result<TestConnectionResult, String> {
+    let form = crate::connection_input::normalize_connection_form(form)?;
     let start = Instant::now();
     let driver = crate::db::drivers::connect(&form).await?;
     driver.test_connection().await.map_err(|e| e.to_string())?;
@@ -292,6 +294,7 @@ pub async fn create_connection(
     state: State<'_, AppState>,
     form: ConnectionForm,
 ) -> Result<Connection, String> {
+    let form = crate::connection_input::normalize_connection_form(form)?;
     let local_db = {
         let lock = state.local_db.lock().await;
         lock.clone()
@@ -309,6 +312,7 @@ pub async fn update_connection(
     id: i64,
     form: ConnectionForm,
 ) -> Result<Connection, String> {
+    let form = crate::connection_input::normalize_connection_form(form)?;
     let local_db = {
         let lock = state.local_db.lock().await;
         lock.clone()

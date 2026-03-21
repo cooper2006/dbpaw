@@ -228,6 +228,20 @@ export const en = {
       sslValidation: {
         caRequired: "CA certificate is required in verify CA mode.",
       },
+      inputValidation: {
+        filePathRequired: "File path is required.",
+        hostRequired: "Host is required.",
+        usernameRequired: "Username is required.",
+        passwordRequired: "Password is required.",
+        portRange: "Port must be an integer between 1 and 65535.",
+        hostWhitespace: "Host cannot contain whitespace characters.",
+        hostPortNotAllowed:
+          "This database type does not support host:port in host field. Please set port in the port field.",
+        sshHostRequired: "SSH is enabled. SSH host is required.",
+        sshUsernameRequired: "SSH is enabled. SSH username is required.",
+        sshPortRange: "SSH port must be an integer between 1 and 65535.",
+        sshAuthRequired: "SSH is enabled. Provide SSH password or SSH key path.",
+      },
     },
     menu: {
       edit: "Edit",

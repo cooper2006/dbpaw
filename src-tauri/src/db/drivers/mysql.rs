@@ -53,12 +53,45 @@ fn build_verify_ca_query_param(ca_path: &Path) -> String {
     )
 }
 
+fn normalize_mysql_host_and_port(
+    raw_host: &str,
+    raw_port: Option<i64>,
+) -> Result<(String, u16), String> {
+    let mut host = raw_host.trim().to_string();
+    if host.is_empty() {
+        return Err("[VALIDATION_ERROR] host cannot be empty".to_string());
+    }
+
+    let mut port = raw_port.unwrap_or(3306);
+    if !host.starts_with('[') && host.matches(':').count() == 1 {
+        if let Some((host_part, port_part)) = host.rsplit_once(':') {
+            let host_part = host_part.trim();
+            let port_part = port_part.trim();
+            if !host_part.is_empty() && port_part.chars().all(|c| c.is_ascii_digit()) {
+                if raw_port.is_none() {
+                    port = port_part.parse::<i64>().unwrap_or(port);
+                }
+                host = host_part.to_string();
+            }
+        }
+    }
+
+    if host.is_empty() {
+        return Err("[VALIDATION_ERROR] host cannot be empty".to_string());
+    }
+    if !(1..=65535).contains(&port) {
+        return Err("[VALIDATION_ERROR] port must be between 1 and 65535".to_string());
+    }
+
+    Ok((host, port as u16))
+}
+
 fn build_dsn_and_ca_path(form: &ConnectionForm) -> Result<(String, Option<PathBuf>), String> {
-    let host = form
+    let raw_host = form
         .host
         .clone()
         .ok_or("[VALIDATION_ERROR] host cannot be empty")?;
-    let port = form.port.unwrap_or(3306);
+    let (host, port) = normalize_mysql_host_and_port(&raw_host, form.port)?;
     // Allow database to be empty
     let username = form
         .username
@@ -979,6 +1012,38 @@ mod tests {
 
         let conn_str = build_dsn(&form).unwrap();
         assert_eq!(conn_str, "mysql://user:pass@127.0.0.1:3307");
+    }
+
+    #[test]
+    fn test_conn_string_strips_host_embedded_port() {
+        let form = ConnectionForm {
+            driver: "mysql".to_string(),
+            host: Some("127.0.0.1:3307".to_string()),
+            port: Some(3307),
+            username: Some("user".to_string()),
+            password: Some("pass".to_string()),
+            database: None,
+            ..Default::default()
+        };
+
+        let conn_str = build_dsn(&form).unwrap();
+        assert_eq!(conn_str, "mysql://user:pass@127.0.0.1:3307");
+    }
+
+    #[test]
+    fn test_conn_string_accepts_host_embedded_port_when_port_missing() {
+        let form = ConnectionForm {
+            driver: "mysql".to_string(),
+            host: Some("localhost:3308".to_string()),
+            port: None,
+            username: Some("root".to_string()),
+            password: Some("password".to_string()),
+            database: Some("test_db".to_string()),
+            ..Default::default()
+        };
+
+        let conn_str = build_dsn(&form).unwrap();
+        assert_eq!(conn_str, "mysql://root:password@localhost:3308/test_db");
     }
 
     #[test]
