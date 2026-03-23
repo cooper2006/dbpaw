@@ -80,7 +80,7 @@ export const zh: Translations = {
       selectTheme: "选择主题",
       fontSizeTitle: "字体大小",
       fontSizeDescription: "调整应用全局文字大小（范围：{{min}}-{{max}}px）",
-      accentColor: "主题色",
+
     },
     updates: {
       title: "更新",

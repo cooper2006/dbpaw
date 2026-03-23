@@ -80,7 +80,7 @@ export const en = {
       fontSizeTitle: "Font Size",
       fontSizeDescription:
         "Adjust global text size across the app (Range: {{min}}-{{max}}px)",
-      accentColor: "Accent Color",
+
     },
     updates: {
       title: "Updates",

@@ -118,7 +118,7 @@ type ActiveTableTarget = {
 const DEFAULT_SQL = "";
 
 const TAB_TRIGGER_CLASS =
-  "gap-2 group relative pr-8 bg-transparent data-[state=active]:bg-background border-b-2 border-b-transparent data-[state=active]:border-b-primary rounded-none h-9 hover:bg-muted/50 border-r border-r-border/40 last:border-r-0 shrink-0";
+  "gap-2 group relative pr-8 bg-transparent data-[state=active]:bg-background border-b-2 border-b-transparent data-[state=active]:border-b-accent rounded-none h-9 hover:bg-muted/50 border-r border-r-border/40 last:border-r-0 shrink-0";
 
 const SqlEditor = lazy(async () => {
   const mod = await import("@/components/business/Editor/SqlEditor");
@@ -1443,9 +1443,9 @@ export default function App() {
                                   >
                                     <div className="relative inline-flex items-center gap-2 min-w-0">
                                       {tab.type === "table" ? (
-                                        <Table className="w-4 h-4 text-primary" />
+                                        <Table className="w-4 h-4 text-accent" />
                                       ) : (
-                                        <FileCode className="w-4 h-4 text-primary" />
+                                        <FileCode className="w-4 h-4 text-accent" />
                                       )}
                                       <span className="max-w-[120px] flex items-center">
                                         <span className="truncate">

@@ -72,14 +72,6 @@ type ShortcutGroup = {
   items: ShortcutItem[];
 };
 
-const THEME_COLORS = [
-  { name: "Zinc", value: "#09090b" },
-  { name: "Blue", value: "#3b82f6" },
-  { name: "Violet", value: "#8b5cf6" },
-  { name: "Green", value: "#22c55e" },
-  { name: "Orange", value: "#f97316" },
-];
-
 const AI_PROVIDER_OPTIONS: AIProviderPreset[] = [
   {
     type: "openai",
@@ -229,8 +221,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const {
     theme,
     setTheme,
-    accentColor,
-    setAccentColor,
     fontSizePx,
     setFontSizePx,
   } = useTheme();
@@ -593,30 +583,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </div>
                   </div>
 
-                  <div className="space-y-3 pt-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-base">{t("settings.appearance.accentColor")}</Label>
-                    </div>
-                    <div className="flex flex-wrap gap-3">
-                      {THEME_COLORS.map((color) => (
-                        <button
-                          key={color.name}
-                          className={`h-8 w-8 rounded-full border-2 flex items-center justify-center transition-all ${
-                            accentColor === color.name
-                              ? "border-primary ring-2 ring-ring ring-offset-2 scale-110"
-                              : "border-transparent hover:scale-105"
-                          }`}
-                          style={{ backgroundColor: color.value }}
-                          onClick={() => setAccentColor(color.name)}
-                          title={color.name}
-                        >
-                          {accentColor === color.name && (
-                            <div className="w-2 h-2 bg-white rounded-full" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+
                 </div>
 
                 <Separator />
