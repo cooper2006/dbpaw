@@ -259,6 +259,7 @@ impl MysqlDriver {
         json_expr: &str,
         high_precision_cols: &HashSet<String>,
     ) -> Result<Vec<serde_json::Value>, String> {
+        let base_query = sanitize_mysql_subquery_sql(base_query);
         let query = format!(
             "SELECT {} AS __row_json FROM ({}) AS {}",
             json_expr,
@@ -283,6 +284,10 @@ impl MysqlDriver {
         }
         Ok(data)
     }
+}
+
+fn sanitize_mysql_subquery_sql(sql: &str) -> &str {
+    sql.trim_end().trim_end_matches(';').trim_end()
 }
 
 fn decode_mysql_text_cell(row: &sqlx::mysql::MySqlRow, idx: usize) -> Result<String, String> {
@@ -981,6 +986,22 @@ impl DatabaseDriver for MysqlDriver {
 mod tests {
     use super::*;
     use crate::models::ConnectionForm;
+
+    #[test]
+    fn test_sanitize_mysql_subquery_sql_trims_trailing_semicolon() {
+        assert_eq!(
+            sanitize_mysql_subquery_sql("select * from t_business LIMIT 1000;"),
+            "select * from t_business LIMIT 1000"
+        );
+        assert_eq!(
+            sanitize_mysql_subquery_sql("select * from t_business LIMIT 1000;   "),
+            "select * from t_business LIMIT 1000"
+        );
+        assert_eq!(
+            sanitize_mysql_subquery_sql("select * from t_business"),
+            "select * from t_business"
+        );
+    }
 
     #[test]
     fn test_conn_string_generation() {
