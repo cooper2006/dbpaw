@@ -671,23 +671,23 @@ export default function App() {
         page: 1,
         limit: 100,
       });
-      let columns = resp.data.length > 0 ? Object.keys(resp.data[0]) : [];
-
-      // If data is empty, fetch columns from metadata
-      if (columns.length === 0) {
-        try {
-          const meta = await api.metadata.getTableMetadata(
-            connectionId,
-            database,
-            schema,
-            table,
-          );
-          if (meta && meta.columns) {
-            columns = meta.columns.map((c) => c.name);
-          }
-        } catch (e) {
-          console.warn("Failed to fetch metadata for empty table:", e);
+      let columns: string[] = [];
+      try {
+        const meta = await api.metadata.getTableMetadata(
+          connectionId,
+          database,
+          schema,
+          table,
+        );
+        if (meta && meta.columns) {
+          columns = meta.columns.map((c) => c.name);
         }
+      } catch (e) {
+        console.warn("Failed to fetch metadata for table columns:", e);
+      }
+
+      if (columns.length === 0) {
+        columns = resp.data.length > 0 ? Object.keys(resp.data[0]) : [];
       }
 
       const newTab: TabItem = {
@@ -1016,15 +1016,13 @@ export default function App() {
         orderBy: orderBy || undefined,
       });
 
-      const columns =
-        resp.data.length > 0 ? Object.keys(resp.data[0]) : tab.columns;
       setTabs((prev) =>
         prev.map((t) => {
           if (t.id !== tabId) return t;
           return {
             ...t,
             data: resp.data,
-            columns,
+            columns: t.columns,
             total: resp.total,
             page: resp.page,
             executionTimeMs: resp.executionTimeMs,
