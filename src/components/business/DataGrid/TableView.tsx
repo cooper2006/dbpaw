@@ -803,7 +803,10 @@ export function TableView({
         "table_view_save",
       );
       setDeleteDialogOpen(false);
-      setSelectedRows(new Set());
+      const nextSelectedRows = new Set<number>();
+      selectedRowsRef.current = nextSelectedRows;
+      setSelectedRows(nextSelectedRows);
+      selectedCellRef.current = null;
       setSelectedCell(null);
       setEditingCell(null);
       onDataRefresh?.();
