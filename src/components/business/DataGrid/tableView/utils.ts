@@ -263,3 +263,40 @@ export function getQualifiedTableName(
 
   return `${quoteIdent(driver, schema)}.${quoteIdent(driver, table)}`;
 }
+
+export function isClickHouseMergeTreeEngine(
+  engine: string | undefined | null,
+): boolean {
+  if (!engine) return false;
+  return engine.toLowerCase().includes("mergetree");
+}
+
+export function canMutateClickHouseTable(
+  engine: string | undefined | null,
+  primaryKeys: string[],
+): boolean {
+  return isClickHouseMergeTreeEngine(engine) && primaryKeys.length > 0;
+}
+
+export function buildUpdateStatement(
+  driver: string,
+  tableName: string,
+  setClause: string,
+  whereClause: string,
+): string {
+  if (driver === "clickhouse") {
+    return `ALTER TABLE ${tableName} UPDATE ${setClause} WHERE ${whereClause}`;
+  }
+  return `UPDATE ${tableName} SET ${setClause} WHERE ${whereClause}`;
+}
+
+export function buildDeleteStatement(
+  driver: string,
+  tableName: string,
+  whereClause: string,
+): string {
+  if (driver === "clickhouse") {
+    return `ALTER TABLE ${tableName} DELETE WHERE ${whereClause}`;
+  }
+  return `DELETE FROM ${tableName} WHERE ${whereClause}`;
+}

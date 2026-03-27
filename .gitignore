@@ -33,3 +33,7 @@ reference
 # plan
 .trae/documents/
 .cursor/plans/
+
+
+# example
+githubworkflowexample/*

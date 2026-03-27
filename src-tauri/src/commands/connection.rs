@@ -58,6 +58,10 @@ fn quote_mysql_ident(ident: &str) -> String {
     format!("`{}`", ident.replace('`', "``"))
 }
 
+fn quote_clickhouse_ident(ident: &str) -> String {
+    format!("`{}`", ident.replace('`', "``"))
+}
+
 fn quote_pg_ident(ident: &str) -> String {
     format!("\"{}\"", ident.replace('"', "\"\""))
 }
@@ -144,6 +148,49 @@ fn build_mssql_create_database_sql(
     Ok(create_sql)
 }
 
+fn build_clickhouse_create_database_sql(
+    payload: &CreateDatabasePayload,
+    db_name: &str,
+) -> Result<String, String> {
+    if let Some(v) = normalize_option_token(&payload.charset, "charset")? {
+        return Err(format!(
+            "[VALIDATION_ERROR] ClickHouse create database does not support charset option: {}",
+            v
+        ));
+    }
+    if let Some(v) = normalize_option_token(&payload.collation, "collation")? {
+        return Err(format!(
+            "[VALIDATION_ERROR] ClickHouse create database does not support collation option: {}",
+            v
+        ));
+    }
+    if let Some(v) = normalize_option_token(&payload.encoding, "encoding")? {
+        return Err(format!(
+            "[VALIDATION_ERROR] ClickHouse create database does not support encoding option: {}",
+            v
+        ));
+    }
+    if let Some(v) = normalize_option_token(&payload.lc_collate, "lc_collate")? {
+        return Err(format!(
+            "[VALIDATION_ERROR] ClickHouse create database does not support lc_collate option: {}",
+            v
+        ));
+    }
+    if let Some(v) = normalize_option_token(&payload.lc_ctype, "lc_ctype")? {
+        return Err(format!(
+            "[VALIDATION_ERROR] ClickHouse create database does not support lc_ctype option: {}",
+            v
+        ));
+    }
+
+    let mut sql = String::from("CREATE DATABASE ");
+    if payload.if_not_exists.unwrap_or(true) {
+        sql.push_str("IF NOT EXISTS ");
+    }
+    sql.push_str(&quote_clickhouse_ident(db_name));
+    Ok(sql)
+}
+
 fn normalize_create_database_error(err: String, db_name: &str) -> String {
     let lower = err.to_lowercase();
     if lower.contains("already exists")
@@ -205,7 +252,7 @@ pub async fn create_database_by_id(
             .to_lowercase()
     };
 
-    if matches!(driver.as_str(), "sqlite" | "duckdb" | "clickhouse") {
+    if matches!(driver.as_str(), "sqlite" | "duckdb") {
         return Err(format!(
             "[UNSUPPORTED] Driver {} does not support creating databases in this flow",
             driver
@@ -244,6 +291,14 @@ pub async fn create_database_by_id(
         }
         "mssql" => {
             let sql = build_mssql_create_database_sql(&payload, &db_name)?;
+            super::execute_with_retry(&state, id, None, |driver| {
+                let sql_clone = sql.clone();
+                async move { driver.execute_query(sql_clone).await.map(|_| ()) }
+            })
+            .await
+        }
+        "clickhouse" => {
+            let sql = build_clickhouse_create_database_sql(&payload, &db_name)?;
             super::execute_with_retry(&state, id, None, |driver| {
                 let sql_clone = sql.clone();
                 async move { driver.execute_query(sql_clone).await.map(|_| ()) }
@@ -346,11 +401,13 @@ pub async fn delete_connection(state: State<'_, AppState>, id: i64) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::{
-        build_mssql_create_database_sql, build_mysql_create_database_sql,
+        build_clickhouse_create_database_sql, build_mssql_create_database_sql,
+        build_mysql_create_database_sql,
         build_postgres_create_database_sql, validate_database_name, CreateDatabasePayload,
     };
     use super::{
-        normalize_create_database_error, normalize_option_token, quote_mssql_ident,
+        normalize_create_database_error, normalize_option_token, quote_clickhouse_ident,
+        quote_mssql_ident,
         quote_mysql_ident, quote_pg_ident,
     };
     use crate::connection_input::normalize_connection_form;
@@ -428,6 +485,7 @@ mod tests {
     #[test]
     fn quote_idents_escape_driver_specific_characters() {
         assert_eq!(quote_mysql_ident("a`b"), "`a``b`");
+        assert_eq!(quote_clickhouse_ident("a`b"), "`a``b`");
         assert_eq!(quote_pg_ident("a\"b"), "\"a\"\"b\"");
         assert_eq!(quote_mssql_ident("a]b"), "[a]]b]");
     }
@@ -493,5 +551,41 @@ mod tests {
             sql,
             "IF DB_ID(N'foo') IS NULL CREATE DATABASE [foo] COLLATE SQL_Latin1_General_CP1_CI_AS"
         );
+    }
+
+    #[test]
+    fn clickhouse_sql_respects_if_not_exists() {
+        let sql = build_clickhouse_create_database_sql(
+            &CreateDatabasePayload {
+                name: "analytics".to_string(),
+                if_not_exists: Some(true),
+                charset: None,
+                collation: None,
+                encoding: None,
+                lc_collate: None,
+                lc_ctype: None,
+            },
+            "analytics",
+        )
+        .unwrap();
+        assert_eq!(sql, "CREATE DATABASE IF NOT EXISTS `analytics`");
+    }
+
+    #[test]
+    fn clickhouse_sql_rejects_unsupported_options() {
+        let err = build_clickhouse_create_database_sql(
+            &CreateDatabasePayload {
+                name: "analytics".to_string(),
+                if_not_exists: Some(true),
+                charset: Some("utf8mb4".to_string()),
+                collation: None,
+                encoding: None,
+                lc_collate: None,
+                lc_ctype: None,
+            },
+            "analytics",
+        )
+        .unwrap_err();
+        assert!(err.contains("does not support charset option"));
     }
 }

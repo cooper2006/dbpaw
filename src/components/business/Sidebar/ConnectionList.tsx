@@ -154,6 +154,7 @@ const createDatabaseSupportedDrivers: Driver[] = [
   "mysql",
   "mariadb",
   "tidb",
+  "clickhouse",
   "mssql",
 ];
 

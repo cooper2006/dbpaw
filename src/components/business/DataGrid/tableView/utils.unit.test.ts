@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildDeleteStatement,
+  buildUpdateStatement,
+  canMutateClickHouseTable,
   formatInsertSQLValue,
   formatSQLValue,
   getQualifiedTableName,
+  isClickHouseMergeTreeEngine,
   isInsertColumnRequired,
 } from "./utils";
 
@@ -136,5 +140,47 @@ describe("getQualifiedTableName", () => {
     expect(getQualifiedTableName("duckdb", "main", "users")).toBe('"users"');
     expect(getQualifiedTableName("duckdb", "public", "users")).toBe('"users"');
     expect(getQualifiedTableName("duckdb", "", "users")).toBe('"users"');
+  });
+});
+
+describe("clickhouse mutation guards", () => {
+  test("detects mergetree engine variants", () => {
+    expect(isClickHouseMergeTreeEngine("MergeTree")).toBe(true);
+    expect(isClickHouseMergeTreeEngine("ReplacingMergeTree")).toBe(true);
+    expect(isClickHouseMergeTreeEngine("Memory")).toBe(false);
+  });
+
+  test("requires both mergetree engine and primary keys", () => {
+    expect(canMutateClickHouseTable("MergeTree", ["id"])).toBe(true);
+    expect(canMutateClickHouseTable("MergeTree", [])).toBe(false);
+    expect(canMutateClickHouseTable("Log", ["id"])).toBe(false);
+  });
+});
+
+describe("mutation statement builders", () => {
+  test("builds clickhouse alter update/delete statements", () => {
+    expect(
+      buildUpdateStatement(
+        "clickhouse",
+        "`analytics`.`events`",
+        "`name` = 'new'",
+        "`id` = 1",
+      ),
+    ).toBe(
+      "ALTER TABLE `analytics`.`events` UPDATE `name` = 'new' WHERE `id` = 1",
+    );
+
+    expect(
+      buildDeleteStatement("clickhouse", "`analytics`.`events`", "`id` = 1"),
+    ).toBe("ALTER TABLE `analytics`.`events` DELETE WHERE `id` = 1");
+  });
+
+  test("keeps generic update/delete statements for non-clickhouse", () => {
+    expect(
+      buildUpdateStatement("postgres", '"public"."users"', '"name" = \'new\'', '"id" = 1'),
+    ).toBe("UPDATE \"public\".\"users\" SET \"name\" = 'new' WHERE \"id\" = 1");
+    expect(buildDeleteStatement("postgres", '"public"."users"', '"id" = 1')).toBe(
+      "DELETE FROM \"public\".\"users\" WHERE \"id\" = 1",
+    );
   });
 });
