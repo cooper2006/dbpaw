@@ -292,6 +292,7 @@ export const ja: Translations = {
       newQuery: "新規クエリ",
       newDatabase: "新規 Database",
       importSql: "SQL をインポート",
+      importSqlReadOnly: "SQL をインポート（読み取り専用で未対応）",
       exportCsv: "CSV としてエクスポート",
       exportJson: "JSON としてエクスポート",
       exportSql: "SQL としてエクスポート",
@@ -346,8 +347,9 @@ export const ja: Translations = {
       createDatabaseFailed: "Database の作成に失敗しました",
       importDesktopOnly:
         "SQL インポートは Tauri デスクトップモードでのみ利用できます。",
-      importUnsupportedDriver:
-        "現在の SQL インポートは MySQL / PostgreSQL のみ対応しています。",
+      importUnsupportedDriver: "このドライバーでは SQL インポートに対応していません。",
+      importReadOnlyDriver:
+        "このドライバーは DbPaw では読み取り専用のため、SQL インポートに対応していません。",
       selectImportSqlFile: "インポートする SQL ファイルを選択",
       importSuccess: "インポート完了（{{count}} 文）",
       importFailed: "インポートに失敗しました",

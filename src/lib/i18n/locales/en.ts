@@ -289,6 +289,7 @@ export const en = {
       newQuery: "New Query",
       newDatabase: "New Database",
       importSql: "Import SQL",
+      importSqlReadOnly: "Import SQL (Read-only, unsupported)",
       exportCsv: "Export as CSV",
       exportJson: "Export as JSON",
       exportSql: "Export as SQL",
@@ -343,8 +344,9 @@ export const en = {
       createDatabaseSuccess: "Database created successfully",
       createDatabaseFailed: "Failed to create database",
       importDesktopOnly: "SQL import is only available in Tauri desktop mode.",
-      importUnsupportedDriver:
-        "SQL import is currently supported only for MySQL and PostgreSQL.",
+      importUnsupportedDriver: "SQL import is not supported for this driver.",
+      importReadOnlyDriver:
+        "This driver is read-only in DbPaw and does not support SQL import.",
       selectImportSqlFile: "Select SQL File to Import",
       importSuccess: "Import completed ({{count}} statements)",
       importFailed: "Import failed",

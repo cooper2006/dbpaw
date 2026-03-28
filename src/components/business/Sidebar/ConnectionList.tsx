@@ -54,7 +54,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { api, isTauri } from "@/services/api";
+import { api, getImportDriverCapability, isTauri } from "@/services/api";
 import type {
   ConnectionForm,
   CreateDatabasePayload,
@@ -191,8 +191,6 @@ const mssqlCollationOptions = [
   "Japanese_CI_AS",
 ];
 const schemaNodeDrivers: Driver[] = ["postgres", "mssql"];
-const importSupportedDrivers: Driver[] = ["postgres", "mysql"];
-
 interface ConnectionListProps {
   onTableSelect?: (
     connection: string,
@@ -326,8 +324,6 @@ export function ConnectionList({
     createDatabaseSupportedDrivers.includes(driver);
   const supportsSchemaNodeForDriver = (driver: Driver) =>
     schemaNodeDrivers.includes(driver);
-  const supportsImportForDriver = (driver: Driver) =>
-    importSupportedDrivers.includes(driver);
   const getSchemaNodeKey = (databaseKey: string, schema: string) =>
     `${databaseKey}::${schema}`;
   const getTableNodeKey = (
@@ -1656,7 +1652,13 @@ export function ConnectionList({
     const connection = connections.find((conn) => conn.id === connectionId);
     if (!connection) return;
 
-    if (!supportsImportForDriver(connection.type)) {
+    const capability = getImportDriverCapability(connection.type);
+    if (capability === "read_only_not_supported") {
+      toast.error(t("connection.toast.importReadOnlyDriver"));
+      return;
+    }
+
+    if (capability !== "supported") {
       toast.error(t("connection.toast.importUnsupportedDriver"));
       return;
     }
@@ -2956,9 +2958,14 @@ export function ConnectionList({
               {contextMenu.connectionId &&
               contextMenu.databaseName &&
               contextMenuDatabaseConnection &&
-              supportsImportForDriver(contextMenuDatabaseConnection.type) ? (
+              getImportDriverCapability(contextMenuDatabaseConnection.type) !==
+                "unsupported" ? (
                 <button
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                  disabled={
+                    getImportDriverCapability(contextMenuDatabaseConnection.type) ===
+                    "read_only_not_supported"
+                  }
                   onClick={async () => {
                     await handleDatabaseImport(
                       contextMenu.connectionId!,
@@ -2968,7 +2975,10 @@ export function ConnectionList({
                   }}
                 >
                   <Upload className="w-4 h-4" />
-                  {t("connection.menu.importSql")}
+                  {getImportDriverCapability(contextMenuDatabaseConnection.type) ===
+                  "read_only_not_supported"
+                    ? t("connection.menu.importSqlReadOnly")
+                    : t("connection.menu.importSql")}
                 </button>
               ) : null}
               <button

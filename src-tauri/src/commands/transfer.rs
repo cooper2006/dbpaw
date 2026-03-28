@@ -40,9 +40,24 @@ pub struct ImportSqlResult {
     pub total_statements: i64,
     pub success_statements: i64,
     pub failed_at: Option<i64>,
+    pub failed_batch: Option<i64>,
+    pub failed_statement_preview: Option<String>,
     pub error: Option<String>,
     pub time_taken_ms: i64,
     pub rolled_back: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ImportExecutionUnit {
+    sql: String,
+    batch_index: usize,
+    preview: String,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedImportPlan {
+    units: Vec<ImportExecutionUnit>,
+    script_managed_transaction: bool,
 }
 
 #[tauri::command]
@@ -222,13 +237,9 @@ pub async fn import_sql_file(
     file_path: String,
     driver: String,
 ) -> Result<ImportSqlResult, String> {
-    let normalized_driver = driver.trim().to_ascii_lowercase();
-    if normalized_driver != "postgres" && normalized_driver != "mysql" {
-        return Err(format!(
-            "[UNSUPPORTED] Driver {} is not supported for SQL import",
-            driver
-        ));
-    }
+    let normalized_driver = normalize_driver_name(&driver);
+    let (begin_sql, commit_sql, rollback_sql) =
+        import_transaction_sql(&normalized_driver, &driver)?;
 
     let import_path = PathBuf::from(file_path.trim());
     validate_import_path(&import_path)?;
@@ -241,61 +252,72 @@ pub async fn import_sql_file(
         .unwrap_or(&source)
         .to_string();
 
-    let statements = parse_sql_statements(&source, &normalized_driver)?;
-    if statements.is_empty() {
+    let import_plan = prepare_import_plan(&source, &normalized_driver)?;
+    if import_plan.units.is_empty() {
         return Err("[IMPORT_ERROR] SQL file does not contain executable statements".to_string());
     }
-    if statements.len() > MAX_IMPORT_STATEMENTS {
+    if import_plan.units.len() > MAX_IMPORT_STATEMENTS {
         return Err(format!(
             "[IMPORT_ERROR] statement count exceeds limit ({} > {})",
-            statements.len(),
+            import_plan.units.len(),
             MAX_IMPORT_STATEMENTS
         ));
     }
 
     let started_at = std::time::Instant::now();
-    let total_statements = statements.len() as i64;
+    let total_statements = import_plan.units.len() as i64;
+    let use_outer_transaction = !import_plan.script_managed_transaction;
 
     super::execute_with_retry(&state, id, database, |db_driver| {
-        let statements = statements.clone();
+        let import_plan = import_plan.clone();
         let import_path = import_path.clone();
         async move {
-            db_driver
-                .execute_query("BEGIN".to_string())
-                .await
-                .map_err(|e| format!("[IMPORT_ERROR] failed to start transaction: {e}"))?;
+            if use_outer_transaction {
+                db_driver
+                    .execute_query(begin_sql.to_string())
+                    .await
+                    .map_err(|e| format!("[IMPORT_ERROR] failed to start transaction: {e}"))?;
+            }
 
             let mut success_statements = 0i64;
-            for (idx, statement) in statements.iter().enumerate() {
-                if let Err(e) = db_driver.execute_query(statement.clone()).await {
-                    let _ = db_driver.execute_query("ROLLBACK".to_string()).await;
+            for (idx, unit) in import_plan.units.iter().enumerate() {
+                if let Err(e) = db_driver.execute_query(unit.sql.clone()).await {
+                    if use_outer_transaction {
+                        let _ = db_driver.execute_query(rollback_sql.to_string()).await;
+                    }
                     return Ok(ImportSqlResult {
                         file_path: import_path.to_string_lossy().to_string(),
                         total_statements,
                         success_statements,
                         failed_at: Some((idx + 1) as i64),
+                        failed_batch: Some(unit.batch_index as i64),
+                        failed_statement_preview: Some(unit.preview.clone()),
                         error: Some(truncate_error_message(&e)),
                         time_taken_ms: started_at.elapsed().as_millis() as i64,
-                        rolled_back: true,
+                        rolled_back: use_outer_transaction,
                     });
                 }
                 success_statements += 1;
             }
 
-            if let Err(e) = db_driver.execute_query("COMMIT".to_string()).await {
-                let _ = db_driver.execute_query("ROLLBACK".to_string()).await;
-                return Ok(ImportSqlResult {
-                    file_path: import_path.to_string_lossy().to_string(),
-                    total_statements,
-                    success_statements,
-                    failed_at: None,
-                    error: Some(format!(
-                        "[IMPORT_ERROR] failed to commit transaction: {}",
-                        truncate_error_message(&e)
-                    )),
-                    time_taken_ms: started_at.elapsed().as_millis() as i64,
-                    rolled_back: true,
-                });
+            if use_outer_transaction {
+                if let Err(e) = db_driver.execute_query(commit_sql.to_string()).await {
+                    let _ = db_driver.execute_query(rollback_sql.to_string()).await;
+                    return Ok(ImportSqlResult {
+                        file_path: import_path.to_string_lossy().to_string(),
+                        total_statements,
+                        success_statements,
+                        failed_at: None,
+                        failed_batch: None,
+                        failed_statement_preview: None,
+                        error: Some(format!(
+                            "[IMPORT_ERROR] failed to commit transaction: {}",
+                            truncate_error_message(&e)
+                        )),
+                        time_taken_ms: started_at.elapsed().as_millis() as i64,
+                        rolled_back: true,
+                    });
+                }
             }
 
             Ok(ImportSqlResult {
@@ -303,6 +325,8 @@ pub async fn import_sql_file(
                 total_statements,
                 success_statements: total_statements,
                 failed_at: None,
+                failed_batch: None,
+                failed_statement_preview: None,
                 error: None,
                 time_taken_ms: started_at.elapsed().as_millis() as i64,
                 rolled_back: false,
@@ -310,6 +334,299 @@ pub async fn import_sql_file(
         }
     })
     .await
+}
+
+fn import_transaction_sql<'a>(
+    normalized_driver: &'a str,
+    original_driver: &str,
+) -> Result<(&'a str, &'a str, &'a str), String> {
+    match normalized_driver {
+        "mysql" | "mariadb" | "tidb" => Ok(("START TRANSACTION", "COMMIT", "ROLLBACK")),
+        "postgres" | "sqlite" | "duckdb" => Ok(("BEGIN", "COMMIT", "ROLLBACK")),
+        "mssql" => Ok((
+            "BEGIN TRANSACTION",
+            "COMMIT TRANSACTION",
+            "ROLLBACK TRANSACTION",
+        )),
+        "clickhouse" => {
+            Err("[UNSUPPORTED] Driver clickhouse is read-only in this import flow".to_string())
+        }
+        _ => Err(format!(
+            "[UNSUPPORTED] Driver {} is not supported for SQL import",
+            original_driver
+        )),
+    }
+}
+
+fn normalize_driver_name(driver: &str) -> String {
+    let normalized = driver.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "postgresql" | "pgsql" => "postgres".to_string(),
+        _ => normalized,
+    }
+}
+
+fn prepare_import_plan(sql: &str, normalized_driver: &str) -> Result<PreparedImportPlan, String> {
+    let units = if normalized_driver == "mssql" {
+        let batches = parse_mssql_batches(sql)?;
+        batches
+            .into_iter()
+            .enumerate()
+            .map(|(idx, batch)| ImportExecutionUnit {
+                preview: build_statement_preview(&batch),
+                sql: batch,
+                batch_index: idx + 1,
+            })
+            .collect::<Vec<_>>()
+    } else {
+        parse_sql_statements(sql, normalized_driver)?
+            .into_iter()
+            .enumerate()
+            .map(|(idx, statement)| ImportExecutionUnit {
+                preview: build_statement_preview(&statement),
+                sql: statement,
+                batch_index: idx + 1,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let script_managed_transaction = units
+        .iter()
+        .any(|unit| statement_controls_transaction(&unit.sql, normalized_driver));
+
+    Ok(PreparedImportPlan {
+        units,
+        script_managed_transaction,
+    })
+}
+
+fn build_statement_preview(statement: &str) -> String {
+    let compact = statement.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut preview = String::new();
+    for (idx, ch) in compact.chars().enumerate() {
+        if idx >= 160 {
+            preview.push_str("...");
+            break;
+        }
+        preview.push(ch);
+    }
+    if preview.is_empty() {
+        "<empty>".to_string()
+    } else {
+        preview
+    }
+}
+
+fn leading_sql_tokens(sql: &str, max_tokens: usize) -> Vec<String> {
+    let chars: Vec<char> = sql.chars().collect();
+    let mut tokens = Vec::new();
+    let mut i = 0usize;
+
+    while i < chars.len() && tokens.len() < max_tokens {
+        let ch = chars[i];
+        let next = chars.get(i + 1).copied();
+
+        if ch.is_whitespace() || ch == ';' {
+            i += 1;
+            continue;
+        }
+
+        if ch == '-' && next == Some('-') {
+            i += 2;
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+
+        if ch == '/' && next == Some('*') {
+            i += 2;
+            while i + 1 < chars.len() && !(chars[i] == '*' && chars[i + 1] == '/') {
+                i += 1;
+            }
+            if i + 1 < chars.len() {
+                i += 2;
+            }
+            continue;
+        }
+
+        if ch.is_ascii_alphabetic() {
+            let start = i;
+            i += 1;
+            while i < chars.len() && (chars[i].is_ascii_alphabetic() || chars[i] == '_') {
+                i += 1;
+            }
+            tokens.push(
+                chars[start..i]
+                    .iter()
+                    .collect::<String>()
+                    .to_ascii_lowercase(),
+            );
+            continue;
+        }
+
+        i += 1;
+    }
+
+    tokens
+}
+
+fn statement_controls_transaction(statement: &str, normalized_driver: &str) -> bool {
+    let tokens = leading_sql_tokens(statement, 2);
+    if tokens.is_empty() {
+        return false;
+    }
+
+    let first = tokens[0].as_str();
+    let second = tokens.get(1).map(|s| s.as_str()).unwrap_or("");
+
+    match first {
+        "commit" | "rollback" => true,
+        "start" => second == "transaction",
+        "begin" => {
+            if normalized_driver == "mssql" {
+                second == "transaction" || second == "tran"
+            } else {
+                true
+            }
+        }
+        _ => false,
+    }
+}
+
+fn parse_mssql_go_line_count(line: &str) -> Option<usize> {
+    let trimmed = line.trim();
+    let prefix = trimmed.get(..2)?;
+    if !prefix.eq_ignore_ascii_case("go") {
+        return None;
+    }
+    let rest = trimmed[2..].trim();
+    if rest.is_empty() {
+        return Some(1);
+    }
+    if rest.chars().all(|ch| ch.is_ascii_digit()) {
+        let count = rest.parse::<usize>().ok()?;
+        if count > 0 {
+            return Some(count);
+        }
+    }
+    None
+}
+
+fn update_mssql_line_state(state: &mut SqlScanState, line: &str) {
+    let chars: Vec<char> = line.chars().collect();
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        match state {
+            SqlScanState::Normal => {
+                let ch = chars[i];
+                let next = chars.get(i + 1).copied();
+                if ch == '-' && next == Some('-') {
+                    *state = SqlScanState::LineComment;
+                    break;
+                }
+                if ch == '/' && next == Some('*') {
+                    *state = SqlScanState::BlockComment;
+                    i += 2;
+                    continue;
+                }
+                if ch == '\'' {
+                    *state = SqlScanState::SingleQuoted;
+                    i += 1;
+                    continue;
+                }
+                if ch == '"' {
+                    *state = SqlScanState::DoubleQuoted;
+                    i += 1;
+                    continue;
+                }
+                i += 1;
+            }
+            SqlScanState::SingleQuoted => {
+                if chars[i] == '\'' {
+                    if chars.get(i + 1) == Some(&'\'') {
+                        i += 2;
+                        continue;
+                    }
+                    *state = SqlScanState::Normal;
+                }
+                i += 1;
+            }
+            SqlScanState::DoubleQuoted => {
+                if chars[i] == '"' {
+                    if chars.get(i + 1) == Some(&'"') {
+                        i += 2;
+                        continue;
+                    }
+                    *state = SqlScanState::Normal;
+                }
+                i += 1;
+            }
+            SqlScanState::BlockComment => {
+                if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
+                    *state = SqlScanState::Normal;
+                    i += 2;
+                    continue;
+                }
+                i += 1;
+            }
+            SqlScanState::LineComment => {
+                break;
+            }
+            SqlScanState::BacktickQuoted | SqlScanState::DollarQuoted(_) => {
+                *state = SqlScanState::Normal;
+            }
+        }
+    }
+
+    if matches!(state, SqlScanState::LineComment) {
+        *state = SqlScanState::Normal;
+    }
+}
+
+fn parse_mssql_batches(sql: &str) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut state = SqlScanState::Normal;
+
+    for line in sql.split_inclusive('\n') {
+        if matches!(state, SqlScanState::Normal) {
+            let plain_line = line.trim_end_matches(|ch| ch == '\r' || ch == '\n');
+            if let Some(go_count) = parse_mssql_go_line_count(plain_line) {
+                let statement = current.trim();
+                if !statement.is_empty() {
+                    for _ in 0..go_count {
+                        out.push(statement.to_string());
+                    }
+                }
+                current.clear();
+                continue;
+            }
+        }
+
+        update_mssql_line_state(&mut state, line);
+        current.push_str(line);
+    }
+
+    match state {
+        SqlScanState::Normal | SqlScanState::LineComment => {}
+        SqlScanState::BlockComment => {
+            return Err("[IMPORT_ERROR] Unterminated block comment in SQL file".to_string());
+        }
+        SqlScanState::SingleQuoted
+        | SqlScanState::DoubleQuoted
+        | SqlScanState::BacktickQuoted
+        | SqlScanState::DollarQuoted(_) => {
+            return Err("[IMPORT_ERROR] Unterminated string literal in SQL file".to_string());
+        }
+    }
+
+    let tail = current.trim();
+    if !tail.is_empty() {
+        out.push(tail.to_string());
+    }
+    Ok(out)
 }
 
 fn extension_for_format(format: &ExportFormat) -> &'static str {
@@ -1004,6 +1321,93 @@ mod tests {
         assert_eq!(statements.len(), 2);
         assert_eq!(statements[0], "SELECT 1 # 2");
         assert_eq!(statements[1], "SELECT '#not_comment'");
+    }
+
+    #[test]
+    fn parse_mssql_batches_splits_on_go_lines_only() {
+        let sql = r#"
+            SELECT 1;
+            GO
+            SELECT 'GO should stay in string';
+            -- GO in comment should not split
+            SELECT 2;
+            GO
+            /* GO in block comment
+               GO
+            */
+            SELECT 3;
+        "#;
+
+        let batches = parse_mssql_batches(sql).unwrap();
+        assert_eq!(batches.len(), 3);
+        assert!(batches[0].contains("SELECT 1"));
+        assert!(batches[1].contains("SELECT 'GO should stay in string'"));
+        assert!(batches[2].contains("SELECT 3"));
+    }
+
+    #[test]
+    fn parse_mssql_batches_supports_go_repeat_count() {
+        let sql = "SELECT 1\nGO 3\nSELECT 2\nGO";
+        let batches = parse_mssql_batches(sql).unwrap();
+        assert_eq!(batches.len(), 4);
+        assert_eq!(batches[0], "SELECT 1");
+        assert_eq!(batches[1], "SELECT 1");
+        assert_eq!(batches[2], "SELECT 1");
+        assert_eq!(batches[3], "SELECT 2");
+    }
+
+    #[test]
+    fn statement_controls_transaction_detects_driver_specific_tokens() {
+        assert!(statement_controls_transaction("BEGIN TRANSACTION", "mssql"));
+        assert!(!statement_controls_transaction("BEGIN TRY", "mssql"));
+        assert!(statement_controls_transaction("BEGIN", "sqlite"));
+        assert!(statement_controls_transaction("START TRANSACTION", "mysql"));
+        assert!(statement_controls_transaction("ROLLBACK", "postgres"));
+    }
+
+    #[test]
+    fn prepare_import_plan_disables_outer_tx_when_script_controls_it() {
+        let sqlite_plan =
+            prepare_import_plan("BEGIN;\nCREATE TABLE t(id INTEGER);\nCOMMIT;", "sqlite").unwrap();
+        assert_eq!(sqlite_plan.units.len(), 3);
+        assert!(sqlite_plan.script_managed_transaction);
+
+        let mssql_plan = prepare_import_plan("SELECT 1\nGO\nSELECT 2", "mssql").unwrap();
+        assert_eq!(mssql_plan.units.len(), 2);
+        assert!(!mssql_plan.script_managed_transaction);
+    }
+
+    #[test]
+    fn import_transaction_sql_maps_per_driver() {
+        assert_eq!(
+            import_transaction_sql("mysql", "mysql").unwrap(),
+            ("START TRANSACTION", "COMMIT", "ROLLBACK")
+        );
+        assert_eq!(
+            import_transaction_sql("postgres", "postgres").unwrap(),
+            ("BEGIN", "COMMIT", "ROLLBACK")
+        );
+        assert_eq!(
+            import_transaction_sql("postgres", "postgresql").unwrap(),
+            ("BEGIN", "COMMIT", "ROLLBACK")
+        );
+        assert_eq!(
+            import_transaction_sql("mssql", "mssql").unwrap(),
+            (
+                "BEGIN TRANSACTION",
+                "COMMIT TRANSACTION",
+                "ROLLBACK TRANSACTION"
+            )
+        );
+        assert!(import_transaction_sql("clickhouse", "clickhouse").is_err());
+    }
+
+    #[test]
+    fn normalize_driver_name_maps_aliases() {
+        assert_eq!(normalize_driver_name("postgres"), "postgres");
+        assert_eq!(normalize_driver_name("postgresql"), "postgres");
+        assert_eq!(normalize_driver_name("pgsql"), "postgres");
+        assert_eq!(normalize_driver_name("mysql"), "mysql");
     }
 
     #[test]
