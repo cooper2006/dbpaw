@@ -291,9 +291,18 @@ export const ja: Translations = {
       refreshTables: "テーブルを更新",
       newQuery: "新規クエリ",
       newDatabase: "新規 Database",
+      importSql: "SQL をインポート",
+      importSqlReadOnly: "SQL をインポート（読み取り専用で未対応）",
       exportCsv: "CSV としてエクスポート",
       exportJson: "JSON としてエクスポート",
       exportSql: "SQL としてエクスポート",
+    },
+    importDialog: {
+      title: "SQL をインポート",
+      description:
+        "データベース {{database}} に SQL をインポートします。途中で失敗した場合は全件ロールバックされます。",
+      confirm: "インポート",
+      importing: "インポート中…",
     },
     createDbDialog: {
       title: "Database を作成",
@@ -325,8 +334,7 @@ export const ja: Translations = {
     },
     deleteDialog: {
       title: "接続を削除",
-      description:
-        "この操作は元に戻せません。選択した接続設定は削除されます。",
+      description: "この操作は元に戻せません。選択した接続設定は削除されます。",
       deleting: "削除中...",
     },
     toast: {
@@ -337,6 +345,14 @@ export const ja: Translations = {
       duplicateFailed: "接続の複製に失敗しました",
       createDatabaseSuccess: "Database を作成しました",
       createDatabaseFailed: "Database の作成に失敗しました",
+      importDesktopOnly:
+        "SQL インポートは Tauri デスクトップモードでのみ利用できます。",
+      importUnsupportedDriver: "このドライバーでは SQL インポートに対応していません。",
+      importReadOnlyDriver:
+        "このドライバーは DbPaw では読み取り専用のため、SQL インポートに対応していません。",
+      selectImportSqlFile: "インポートする SQL ファイルを選択",
+      importSuccess: "インポート完了（{{count}} 文）",
+      importFailed: "インポートに失敗しました",
       exportDesktopOnly:
         "エクスポートダイアログは Tauri デスクトップモードでのみ利用できます。",
       saveExportFile: "エクスポートファイルを保存",
@@ -360,8 +376,7 @@ export const ja: Translations = {
     errors: {
       loadConversation: "会話の読み込みに失敗しました",
       requestFailed: "AI リクエストに失敗しました",
-      providerMissing:
-        "設定画面で AI プロバイダーを設定して選択してください。",
+      providerMissing: "設定画面で AI プロバイダーを設定して選択してください。",
       sendFailed: "AI メッセージの送信に失敗しました",
       deleteConversation: "会話の削除に失敗しました",
     },

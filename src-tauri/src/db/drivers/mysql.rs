@@ -132,6 +132,10 @@ fn build_dsn_and_ca_path(form: &ConnectionForm) -> Result<(String, Option<PathBu
         } else {
             dsn.push_str("?ssl-mode=REQUIRED");
         }
+    } else {
+        // Explicitly disable TLS to avoid HandshakeFailure on servers with TLS
+        // versions or cipher suites incompatible with rustls (TLS 1.2+ only).
+        dsn.push_str("?ssl-mode=DISABLED");
     }
 
     Ok((dsn, ca_cert_path))
@@ -140,6 +144,11 @@ fn build_dsn_and_ca_path(form: &ConnectionForm) -> Result<(String, Option<PathBu
 #[cfg(test)]
 fn build_dsn(form: &ConnectionForm) -> Result<String, String> {
     Ok(build_dsn_and_ca_path(form)?.0)
+}
+
+#[cfg(test)]
+pub(crate) fn build_test_dsn(form: &ConnectionForm) -> Result<String, String> {
+    build_dsn(form)
 }
 
 fn build_dsn_with_ca_path(form: &ConnectionForm) -> Result<(String, Option<PathBuf>), String> {
@@ -154,6 +163,11 @@ fn cleanup_ca_file_opt(path: Option<&PathBuf>) {
     if let Some(p) = path {
         cleanup_ca_file(p);
     }
+}
+
+fn is_prepared_protocol_unsupported_error(err: &str) -> bool {
+    let lower = err.to_ascii_lowercase();
+    lower.contains("1295") || lower.contains("prepared statement protocol")
 }
 
 impl Drop for MysqlDriver {
@@ -184,11 +198,7 @@ impl MysqlDriver {
             .acquire_timeout(std::time::Duration::from_secs(3))
             .connect(&dsn)
             .await
-            .map_err(|e| {
-                format!(
-                    "[CONN_FAILED] {e} (hint: check if username/password contain special characters; they must be URL-encoded)"
-                )
-            })?;
+            .map_err(|e| super::conn_failed_error(&e))?;
 
         Ok(Self {
             pool,
@@ -383,7 +393,10 @@ fn normalize_mysql_row_json(
     Ok(())
 }
 
-fn decode_mysql_json_cell(row: &sqlx::mysql::MySqlRow, column_name: &str) -> Result<serde_json::Value, String> {
+fn decode_mysql_json_cell(
+    row: &sqlx::mysql::MySqlRow,
+    column_name: &str,
+) -> Result<serde_json::Value, String> {
     if let Ok(v) = row.try_get::<sqlx::types::Json<serde_json::Value>, _>(column_name) {
         return Ok(v.0);
     }
@@ -398,10 +411,7 @@ fn decode_mysql_json_cell(row: &sqlx::mysql::MySqlRow, column_name: &str) -> Res
     Err("[QUERY_ERROR] Failed to decode MySQL JSON cell".to_string())
 }
 
-fn build_mysql_json_object_expr(
-    columns: &[(String, String)],
-    table_alias: Option<&str>,
-) -> String {
+fn build_mysql_json_object_expr(columns: &[(String, String)], table_alias: Option<&str>) -> String {
     if columns.is_empty() {
         return "JSON_OBJECT()".to_string();
     }
@@ -445,6 +455,13 @@ fn first_sql_keyword(sql: &str) -> Option<String> {
 
 fn is_json_projectable_statement(sql: &str) -> bool {
     matches!(first_sql_keyword(sql).as_deref(), Some("SELECT" | "WITH"))
+}
+
+fn is_affected_rows_statement(sql: &str) -> bool {
+    matches!(
+        first_sql_keyword(sql).as_deref(),
+        Some("INSERT" | "UPDATE" | "DELETE" | "REPLACE")
+    )
 }
 
 #[async_trait]
@@ -851,11 +868,30 @@ impl DatabaseDriver for MysqlDriver {
                 .await?;
             let row_count = data.len() as i64;
             (columns, data, row_count)
-        } else {
-            let rows = sqlx::query(&sql)
-                .fetch_all(&self.pool)
+        } else if is_affected_rows_statement(&sql) {
+            let result = sqlx::query(&sql)
+                .execute(&self.pool)
                 .await
                 .map_err(|e| format!("[QUERY_ERROR] {e}"))?;
+            (Vec::new(), Vec::new(), result.rows_affected() as i64)
+        } else {
+            let mut executed_with_raw_sql = false;
+            let rows = match sqlx::query(&sql).fetch_all(&self.pool).await {
+                Ok(rows) => rows,
+                Err(e) => {
+                    let error_text = e.to_string();
+                    if is_prepared_protocol_unsupported_error(&error_text) {
+                        sqlx::raw_sql(&sql)
+                            .execute(&self.pool)
+                            .await
+                            .map_err(|raw_err| format!("[QUERY_ERROR] {raw_err}"))?;
+                        executed_with_raw_sql = true;
+                        Vec::new()
+                    } else {
+                        return Err(format!("[QUERY_ERROR] {e}"));
+                    }
+                }
+            };
             let columns = if let Some(first_row) = rows.first() {
                 first_row
                     .columns()
@@ -865,6 +901,8 @@ impl DatabaseDriver for MysqlDriver {
                         r#type: col.type_info().to_string(),
                     })
                     .collect()
+            } else if executed_with_raw_sql {
+                Vec::new()
             } else {
                 self.describe_query_columns(&sql).await?
             };
@@ -1020,7 +1058,10 @@ mod tests {
         };
 
         let conn_str = build_dsn(&form).unwrap();
-        assert_eq!(conn_str, "mysql://root:password@localhost:3306/test_db");
+        assert_eq!(
+            conn_str,
+            "mysql://root:password@localhost:3306/test_db?ssl-mode=DISABLED"
+        );
     }
 
     #[test]
@@ -1036,7 +1077,26 @@ mod tests {
         };
 
         let conn_str = build_dsn(&form).unwrap();
-        assert_eq!(conn_str, "mysql://user:pass@127.0.0.1:3307");
+        assert_eq!(
+            conn_str,
+            "mysql://user:pass@127.0.0.1:3307?ssl-mode=DISABLED"
+        );
+    }
+
+    #[test]
+    fn test_conn_string_allows_empty_password_when_present() {
+        let form = ConnectionForm {
+            driver: "mysql".to_string(),
+            host: Some("127.0.0.1".to_string()),
+            port: Some(3307),
+            username: Some("user".to_string()),
+            password: Some(String::new()),
+            database: None,
+            ..Default::default()
+        };
+
+        let conn_str = build_dsn(&form).unwrap();
+        assert_eq!(conn_str, "mysql://user:@127.0.0.1:3307?ssl-mode=DISABLED");
     }
 
     #[test]
@@ -1052,7 +1112,10 @@ mod tests {
         };
 
         let conn_str = build_dsn(&form).unwrap();
-        assert_eq!(conn_str, "mysql://user:pass@127.0.0.1:3307");
+        assert_eq!(
+            conn_str,
+            "mysql://user:pass@127.0.0.1:3307?ssl-mode=DISABLED"
+        );
     }
 
     #[test]
@@ -1068,7 +1131,10 @@ mod tests {
         };
 
         let conn_str = build_dsn(&form).unwrap();
-        assert_eq!(conn_str, "mysql://root:password@localhost:3308/test_db");
+        assert_eq!(
+            conn_str,
+            "mysql://root:password@localhost:3308/test_db?ssl-mode=DISABLED"
+        );
     }
 
     #[test]
@@ -1086,7 +1152,35 @@ mod tests {
         let conn_str = build_dsn(&form).unwrap();
         assert_eq!(
             conn_str,
-            "mysql://user%40name:p%40ss%3Aword%23%3F@localhost:3306/test_db"
+            "mysql://user%40name:p%40ss%3Aword%23%3F@localhost:3306/test_db?ssl-mode=DISABLED"
+        );
+    }
+
+    #[test]
+    fn test_conn_string_encodes_credentials_when_ssh_rewrites_target_host() {
+        let mut form = ConnectionForm {
+            driver: "mysql".to_string(),
+            host: Some("db.internal".to_string()),
+            port: Some(3306),
+            username: Some("user@name".to_string()),
+            password: Some("p#ss*@)".to_string()),
+            database: Some("test_db".to_string()),
+            ssh_enabled: Some(true),
+            ssh_host: Some("bastion.internal".to_string()),
+            ssh_port: Some(22),
+            ssh_username: Some("jump".to_string()),
+            ssh_password: Some("ssh#pass".to_string()),
+            ..Default::default()
+        };
+
+        // Match the production flow after the SSH tunnel assigns a local endpoint.
+        form.host = Some("127.0.0.1".to_string());
+        form.port = Some(4406);
+
+        let conn_str = build_dsn(&form).unwrap();
+        assert_eq!(
+            conn_str,
+            "mysql://user%40name:p%23ss%2A%40%29@127.0.0.1:4406/test_db?ssl-mode=DISABLED"
         );
     }
 
@@ -1126,7 +1220,7 @@ mod tests {
     }
 
     #[test]
-    fn test_conn_string_with_ssl_false_does_not_explicitly_disable_tls() {
+    fn test_conn_string_with_ssl_false_explicitly_disables_tls() {
         let form = ConnectionForm {
             driver: "mysql".to_string(),
             host: Some("localhost".to_string()),
@@ -1139,9 +1233,11 @@ mod tests {
         };
 
         let conn_str = build_dsn(&form).unwrap();
-        assert_eq!(conn_str, "mysql://root:password@localhost:3306/test_db");
-        assert!(!conn_str.contains("ssl-mode="));
-        assert!(!conn_str.contains("DISABLED"));
+        assert_eq!(
+            conn_str,
+            "mysql://root:password@localhost:3306/test_db?ssl-mode=DISABLED"
+        );
+        assert!(conn_str.contains("ssl-mode=DISABLED"));
     }
 
     #[test]
@@ -1194,7 +1290,9 @@ mod tests {
     #[test]
     fn test_is_json_projectable_statement() {
         assert!(is_json_projectable_statement("SELECT 1"));
-        assert!(is_json_projectable_statement("  WITH t AS (SELECT 1) SELECT * FROM t"));
+        assert!(is_json_projectable_statement(
+            "  WITH t AS (SELECT 1) SELECT * FROM t"
+        ));
         assert!(!is_json_projectable_statement("SHOW TABLES"));
         assert!(!is_json_projectable_statement("UPDATE t SET a = 1"));
     }
@@ -1228,7 +1326,10 @@ mod tests {
 
         normalize_mysql_row_json(&mut row, &high_precision_cols).unwrap();
 
-        assert_eq!(row.get("id").and_then(|v| v.as_str()), Some("9223372036854775807"));
+        assert_eq!(
+            row.get("id").and_then(|v| v.as_str()),
+            Some("9223372036854775807")
+        );
         assert_eq!(row.get("amount").and_then(|v| v.as_str()), Some("1234.56"));
         assert_eq!(row.get("name").and_then(|v| v.as_str()), Some("demo"));
         assert!(row.get("nullable").unwrap().is_null());
@@ -1246,5 +1347,18 @@ mod tests {
         let sql = build_mysql_json_projection_query("SELECT * FROM t;;;", "JSON_OBJECT()");
         assert!(sql.contains("FROM (SELECT * FROM t) AS `__dbpaw_row`"));
         assert!(!sql.contains(";) AS `__dbpaw_row`"));
+    }
+
+    #[test]
+    fn test_is_prepared_protocol_unsupported_error() {
+        assert!(is_prepared_protocol_unsupported_error(
+            "error returned from database: 1295 (HY000): This command is not supported in the prepared statement protocol yet"
+        ));
+        assert!(is_prepared_protocol_unsupported_error(
+            "prepared statement protocol is unsupported"
+        ));
+        assert!(!is_prepared_protocol_unsupported_error(
+            "syntax error near ...",
+        ));
     }
 }

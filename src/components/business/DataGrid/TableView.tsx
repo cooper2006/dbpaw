@@ -70,12 +70,16 @@ import { api, isTauri } from "@/services/api";
 import type { ColumnInfo, TransferFormat } from "@/services/api";
 import { isEditableTarget, isModKey } from "@/lib/keyboard";
 import {
+  buildDeleteStatement,
+  buildUpdateStatement,
   calculateAutoColumnWidths,
+  canMutateClickHouseTable,
   collectSearchMatches,
   escapeSQL,
   formatInsertSQLValue,
   formatSQLValue,
   getQualifiedTableName,
+  isClickHouseMergeTreeEngine,
   isInsertColumnRequired,
   quoteIdent,
   sortRows,
@@ -231,6 +235,7 @@ export function TableView({
   >(new Map());
   const [insertDraftRows, setInsertDraftRows] = useState<InsertDraftRow[]>([]);
   const [primaryKeys, setPrimaryKeys] = useState<string[]>([]);
+  const [clickhouseEngine, setClickhouseEngine] = useState<string | null>(null);
   const [tableColumns, setTableColumns] = useState<ColumnInfo[]>([]);
   const [columnComments, setColumnComments] = useState<Record<string, string>>(
     {},
@@ -391,6 +396,7 @@ export function TableView({
   useEffect(() => {
     if (!tableContext) {
       setPrimaryKeys([]);
+      setClickhouseEngine(null);
       setTableColumns([]);
       setColumnComments({});
       return;
@@ -405,6 +411,7 @@ export function TableView({
       .then((meta) => {
         const pks = meta.columns.filter((c) => c.primaryKey).map((c) => c.name);
         setPrimaryKeys(pks);
+        setClickhouseEngine(meta.clickhouseExtra?.engine || null);
         setTableColumns(meta.columns);
 
         const comments: Record<string, string> = {};
@@ -419,6 +426,7 @@ export function TableView({
       .catch((e) => {
         console.error("Failed to fetch primary keys:", e);
         setPrimaryKeys([]);
+        setClickhouseEngine(null);
         setTableColumns([]);
         setColumnComments({});
       });
@@ -446,10 +454,42 @@ export function TableView({
     setSaveError(null);
   }, [data, page]);
 
-  const isReadOnlyDriver = tableContext?.driver === "clickhouse";
-  const isEditable =
-    !!tableContext && !isReadOnlyDriver && primaryKeys.length > 0;
-  const isEditableForUpdates = isEditable && !hasLocalClientSort;
+  const isClickHouseDriver = tableContext?.driver === "clickhouse";
+  const hasPrimaryKeys = primaryKeys.length > 0;
+  const canInsert = !!tableContext &&
+    (isClickHouseDriver
+      ? isClickHouseMergeTreeEngine(clickhouseEngine)
+      : hasPrimaryKeys);
+  const canUpdateDelete = !!tableContext &&
+    (isClickHouseDriver
+      ? canMutateClickHouseTable(clickhouseEngine, primaryKeys)
+      : hasPrimaryKeys);
+  const isEditableForUpdates = canUpdateDelete && !hasLocalClientSort;
+  const mutabilityHint = useMemo(() => {
+    if (!tableContext) return null;
+    if (hasLocalClientSort) {
+      return "Inline cell editing is disabled while client-side sorting is active.";
+    }
+    if (isClickHouseDriver) {
+      if (!isClickHouseMergeTreeEngine(clickhouseEngine)) {
+        return "ClickHouse inline write is only enabled for MergeTree-family tables.";
+      }
+      if (!hasPrimaryKeys) {
+        return "ClickHouse table update/delete requires primary key columns.";
+      }
+      return null;
+    }
+    if (!hasPrimaryKeys) {
+      return "This table has no primary key and does not support inline editing";
+    }
+    return null;
+  }, [
+    tableContext,
+    hasLocalClientSort,
+    isClickHouseDriver,
+    clickhouseEngine,
+    hasPrimaryKeys,
+  ]);
   const pendingMutationCount = pendingChanges.size + insertDraftRows.length;
   const hasPendingChanges = pendingMutationCount > 0;
 
@@ -629,7 +669,7 @@ export function TableView({
   // --- SQL generation & save ---
 
   const generateUpdateSQL = useCallback(() => {
-    if (!tableContext || primaryKeys.length === 0) return [];
+    if (!tableContext || !canUpdateDelete || primaryKeys.length === 0) return [];
 
     // Group changes by source row index
     const changesByRow = new Map<number, PendingChange[]>();
@@ -671,15 +711,27 @@ export function TableView({
 
       const tableName = getQualifiedTableName(driver, schema, table);
 
-      const sql = `UPDATE ${tableName} SET ${setClauses.join(", ")} WHERE ${whereClauses.join(" AND ")}`;
+      const sql = buildUpdateStatement(
+        driver,
+        tableName,
+        setClauses.join(", "),
+        whereClauses.join(" AND "),
+      );
       sqls.push(sql);
     });
 
     return sqls;
-  }, [tableContext, primaryKeys, pendingChanges, data, currentData]);
+  }, [
+    tableContext,
+    canUpdateDelete,
+    primaryKeys,
+    pendingChanges,
+    data,
+    currentData,
+  ]);
 
   const generateInsertSQL = useCallback(() => {
-    if (!tableContext || !insertDraftRows.length) return [];
+    if (!tableContext || !canInsert || !insertDraftRows.length) return [];
     const tableName = getQualifiedTableName(
       tableContext.driver,
       tableContext.schema,
@@ -716,7 +768,9 @@ export function TableView({
       });
 
       if (!insertColumns.length) {
-        throw new Error(`Row ${index + 1}: at least one column value is required`);
+        throw new Error(
+          `Row ${index + 1}: at least one column value is required`,
+        );
       }
 
       sqls.push(
@@ -725,10 +779,15 @@ export function TableView({
     });
 
     return sqls;
-  }, [tableContext, insertDraftRows, tableColumns, columns]);
+  }, [tableContext, canInsert, insertDraftRows, tableColumns, columns]);
 
   const buildDeleteSQL = useCallback(() => {
-    if (!tableContext || !selectedRows.size || primaryKeys.length === 0) {
+    if (
+      !tableContext ||
+      !canUpdateDelete ||
+      !selectedRows.size ||
+      primaryKeys.length === 0
+    ) {
       return "";
     }
 
@@ -758,10 +817,15 @@ export function TableView({
       tableContext.schema,
       tableContext.table,
     );
-    return `DELETE FROM ${tableName} WHERE ${rowClauses.join(" OR ")}`;
-  }, [tableContext, selectedRows, primaryKeys, currentData]);
+    return buildDeleteStatement(
+      tableContext.driver,
+      tableName,
+      rowClauses.join(" OR "),
+    );
+  }, [tableContext, canUpdateDelete, selectedRows, primaryKeys, currentData]);
 
   const handleAddDraftRow = useCallback(() => {
+    if (!canInsert) return;
     const tempId = `draft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const values = columns.reduce<Record<string, string>>((acc, column) => {
       acc[column] = "";
@@ -769,7 +833,7 @@ export function TableView({
     }, {});
     setInsertDraftRows((prev) => [...prev, { tempId, values }]);
     setPendingFocusDraftId(tempId);
-  }, [columns]);
+  }, [canInsert, columns]);
 
   const handleDraftValueChange = useCallback(
     (tempId: string, column: string, value: string) => {
@@ -784,8 +848,26 @@ export function TableView({
     [],
   );
 
+  const refreshAfterMutation = useCallback(async () => {
+    if (!onDataRefresh) return;
+    const runRefresh = async () => {
+      const ret = onDataRefresh();
+      if (ret && typeof (ret as Promise<unknown>).then === "function") {
+        await ret;
+      }
+    };
+
+    await runRefresh();
+    if (tableContext?.driver === "clickhouse") {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await runRefresh();
+    }
+  }, [onDataRefresh, tableContext?.driver]);
+
   const handleConfirmDelete = useCallback(async () => {
-    if (!tableContext || !selectedRows.size || isDeleting) return;
+    if (!tableContext || !canUpdateDelete || !selectedRows.size || isDeleting) {
+      return;
+    }
 
     const sql = buildDeleteSQL();
     if (!sql) {
@@ -803,10 +885,13 @@ export function TableView({
         "table_view_save",
       );
       setDeleteDialogOpen(false);
-      setSelectedRows(new Set());
+      const nextSelectedRows = new Set<number>();
+      selectedRowsRef.current = nextSelectedRows;
+      setSelectedRows(nextSelectedRows);
+      selectedCellRef.current = null;
       setSelectedCell(null);
       setEditingCell(null);
-      onDataRefresh?.();
+      await refreshAfterMutation();
     } catch (e) {
       setSaveError(
         `Delete failed:\n${sql}\n  -> ${e instanceof Error ? e.message : String(e)}`,
@@ -814,7 +899,14 @@ export function TableView({
     } finally {
       setIsDeleting(false);
     }
-  }, [tableContext, selectedRows, isDeleting, buildDeleteSQL, onDataRefresh]);
+  }, [
+    tableContext,
+    canUpdateDelete,
+    selectedRows,
+    isDeleting,
+    buildDeleteSQL,
+    refreshAfterMutation,
+  ]);
 
   const handleSave = useCallback(async () => {
     if (!tableContext || !hasPendingChanges) return;
@@ -864,14 +956,14 @@ export function TableView({
       setPendingChanges(new Map());
       setInsertDraftRows([]);
       setSaveError(null);
-      onDataRefresh?.();
+      await refreshAfterMutation();
     }
   }, [
     tableContext,
     hasPendingChanges,
     generateUpdateSQL,
     generateInsertSQL,
-    onDataRefresh,
+    refreshAfterMutation,
   ]);
 
   const handleRefreshClick = useCallback(async () => {
@@ -1055,7 +1147,7 @@ export function TableView({
 
   const buildRowsUpdateSQL = useCallback(
     (rowIndexes: number[]) => {
-      if (!tableContext || primaryKeys.length === 0) return "";
+      if (!tableContext || !canUpdateDelete || primaryKeys.length === 0) return "";
       const orderedRows = [...rowIndexes].sort((a, b) => a - b);
       const { schema, table, driver } = tableContext;
       const tableName = getQualifiedTableName(driver, schema, table);
@@ -1087,12 +1179,19 @@ export function TableView({
             return `${quoteIdent(driver, pk)} = '${escapeSQL(String(pkValue))}'`;
           });
 
-          return `UPDATE ${tableName} SET ${setClauses.join(", ")} WHERE ${whereClauses.join(" AND ")};`;
+          return `${buildUpdateStatement(driver, tableName, setClauses.join(", "), whereClauses.join(" AND "))};`;
         })
         .filter((line) => line.length > 0)
         .join("\n");
     },
-    [columns, currentData, getCellDisplayValue, primaryKeys, tableContext],
+    [
+      columns,
+      currentData,
+      getCellDisplayValue,
+      canUpdateDelete,
+      primaryKeys,
+      tableContext,
+    ],
   );
 
   const normalizedSearchKeyword = searchKeyword.trim().toLowerCase();
@@ -1265,9 +1364,8 @@ export function TableView({
     if (!pendingFocusDraftId) return;
     const selector = `input[data-draft-id="${pendingFocusDraftId}"][data-draft-col-index="0"]`;
     requestAnimationFrame(() => {
-      const target = containerRef.current?.querySelector<HTMLInputElement>(
-        selector,
-      );
+      const target =
+        containerRef.current?.querySelector<HTMLInputElement>(selector);
       if (!target) return;
       target.scrollIntoView({
         behavior: "smooth",
@@ -1557,8 +1655,9 @@ export function TableView({
                   {t("connection.menu.newQuery")}
                 </Button>
               )}
-              {isEditable && (
+              {(canInsert || canUpdateDelete) && (
                 <>
+                  {canInsert && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1570,6 +1669,8 @@ export function TableView({
                     <Plus className="w-3.5 h-3.5" />
                     Add
                   </Button>
+                  )}
+                  {canUpdateDelete && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1585,6 +1686,7 @@ export function TableView({
                     <Trash2 className="w-3.5 h-3.5" />
                     Delete
                   </Button>
+                  )}
                 </>
               )}
 
@@ -1752,38 +1854,22 @@ export function TableView({
                   }}
                 />
               </div>
-              {tableContext &&
-                (!isEditable || hasLocalClientSort) &&
-                (primaryKeys.length === 0 || isReadOnlyDriver || hasLocalClientSort) && (
+              {tableContext && mutabilityHint && (
                   <span
                     className="text-xs text-muted-foreground italic"
-                    title={
-                      hasLocalClientSort
-                        ? "Inline cell editing is disabled while client-side sorting is active."
-                        : isReadOnlyDriver
-                        ? "ClickHouse is read-only in this version."
-                        : "This table has no primary key and does not support inline editing"
-                    }
+                    title={mutabilityHint}
                   >
-                    Read-only
+                    {canInsert ? "Partial write" : "Read-only"}
                   </span>
                 )}
             </div>
           ) : (
-            tableContext &&
-            (!isEditable || hasLocalClientSort) &&
-            (primaryKeys.length === 0 || isReadOnlyDriver || hasLocalClientSort) && (
+            tableContext && mutabilityHint && (
               <span
                 className="text-xs text-muted-foreground italic"
-                title={
-                  hasLocalClientSort
-                    ? "Inline cell editing is disabled while client-side sorting is active."
-                    : isReadOnlyDriver
-                    ? "ClickHouse is read-only in this version."
-                    : "This table has no primary key and does not support inline editing"
-                }
+                title={mutabilityHint}
               >
-                Read-only
+                {canInsert ? "Partial write" : "Read-only"}
               </span>
             )
           )}
@@ -1942,7 +2028,10 @@ export function TableView({
                             }}
                             onClick={() => handleCellClick(rowIndex, column)}
                             onContextMenu={() => {
-                              if (selectedRows.size > 1 && selectedRows.has(rowIndex)) {
+                              if (
+                                selectedRows.size > 1 &&
+                                selectedRows.has(rowIndex)
+                              ) {
                                 return;
                               }
                               handleCellClick(rowIndex, column);
@@ -1969,7 +2058,7 @@ export function TableView({
                             ) : (
                               <div className="px-4 py-2 truncate">
                                 {displayValue !== null &&
-                                  displayValue !== undefined ? (
+                                displayValue !== undefined ? (
                                   <span
                                     className={
                                       modified
@@ -2030,7 +2119,7 @@ export function TableView({
                       {isMultiRowCopyTarget ? "Copy Selected Rows" : "Copy Row"}
                     </ContextMenuItem>
                     <ContextMenuSeparator />
-                    {isEditable &&
+                    {canUpdateDelete &&
                       isCellModified(rowIndex, selectedCell?.col || "") && (
                         <>
                           <ContextMenuItem
@@ -2081,7 +2170,7 @@ export function TableView({
                               : "Copy as Insert SQL"}
                           </ContextMenuItem>
                         )}
-                        {isEditable && (
+                        {canUpdateDelete && (
                           <ContextMenuItem
                             onClick={() => {
                               const sql = buildRowsUpdateSQL(copyTargetRows);

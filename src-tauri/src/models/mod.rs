@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -218,7 +219,7 @@ pub struct TableDataResponse {
     pub execution_time_ms: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionForm {
     pub driver: String, // "postgres" | "mysql" | "tidb" | "mariadb" | "sqlite" | "duckdb" | "clickhouse" | "mssql"
@@ -239,6 +240,36 @@ pub struct ConnectionForm {
     pub ssh_username: Option<String>,
     pub ssh_password: Option<String>,
     pub ssh_key_path: Option<String>,
+}
+
+impl fmt::Debug for ConnectionForm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let username = self.username.as_ref().map(|_| "<redacted>");
+        let password = self.password.as_ref().map(|_| "<redacted>");
+        let ssl_ca_cert = self.ssl_ca_cert.as_ref().map(|_| "<redacted>");
+        let ssh_username = self.ssh_username.as_ref().map(|_| "<redacted>");
+        let ssh_password = self.ssh_password.as_ref().map(|_| "<redacted>");
+        f.debug_struct("ConnectionForm")
+            .field("driver", &self.driver)
+            .field("name", &self.name)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("database", &self.database)
+            .field("schema", &self.schema)
+            .field("username", &username)
+            .field("password", &password)
+            .field("ssl", &self.ssl)
+            .field("ssl_mode", &self.ssl_mode)
+            .field("ssl_ca_cert", &ssl_ca_cert)
+            .field("file_path", &self.file_path)
+            .field("ssh_enabled", &self.ssh_enabled)
+            .field("ssh_host", &self.ssh_host)
+            .field("ssh_port", &self.ssh_port)
+            .field("ssh_username", &ssh_username)
+            .field("ssh_password", &ssh_password)
+            .field("ssh_key_path", &self.ssh_key_path)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -275,4 +306,30 @@ pub struct TableSchema {
 #[serde(rename_all = "camelCase")]
 pub struct SchemaOverview {
     pub tables: Vec<TableSchema>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ConnectionForm;
+
+    #[test]
+    fn connection_form_debug_redacts_sensitive_fields() {
+        let form = ConnectionForm {
+            driver: "mysql".to_string(),
+            host: Some("127.0.0.1".to_string()),
+            username: Some("root".to_string()),
+            password: Some("secret".to_string()),
+            ssl_ca_cert: Some("cert-data".to_string()),
+            ssh_username: Some("jump".to_string()),
+            ssh_password: Some("jump-secret".to_string()),
+            ..Default::default()
+        };
+
+        let printed = format!("{form:?}");
+        assert!(!printed.contains("root"));
+        assert!(!printed.contains("secret"));
+        assert!(!printed.contains("cert-data"));
+        assert!(!printed.contains("jump-secret"));
+        assert!(printed.contains("<redacted>"));
+    }
 }

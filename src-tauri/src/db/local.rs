@@ -24,8 +24,12 @@ impl LocalDb {
             .path()
             .app_data_dir()
             .map_err(|e| e.to_string())?;
+        Self::init_with_app_dir(&app_dir).await
+    }
+
+    pub async fn init_with_app_dir(app_dir: &Path) -> Result<Self, String> {
         if !app_dir.exists() {
-            fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
+            fs::create_dir_all(app_dir).map_err(|e| e.to_string())?;
         }
         let ai_master_key = Self::load_or_create_ai_master_key(&app_dir)?;
         let db_path = app_dir.join("dbpaw.sqlite");
@@ -903,6 +907,7 @@ impl LocalDb {
 mod tests {
     use super::LocalDb;
     use crate::models::{AiProviderForm, ConnectionForm};
+    use rand::RngCore;
     use sqlx::sqlite::SqlitePoolOptions;
 
     async fn make_test_db() -> LocalDb {
@@ -931,10 +936,10 @@ mod tests {
                 .expect("apply migration");
         }
 
-        LocalDb {
-            pool,
-            ai_master_key: [7u8; 32],
-        }
+        let mut ai_master_key = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut ai_master_key);
+
+        LocalDb { pool, ai_master_key }
     }
 
     fn provider_form(
@@ -958,7 +963,8 @@ mod tests {
 
     #[test]
     fn api_key_encrypt_decrypt_round_trip_and_format_validation() {
-        let key = [3u8; 32];
+        let mut key = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut key);
         let encrypted = LocalDb::encrypt_ai_api_key_raw(&key, "secret-123").unwrap();
         assert!(LocalDb::has_encrypted_ai_api_key(&encrypted));
         let decrypted = LocalDb::decrypt_ai_api_key_raw(&key, &encrypted).unwrap();

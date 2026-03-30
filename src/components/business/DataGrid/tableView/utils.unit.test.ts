@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildDeleteStatement,
+  buildUpdateStatement,
+  canMutateClickHouseTable,
   formatInsertSQLValue,
   formatSQLValue,
   getQualifiedTableName,
+  isClickHouseMergeTreeEngine,
   isInsertColumnRequired,
 } from "./utils";
 
@@ -56,7 +60,11 @@ describe("formatInsertSQLValue", () => {
 
   test("formats boolean values", () => {
     expect(
-      formatInsertSQLValue("true", { name: "enabled", type: "boolean" }, "postgres"),
+      formatInsertSQLValue(
+        "true",
+        { name: "enabled", type: "boolean" },
+        "postgres",
+      ),
     ).toBe("TRUE");
     expect(
       formatInsertSQLValue("0", { name: "enabled", type: "boolean" }, "mssql"),
@@ -65,7 +73,11 @@ describe("formatInsertSQLValue", () => {
 
   test("throws for invalid boolean values", () => {
     expect(() =>
-      formatInsertSQLValue("yes", { name: "enabled", type: "boolean" }, "postgres"),
+      formatInsertSQLValue(
+        "yes",
+        { name: "enabled", type: "boolean" },
+        "postgres",
+      ),
     ).toThrow('Invalid boolean value for column "enabled": "yes"');
   });
 
@@ -84,9 +96,9 @@ describe("isInsertColumnRequired", () => {
   });
 
   test("returns false when nullable", () => {
-    expect(
-      isInsertColumnRequired({ nullable: true, defaultValue: null }),
-    ).toBe(false);
+    expect(isInsertColumnRequired({ nullable: true, defaultValue: null })).toBe(
+      false,
+    );
   });
 
   test("returns false when default value exists", () => {
@@ -101,7 +113,9 @@ describe("isInsertColumnRequired", () => {
 
 describe("getQualifiedTableName", () => {
   test("uses unqualified table with backticks for tidb", () => {
-    expect(getQualifiedTableName("tidb", "analytics", "events")).toBe("`events`");
+    expect(getQualifiedTableName("tidb", "analytics", "events")).toBe(
+      "`events`",
+    );
   });
 
   test("uses unqualified table with backticks for mariadb", () => {
@@ -111,20 +125,62 @@ describe("getQualifiedTableName", () => {
   });
 
   test("does not qualify sqlite main/public schema", () => {
-    expect(getQualifiedTableName("sqlite", "main", "users")).toBe("\"users\"");
-    expect(getQualifiedTableName("sqlite", "public", "users")).toBe("\"users\"");
-    expect(getQualifiedTableName("sqlite", "", "users")).toBe("\"users\"");
+    expect(getQualifiedTableName("sqlite", "main", "users")).toBe('"users"');
+    expect(getQualifiedTableName("sqlite", "public", "users")).toBe('"users"');
+    expect(getQualifiedTableName("sqlite", "", "users")).toBe('"users"');
   });
 
   test("keeps non-main sqlite schema qualification", () => {
     expect(getQualifiedTableName("sqlite", "analytics", "events")).toBe(
-      "\"analytics\".\"events\"",
+      '"analytics"."events"',
     );
   });
 
   test("does not qualify duckdb main/public schema", () => {
-    expect(getQualifiedTableName("duckdb", "main", "users")).toBe("\"users\"");
-    expect(getQualifiedTableName("duckdb", "public", "users")).toBe("\"users\"");
-    expect(getQualifiedTableName("duckdb", "", "users")).toBe("\"users\"");
+    expect(getQualifiedTableName("duckdb", "main", "users")).toBe('"users"');
+    expect(getQualifiedTableName("duckdb", "public", "users")).toBe('"users"');
+    expect(getQualifiedTableName("duckdb", "", "users")).toBe('"users"');
+  });
+});
+
+describe("clickhouse mutation guards", () => {
+  test("detects mergetree engine variants", () => {
+    expect(isClickHouseMergeTreeEngine("MergeTree")).toBe(true);
+    expect(isClickHouseMergeTreeEngine("ReplacingMergeTree")).toBe(true);
+    expect(isClickHouseMergeTreeEngine("Memory")).toBe(false);
+  });
+
+  test("requires both mergetree engine and primary keys", () => {
+    expect(canMutateClickHouseTable("MergeTree", ["id"])).toBe(true);
+    expect(canMutateClickHouseTable("MergeTree", [])).toBe(false);
+    expect(canMutateClickHouseTable("Log", ["id"])).toBe(false);
+  });
+});
+
+describe("mutation statement builders", () => {
+  test("builds clickhouse alter update/delete statements", () => {
+    expect(
+      buildUpdateStatement(
+        "clickhouse",
+        "`analytics`.`events`",
+        "`name` = 'new'",
+        "`id` = 1",
+      ),
+    ).toBe(
+      "ALTER TABLE `analytics`.`events` UPDATE `name` = 'new' WHERE `id` = 1",
+    );
+
+    expect(
+      buildDeleteStatement("clickhouse", "`analytics`.`events`", "`id` = 1"),
+    ).toBe("ALTER TABLE `analytics`.`events` DELETE WHERE `id` = 1");
+  });
+
+  test("keeps generic update/delete statements for non-clickhouse", () => {
+    expect(
+      buildUpdateStatement("postgres", '"public"."users"', '"name" = \'new\'', '"id" = 1'),
+    ).toBe("UPDATE \"public\".\"users\" SET \"name\" = 'new' WHERE \"id\" = 1");
+    expect(buildDeleteStatement("postgres", '"public"."users"', '"id" = 1')).toBe(
+      "DELETE FROM \"public\".\"users\" WHERE \"id\" = 1",
+    );
   });
 });

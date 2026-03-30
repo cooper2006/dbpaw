@@ -100,7 +100,6 @@ export const zh: Translations = {
       selectTheme: "选择主题",
       fontSizeTitle: "字体大小",
       fontSizeDescription: "调整应用全局文字大小（范围：{{min}}-{{max}}px）",
-
     },
     layout: {
       title: "布局",
@@ -122,7 +121,8 @@ export const zh: Translations = {
       updateNow: "立即更新",
       updateLater: "稍后",
       updateDialogTitle: "发现新版本",
-      updateDialogDescription: "将开始在后台下载并安装更新，你可以继续使用应用。",
+      updateDialogDescription:
+        "将开始在后台下载并安装更新，你可以继续使用应用。",
       downloading: "正在下载更新...",
       installed: "更新已安装。",
       noUpdate: "当前无可用更新。",
@@ -266,7 +266,8 @@ export const zh: Translations = {
         passwordRequired: "请填写密码。",
         portRange: "端口必须是 1 到 65535 之间的整数。",
         hostWhitespace: "主机地址不能包含空白字符。",
-        hostPortNotAllowed: "当前数据库类型不支持在主机字段中填写 host:port，请将端口填写到端口字段。",
+        hostPortNotAllowed:
+          "当前数据库类型不支持在主机字段中填写 host:port，请将端口填写到端口字段。",
         sshHostRequired: "已开启 SSH，请填写 SSH 主机。",
         sshUsernameRequired: "已开启 SSH，请填写 SSH 用户名。",
         sshPortRange: "SSH 端口必须是 1 到 65535 之间的整数。",
@@ -282,9 +283,17 @@ export const zh: Translations = {
       refreshTables: "刷新数据表",
       newQuery: "新建查询",
       newDatabase: "新建 Database",
+      importSql: "导入 SQL",
+      importSqlReadOnly: "导入 SQL（只读，不支持）",
       exportCsv: "导出为 CSV",
       exportJson: "导出为 JSON",
       exportSql: "导出为 SQL",
+    },
+    importDialog: {
+      title: "导入 SQL",
+      description: "将 SQL 导入到数据库 {{database}}。任一语句失败将全量回滚。",
+      confirm: "开始导入",
+      importing: "导入中…",
     },
     createDbDialog: {
       title: "新建 Database",
@@ -326,6 +335,12 @@ export const zh: Translations = {
       duplicateFailed: "连接复制失败",
       createDatabaseSuccess: "Database 创建成功",
       createDatabaseFailed: "Database 创建失败",
+      importDesktopOnly: "SQL 导入仅在 Tauri 桌面模式可用。",
+      importUnsupportedDriver: "当前驱动暂不支持 SQL 导入。",
+      importReadOnlyDriver: "当前驱动在 DbPaw 中为只读模式，不支持 SQL 导入。",
+      selectImportSqlFile: "选择要导入的 SQL 文件",
+      importSuccess: "导入完成（{{count}} 条语句）",
+      importFailed: "导入失败",
       exportDesktopOnly: "导出对话框仅在 Tauri 桌面模式可用。",
       saveExportFile: "保存导出文件",
       openSaveDialogFailed: "打开保存对话框失败",

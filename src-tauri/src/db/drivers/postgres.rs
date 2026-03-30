@@ -161,11 +161,7 @@ impl PostgresDriver {
             .acquire_timeout(std::time::Duration::from_secs(3))
             .connect(&dsn)
             .await
-            .map_err(|e| {
-                format!(
-                    "[CONN_FAILED] {e} (hint: check if username/password contain special characters; they must be URL-encoded)"
-                )
-            })?;
+            .map_err(|e| super::conn_failed_error(&e))?;
 
         Ok(Self {
             pool,
@@ -259,10 +255,7 @@ fn is_high_precision_pg_type(data_type: &str, udt_name: &str) -> bool {
     matches!(
         data_type.as_str(),
         "bigint" | "numeric" | "decimal" | "money"
-    ) || matches!(
-        udt_name.as_str(),
-        "int8" | "numeric" | "decimal" | "money"
-    )
+    ) || matches!(udt_name.as_str(), "int8" | "numeric" | "decimal" | "money")
 }
 
 fn normalize_postgres_row_json(
@@ -473,9 +466,7 @@ fn first_sql_keyword(sql: &str) -> Option<String> {
         return None;
     }
     let mut end = start;
-    while end < bytes.len()
-        && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_')
-    {
+    while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
         end += 1;
     }
     if end == start {
@@ -1209,6 +1200,34 @@ mod tests {
     }
 
     #[test]
+    fn test_conn_string_encodes_credentials_when_ssh_rewrites_target_host() {
+        let mut form = ConnectionForm {
+            driver: "postgres".to_string(),
+            host: Some("db.internal".to_string()),
+            port: Some(5432),
+            username: Some("user@name".to_string()),
+            password: Some("p#ss*@)".to_string()),
+            database: Some("mydb".to_string()),
+            ssh_enabled: Some(true),
+            ssh_host: Some("bastion.internal".to_string()),
+            ssh_port: Some(22),
+            ssh_username: Some("jump".to_string()),
+            ssh_password: Some("ssh#pass".to_string()),
+            ..Default::default()
+        };
+
+        // Match the production flow after the SSH tunnel assigns a local endpoint.
+        form.host = Some("127.0.0.1".to_string());
+        form.port = Some(55432);
+
+        let dsn = build_dsn(&form).unwrap();
+        assert_eq!(
+            dsn,
+            "postgres://user%40name:p%23ss%2A%40%29@127.0.0.1:55432/mydb"
+        );
+    }
+
+    #[test]
     fn test_conn_string_missing_fields() {
         let form = ConnectionForm {
             driver: "postgres".to_string(),
@@ -1306,10 +1325,7 @@ mod tests {
         let sql = "CREATE TYPE mood_enum AS ENUM ('sad', 'ok'); CREATE TYPE address_type AS (street VARCHAR(100));";
         let statements = split_sql_statements(sql);
         assert_eq!(statements.len(), 2);
-        assert_eq!(
-            statements[0],
-            "CREATE TYPE mood_enum AS ENUM ('sad', 'ok')"
-        );
+        assert_eq!(statements[0], "CREATE TYPE mood_enum AS ENUM ('sad', 'ok')");
         assert_eq!(
             statements[1],
             "CREATE TYPE address_type AS (street VARCHAR(100))"
@@ -1367,7 +1383,10 @@ CREATE TABLE pg_data_type_test (
             row.get("col_bigint").and_then(|v| v.as_str()),
             Some("9007199254740993")
         );
-        assert_eq!(row.get("col_numeric").and_then(|v| v.as_str()), Some("1234.56"));
+        assert_eq!(
+            row.get("col_numeric").and_then(|v| v.as_str()),
+            Some("1234.56")
+        );
         assert_eq!(row.get("col_text").and_then(|v| v.as_str()), Some("hello"));
         assert!(row.get("col_null").unwrap().is_null());
     }
@@ -1382,7 +1401,9 @@ CREATE TABLE pg_data_type_test (
     #[test]
     fn test_is_json_projectable_statement() {
         assert!(is_json_projectable_statement("SELECT 1"));
-        assert!(is_json_projectable_statement("  -- a\nWITH t AS (SELECT 1) SELECT * FROM t"));
+        assert!(is_json_projectable_statement(
+            "  -- a\nWITH t AS (SELECT 1) SELECT * FROM t"
+        ));
         assert!(is_json_projectable_statement("VALUES (1), (2)"));
         assert!(is_json_projectable_statement("TABLE my_table"));
         assert!(!is_json_projectable_statement("INSERT INTO t VALUES (1)"));

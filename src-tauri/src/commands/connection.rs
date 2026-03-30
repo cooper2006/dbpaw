@@ -58,6 +58,10 @@ fn quote_mysql_ident(ident: &str) -> String {
     format!("`{}`", ident.replace('`', "``"))
 }
 
+fn quote_clickhouse_ident(ident: &str) -> String {
+    format!("`{}`", ident.replace('`', "``"))
+}
+
 fn quote_pg_ident(ident: &str) -> String {
     format!("\"{}\"", ident.replace('"', "\"\""))
 }
@@ -144,6 +148,49 @@ fn build_mssql_create_database_sql(
     Ok(create_sql)
 }
 
+fn build_clickhouse_create_database_sql(
+    payload: &CreateDatabasePayload,
+    db_name: &str,
+) -> Result<String, String> {
+    if let Some(v) = normalize_option_token(&payload.charset, "charset")? {
+        return Err(format!(
+            "[VALIDATION_ERROR] ClickHouse create database does not support charset option: {}",
+            v
+        ));
+    }
+    if let Some(v) = normalize_option_token(&payload.collation, "collation")? {
+        return Err(format!(
+            "[VALIDATION_ERROR] ClickHouse create database does not support collation option: {}",
+            v
+        ));
+    }
+    if let Some(v) = normalize_option_token(&payload.encoding, "encoding")? {
+        return Err(format!(
+            "[VALIDATION_ERROR] ClickHouse create database does not support encoding option: {}",
+            v
+        ));
+    }
+    if let Some(v) = normalize_option_token(&payload.lc_collate, "lc_collate")? {
+        return Err(format!(
+            "[VALIDATION_ERROR] ClickHouse create database does not support lc_collate option: {}",
+            v
+        ));
+    }
+    if let Some(v) = normalize_option_token(&payload.lc_ctype, "lc_ctype")? {
+        return Err(format!(
+            "[VALIDATION_ERROR] ClickHouse create database does not support lc_ctype option: {}",
+            v
+        ));
+    }
+
+    let mut sql = String::from("CREATE DATABASE ");
+    if payload.if_not_exists.unwrap_or(true) {
+        sql.push_str("IF NOT EXISTS ");
+    }
+    sql.push_str(&quote_clickhouse_ident(db_name));
+    Ok(sql)
+}
+
 fn normalize_create_database_error(err: String, db_name: &str) -> String {
     let lower = err.to_lowercase();
     if lower.contains("already exists")
@@ -185,6 +232,13 @@ pub async fn list_databases_by_id(
     .await
 }
 
+pub async fn list_databases_by_id_direct(state: &AppState, id: i64) -> Result<Vec<String>, String> {
+    super::execute_with_retry_from_app_state(state, id, None, |driver| async move {
+        driver.list_databases().await
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn create_database_by_id(
     state: State<'_, AppState>,
@@ -205,7 +259,7 @@ pub async fn create_database_by_id(
             .to_lowercase()
     };
 
-    if matches!(driver.as_str(), "sqlite" | "duckdb" | "clickhouse") {
+    if matches!(driver.as_str(), "sqlite" | "duckdb") {
         return Err(format!(
             "[UNSUPPORTED] Driver {} does not support creating databases in this flow",
             driver
@@ -250,6 +304,95 @@ pub async fn create_database_by_id(
             })
             .await
         }
+        "clickhouse" => {
+            let sql = build_clickhouse_create_database_sql(&payload, &db_name)?;
+            super::execute_with_retry(&state, id, None, |driver| {
+                let sql_clone = sql.clone();
+                async move { driver.execute_query(sql_clone).await.map(|_| ()) }
+            })
+            .await
+        }
+        _ => Err(format!(
+            "[UNSUPPORTED] Driver {} not supported for create database",
+            driver
+        )),
+    };
+
+    exec_res.map_err(|e| normalize_create_database_error(e, &db_name))
+}
+
+pub async fn create_database_by_id_direct(
+    state: &AppState,
+    id: i64,
+    payload: CreateDatabasePayload,
+) -> Result<(), String> {
+    let db_name = validate_database_name(&payload.name)?;
+    let if_not_exists = payload.if_not_exists.unwrap_or(true);
+    let driver = {
+        let local_db = {
+            let lock = state.local_db.lock().await;
+            lock.clone()
+        };
+        let db = local_db.ok_or("Local DB not initialized".to_string())?;
+        db.get_connection_form_by_id(id)
+            .await?
+            .driver
+            .to_lowercase()
+    };
+
+    if matches!(driver.as_str(), "sqlite" | "duckdb") {
+        return Err(format!(
+            "[UNSUPPORTED] Driver {} does not support creating databases in this flow",
+            driver
+        ));
+    }
+
+    let exec_res = match driver.as_str() {
+        "mysql" | "mariadb" | "tidb" => {
+            let sql = build_mysql_create_database_sql(&payload, &db_name)?;
+            super::execute_with_retry_from_app_state(state, id, None, |driver| {
+                let sql_clone = sql.clone();
+                async move { driver.execute_query(sql_clone).await.map(|_| ()) }
+            })
+            .await
+        }
+        "postgres" => {
+            let create_sql = build_postgres_create_database_sql(&payload, &db_name)?;
+            let exists_check_sql = format!(
+                "SELECT 1 FROM pg_database WHERE datname = {} LIMIT 1",
+                quote_literal(&db_name)
+            );
+            super::execute_with_retry_from_app_state(state, id, None, |driver| {
+                let exists_sql = exists_check_sql.clone();
+                let create_sql = create_sql.clone();
+                async move {
+                    if if_not_exists {
+                        let exists_result = driver.execute_query(exists_sql).await?;
+                        if exists_result.row_count > 0 || !exists_result.data.is_empty() {
+                            return Ok(());
+                        }
+                    }
+                    driver.execute_query(create_sql).await.map(|_| ())
+                }
+            })
+            .await
+        }
+        "mssql" => {
+            let sql = build_mssql_create_database_sql(&payload, &db_name)?;
+            super::execute_with_retry_from_app_state(state, id, None, |driver| {
+                let sql_clone = sql.clone();
+                async move { driver.execute_query(sql_clone).await.map(|_| ()) }
+            })
+            .await
+        }
+        "clickhouse" => {
+            let sql = build_clickhouse_create_database_sql(&payload, &db_name)?;
+            super::execute_with_retry_from_app_state(state, id, None, |driver| {
+                let sql_clone = sql.clone();
+                async move { driver.execute_query(sql_clone).await.map(|_| ()) }
+            })
+            .await
+        }
         _ => Err(format!(
             "[UNSUPPORTED] Driver {} not supported for create database",
             driver
@@ -289,9 +432,37 @@ pub async fn get_connections(state: State<'_, AppState>) -> Result<Vec<Connectio
     }
 }
 
+pub async fn get_connections_direct(state: &AppState) -> Result<Vec<Connection>, String> {
+    let local_db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+    if let Some(db) = local_db {
+        db.list_connections().await
+    } else {
+        Err("Local DB not initialized".to_string())
+    }
+}
+
 #[tauri::command]
 pub async fn create_connection(
     state: State<'_, AppState>,
+    form: ConnectionForm,
+) -> Result<Connection, String> {
+    let form = crate::connection_input::normalize_connection_form(form)?;
+    let local_db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+    if let Some(db) = local_db {
+        db.create_connection(form).await
+    } else {
+        Err("Local DB not initialized".to_string())
+    }
+}
+
+pub async fn create_connection_direct(
+    state: &AppState,
     form: ConnectionForm,
 ) -> Result<Connection, String> {
     let form = crate::connection_input::normalize_connection_form(form)?;
@@ -327,6 +498,24 @@ pub async fn update_connection(
     }
 }
 
+pub async fn update_connection_direct(
+    state: &AppState,
+    id: i64,
+    form: ConnectionForm,
+) -> Result<Connection, String> {
+    let form = crate::connection_input::normalize_connection_form(form)?;
+    let local_db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+    if let Some(db) = local_db {
+        state.pool_manager.remove_by_prefix(&id.to_string()).await;
+        db.update_connection(id, form).await
+    } else {
+        Err("Local DB not initialized".to_string())
+    }
+}
+
 #[tauri::command]
 pub async fn delete_connection(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     let local_db = {
@@ -343,16 +532,32 @@ pub async fn delete_connection(state: State<'_, AppState>, id: i64) -> Result<()
     }
 }
 
+pub async fn delete_connection_direct(state: &AppState, id: i64) -> Result<(), String> {
+    let local_db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+    if let Some(db) = local_db {
+        state.pool_manager.remove_by_prefix(&id.to_string()).await;
+        db.delete_connection(id).await
+    } else {
+        Err("Local DB not initialized".to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_mssql_create_database_sql, build_mysql_create_database_sql,
-        build_postgres_create_database_sql, validate_database_name, CreateDatabasePayload,
+        build_clickhouse_create_database_sql, build_mssql_create_database_sql,
+        build_mysql_create_database_sql, build_postgres_create_database_sql,
+        validate_database_name, CreateDatabasePayload,
     };
     use super::{
-        normalize_create_database_error, normalize_option_token, quote_mssql_ident,
-        quote_mysql_ident, quote_pg_ident,
+        normalize_create_database_error, normalize_option_token, quote_clickhouse_ident,
+        quote_mssql_ident, quote_mysql_ident, quote_pg_ident,
     };
+    use crate::connection_input::normalize_connection_form;
+    use crate::models::ConnectionForm;
 
     #[test]
     fn validate_database_name_rejects_empty_and_null() {
@@ -393,10 +598,8 @@ mod tests {
         );
         assert!(already.contains("[ALREADY_EXISTS]"));
 
-        let postgres = normalize_create_database_error(
-            "ERROR: 42P04 duplicate_database".to_string(),
-            "app",
-        );
+        let postgres =
+            normalize_create_database_error("ERROR: 42P04 duplicate_database".to_string(), "app");
         assert!(postgres.contains("[ALREADY_EXISTS]"));
 
         let perm = normalize_create_database_error(
@@ -407,8 +610,28 @@ mod tests {
     }
 
     #[test]
+    fn mysql_ephemeral_flow_preserves_empty_password_through_normalization() {
+        let form = ConnectionForm {
+            driver: "mysql".to_string(),
+            host: Some(" localhost ".to_string()),
+            port: Some(3306),
+            username: Some(" root ".to_string()),
+            password: Some("   ".to_string()),
+            database: Some(" app ".to_string()),
+            ..Default::default()
+        };
+
+        let normalized = normalize_connection_form(form).unwrap();
+        let dsn = crate::db::drivers::mysql::build_test_dsn(&normalized).unwrap();
+
+        assert_eq!(normalized.password, Some(String::new()));
+        assert_eq!(dsn, "mysql://root:@localhost:3306/app?ssl-mode=DISABLED");
+    }
+
+    #[test]
     fn quote_idents_escape_driver_specific_characters() {
         assert_eq!(quote_mysql_ident("a`b"), "`a``b`");
+        assert_eq!(quote_clickhouse_ident("a`b"), "`a``b`");
         assert_eq!(quote_pg_ident("a\"b"), "\"a\"\"b\"");
         assert_eq!(quote_mssql_ident("a]b"), "[a]]b]");
     }
@@ -474,5 +697,41 @@ mod tests {
             sql,
             "IF DB_ID(N'foo') IS NULL CREATE DATABASE [foo] COLLATE SQL_Latin1_General_CP1_CI_AS"
         );
+    }
+
+    #[test]
+    fn clickhouse_sql_respects_if_not_exists() {
+        let sql = build_clickhouse_create_database_sql(
+            &CreateDatabasePayload {
+                name: "analytics".to_string(),
+                if_not_exists: Some(true),
+                charset: None,
+                collation: None,
+                encoding: None,
+                lc_collate: None,
+                lc_ctype: None,
+            },
+            "analytics",
+        )
+        .unwrap();
+        assert_eq!(sql, "CREATE DATABASE IF NOT EXISTS `analytics`");
+    }
+
+    #[test]
+    fn clickhouse_sql_rejects_unsupported_options() {
+        let err = build_clickhouse_create_database_sql(
+            &CreateDatabasePayload {
+                name: "analytics".to_string(),
+                if_not_exists: Some(true),
+                charset: Some("utf8mb4".to_string()),
+                collation: None,
+                encoding: None,
+                lc_collate: None,
+                lc_ctype: None,
+            },
+            "analytics",
+        )
+        .unwrap_err();
+        assert!(err.contains("does not support charset option"));
     }
 }

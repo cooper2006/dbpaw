@@ -3,10 +3,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::State;
 
 const DEFAULT_CHUNK_SIZE: i64 = 2000;
+const MAX_IMPORT_FILE_SIZE_BYTES: u64 = 20 * 1024 * 1024;
+const MAX_IMPORT_STATEMENTS: usize = 50_000;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -29,6 +31,33 @@ pub enum ExportScope {
 pub struct ExportResult {
     pub file_path: String,
     pub row_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSqlResult {
+    pub file_path: String,
+    pub total_statements: i64,
+    pub success_statements: i64,
+    pub failed_at: Option<i64>,
+    pub failed_batch: Option<i64>,
+    pub failed_statement_preview: Option<String>,
+    pub error: Option<String>,
+    pub time_taken_ms: i64,
+    pub rolled_back: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ImportExecutionUnit {
+    sql: String,
+    batch_index: usize,
+    preview: String,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedImportPlan {
+    units: Vec<ImportExecutionUnit>,
+    script_managed_transaction: bool,
 }
 
 #[tauri::command]
@@ -55,6 +84,135 @@ pub async fn export_table_data(
     let chunk = chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE).max(1);
 
     super::execute_with_retry(&state, id, database, |db_driver| {
+        let output_path = output_path.clone();
+        let schema = schema.clone();
+        let table = table.clone();
+        let driver = driver.clone();
+        let filter = filter.clone();
+        let order_by = order_by.clone();
+        let sort_column = sort_column.clone();
+        let sort_direction = sort_direction.clone();
+        let scope = scope.clone();
+        let format = format.clone();
+        async move {
+            let columns = db_driver
+                .get_table_metadata(schema.clone(), table.clone())
+                .await?
+                .columns
+                .into_iter()
+                .map(|c| c.name)
+                .collect::<Vec<_>>();
+
+            let mut writer =
+                ExportWriter::new(output_path.clone(), format.clone(), columns.clone())?;
+            let mut exported = 0i64;
+
+            match scope {
+                ExportScope::CurrentPage => {
+                    let use_page = page.unwrap_or(1).max(1);
+                    let use_limit = limit.unwrap_or(50).max(1);
+                    let resp = db_driver
+                        .get_table_data_chunk(
+                            schema.clone(),
+                            table.clone(),
+                            use_page,
+                            use_limit,
+                            sort_column.clone(),
+                            sort_direction.clone(),
+                            filter.clone(),
+                            order_by.clone(),
+                        )
+                        .await?;
+                    exported +=
+                        writer.write_rows(&resp.data, &columns, Some(&schema), &table, &driver)?;
+                }
+                ExportScope::Filtered | ExportScope::FullTable => {
+                    let filter_for_scope = if matches!(scope, ExportScope::Filtered) {
+                        filter.clone()
+                    } else {
+                        None
+                    };
+                    let order_for_scope = if matches!(scope, ExportScope::Filtered) {
+                        order_by.clone()
+                    } else {
+                        None
+                    };
+                    let sort_col_for_scope = if matches!(scope, ExportScope::Filtered) {
+                        sort_column.clone()
+                    } else {
+                        None
+                    };
+                    let sort_dir_for_scope = if matches!(scope, ExportScope::Filtered) {
+                        sort_direction.clone()
+                    } else {
+                        None
+                    };
+
+                    let mut current_page = 1;
+                    loop {
+                        let resp = db_driver
+                            .get_table_data_chunk(
+                                schema.clone(),
+                                table.clone(),
+                                current_page,
+                                chunk,
+                                sort_col_for_scope.clone(),
+                                sort_dir_for_scope.clone(),
+                                filter_for_scope.clone(),
+                                order_for_scope.clone(),
+                            )
+                            .await?;
+                        if resp.data.is_empty() {
+                            break;
+                        }
+
+                        exported += writer.write_rows(
+                            &resp.data,
+                            &columns,
+                            Some(&schema),
+                            &table,
+                            &driver,
+                        )?;
+                        if exported >= resp.total {
+                            break;
+                        }
+                        current_page += 1;
+                    }
+                }
+            }
+
+            writer.finish()?;
+            Ok(ExportResult {
+                file_path: output_path.to_string_lossy().to_string(),
+                row_count: exported,
+            })
+        }
+    })
+    .await
+}
+
+pub async fn export_table_data_direct(
+    state: &AppState,
+    id: i64,
+    database: Option<String>,
+    schema: String,
+    table: String,
+    driver: String,
+    format: ExportFormat,
+    scope: ExportScope,
+    filter: Option<String>,
+    order_by: Option<String>,
+    sort_column: Option<String>,
+    sort_direction: Option<String>,
+    page: Option<i64>,
+    limit: Option<i64>,
+    file_path: Option<String>,
+    chunk_size: Option<i64>,
+) -> Result<ExportResult, String> {
+    let output_path = resolve_output_path(file_path, &table, extension_for_format(&format))?;
+    let chunk = chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE).max(1);
+
+    super::execute_with_retry_from_app_state(state, id, database, |db_driver| {
         let output_path = output_path.clone();
         let schema = schema.clone();
         let table = table.clone();
@@ -200,6 +358,548 @@ pub async fn export_query_result(
     .await
 }
 
+pub async fn export_query_result_direct(
+    state: &AppState,
+    id: i64,
+    database: Option<String>,
+    sql: String,
+    driver: String,
+    format: ExportFormat,
+    file_path: Option<String>,
+) -> Result<ExportResult, String> {
+    let output_path =
+        resolve_output_path(file_path, "query_result", extension_for_format(&format))?;
+
+    super::execute_with_retry_from_app_state(state, id, database, |db_driver| {
+        let output_path = output_path.clone();
+        let driver = driver.clone();
+        let sql = sql.clone();
+        let format = format.clone();
+        async move {
+            let result = db_driver.execute_query(sql).await?;
+            let columns = result
+                .columns
+                .into_iter()
+                .map(|c| c.name)
+                .collect::<Vec<_>>();
+            let mut writer = ExportWriter::new(output_path.clone(), format, columns.clone())?;
+            let exported = writer.write_rows(&result.data, &columns, None, "query_result", &driver)?;
+            writer.finish()?;
+            Ok(ExportResult {
+                file_path: output_path.to_string_lossy().to_string(),
+                row_count: exported,
+            })
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn import_sql_file(
+    state: State<'_, AppState>,
+    id: i64,
+    database: Option<String>,
+    file_path: String,
+    driver: String,
+) -> Result<ImportSqlResult, String> {
+    let normalized_driver = normalize_driver_name(&driver);
+    let (begin_sql, commit_sql, rollback_sql) =
+        import_transaction_sql(&normalized_driver, &driver)?;
+
+    let import_path = PathBuf::from(file_path.trim());
+    validate_import_path(&import_path)?;
+    validate_import_file_size(&import_path)?;
+
+    let source = fs::read_to_string(&import_path)
+        .map_err(|e| format!("[IMPORT_ERROR] failed to read sql file: {e}"))?;
+    let source = source
+        .strip_prefix('\u{feff}')
+        .unwrap_or(&source)
+        .to_string();
+
+    let import_plan = prepare_import_plan(&source, &normalized_driver)?;
+    if import_plan.units.is_empty() {
+        return Err("[IMPORT_ERROR] SQL file does not contain executable statements".to_string());
+    }
+    if import_plan.units.len() > MAX_IMPORT_STATEMENTS {
+        return Err(format!(
+            "[IMPORT_ERROR] statement count exceeds limit ({} > {})",
+            import_plan.units.len(),
+            MAX_IMPORT_STATEMENTS
+        ));
+    }
+
+    let started_at = std::time::Instant::now();
+    let total_statements = import_plan.units.len() as i64;
+    let use_outer_transaction = !import_plan.script_managed_transaction;
+
+    super::execute_with_retry(&state, id, database, |db_driver| {
+        let import_plan = import_plan.clone();
+        let import_path = import_path.clone();
+        async move {
+            if use_outer_transaction {
+                db_driver
+                    .execute_query(begin_sql.to_string())
+                    .await
+                    .map_err(|e| format!("[IMPORT_ERROR] failed to start transaction: {e}"))?;
+            }
+
+            let mut success_statements = 0i64;
+            for (idx, unit) in import_plan.units.iter().enumerate() {
+                if let Err(e) = db_driver.execute_query(unit.sql.clone()).await {
+                    if use_outer_transaction {
+                        let _ = db_driver.execute_query(rollback_sql.to_string()).await;
+                    }
+                    return Ok(ImportSqlResult {
+                        file_path: import_path.to_string_lossy().to_string(),
+                        total_statements,
+                        success_statements,
+                        failed_at: Some((idx + 1) as i64),
+                        failed_batch: Some(unit.batch_index as i64),
+                        failed_statement_preview: Some(unit.preview.clone()),
+                        error: Some(truncate_error_message(&e)),
+                        time_taken_ms: started_at.elapsed().as_millis() as i64,
+                        rolled_back: use_outer_transaction,
+                    });
+                }
+                success_statements += 1;
+            }
+
+            if use_outer_transaction {
+                if let Err(e) = db_driver.execute_query(commit_sql.to_string()).await {
+                    let _ = db_driver.execute_query(rollback_sql.to_string()).await;
+                    return Ok(ImportSqlResult {
+                        file_path: import_path.to_string_lossy().to_string(),
+                        total_statements,
+                        success_statements,
+                        failed_at: None,
+                        failed_batch: None,
+                        failed_statement_preview: None,
+                        error: Some(format!(
+                            "[IMPORT_ERROR] failed to commit transaction: {}",
+                            truncate_error_message(&e)
+                        )),
+                        time_taken_ms: started_at.elapsed().as_millis() as i64,
+                        rolled_back: true,
+                    });
+                }
+            }
+
+            Ok(ImportSqlResult {
+                file_path: import_path.to_string_lossy().to_string(),
+                total_statements,
+                success_statements: total_statements,
+                failed_at: None,
+                failed_batch: None,
+                failed_statement_preview: None,
+                error: None,
+                time_taken_ms: started_at.elapsed().as_millis() as i64,
+                rolled_back: false,
+            })
+        }
+    })
+    .await
+}
+
+pub async fn import_sql_file_direct(
+    state: &AppState,
+    id: i64,
+    database: Option<String>,
+    file_path: String,
+    driver: String,
+) -> Result<ImportSqlResult, String> {
+    let normalized_driver = normalize_driver_name(&driver);
+    let (begin_sql, commit_sql, rollback_sql) =
+        import_transaction_sql(&normalized_driver, &driver)?;
+
+    let import_path = PathBuf::from(file_path.trim());
+    validate_import_path(&import_path)?;
+    validate_import_file_size(&import_path)?;
+
+    let source = fs::read_to_string(&import_path)
+        .map_err(|e| format!("[IMPORT_ERROR] failed to read sql file: {e}"))?;
+    let source = source
+        .strip_prefix('\u{feff}')
+        .unwrap_or(&source)
+        .to_string();
+
+    let import_plan = prepare_import_plan(&source, &normalized_driver)?;
+    if import_plan.units.is_empty() {
+        return Err("[IMPORT_ERROR] SQL file does not contain executable statements".to_string());
+    }
+    if import_plan.units.len() > MAX_IMPORT_STATEMENTS {
+        return Err(format!(
+            "[IMPORT_ERROR] statement count exceeds limit ({} > {})",
+            import_plan.units.len(),
+            MAX_IMPORT_STATEMENTS
+        ));
+    }
+
+    let started_at = std::time::Instant::now();
+    let total_statements = import_plan.units.len() as i64;
+    let use_outer_transaction = !import_plan.script_managed_transaction;
+
+    super::execute_with_retry_from_app_state(state, id, database, |db_driver| {
+        let import_plan = import_plan.clone();
+        let import_path = import_path.clone();
+        async move {
+            if use_outer_transaction {
+                db_driver
+                    .execute_query(begin_sql.to_string())
+                    .await
+                    .map_err(|e| format!("[IMPORT_ERROR] failed to start transaction: {e}"))?;
+            }
+
+            let mut success_statements = 0i64;
+            for (idx, unit) in import_plan.units.iter().enumerate() {
+                if let Err(e) = db_driver.execute_query(unit.sql.clone()).await {
+                    if use_outer_transaction {
+                        let _ = db_driver.execute_query(rollback_sql.to_string()).await;
+                    }
+                    return Ok(ImportSqlResult {
+                        file_path: import_path.to_string_lossy().to_string(),
+                        total_statements,
+                        success_statements,
+                        failed_at: Some((idx + 1) as i64),
+                        failed_batch: Some(unit.batch_index as i64),
+                        failed_statement_preview: Some(unit.preview.clone()),
+                        error: Some(truncate_error_message(&e)),
+                        time_taken_ms: started_at.elapsed().as_millis() as i64,
+                        rolled_back: use_outer_transaction,
+                    });
+                }
+                success_statements += 1;
+            }
+
+            if use_outer_transaction {
+                if let Err(e) = db_driver.execute_query(commit_sql.to_string()).await {
+                    let _ = db_driver.execute_query(rollback_sql.to_string()).await;
+                    return Ok(ImportSqlResult {
+                        file_path: import_path.to_string_lossy().to_string(),
+                        total_statements,
+                        success_statements,
+                        failed_at: None,
+                        failed_batch: None,
+                        failed_statement_preview: None,
+                        error: Some(format!(
+                            "[IMPORT_ERROR] failed to commit transaction: {}",
+                            truncate_error_message(&e)
+                        )),
+                        time_taken_ms: started_at.elapsed().as_millis() as i64,
+                        rolled_back: true,
+                    });
+                }
+            }
+
+            Ok(ImportSqlResult {
+                file_path: import_path.to_string_lossy().to_string(),
+                total_statements,
+                success_statements: total_statements,
+                failed_at: None,
+                failed_batch: None,
+                failed_statement_preview: None,
+                error: None,
+                time_taken_ms: started_at.elapsed().as_millis() as i64,
+                rolled_back: false,
+            })
+        }
+    })
+    .await
+}
+
+fn import_transaction_sql<'a>(
+    normalized_driver: &'a str,
+    original_driver: &str,
+) -> Result<(&'a str, &'a str, &'a str), String> {
+    match normalized_driver {
+        "mysql" | "mariadb" | "tidb" => Ok(("START TRANSACTION", "COMMIT", "ROLLBACK")),
+        "postgres" | "sqlite" | "duckdb" => Ok(("BEGIN", "COMMIT", "ROLLBACK")),
+        "mssql" => Ok((
+            "BEGIN TRANSACTION",
+            "COMMIT TRANSACTION",
+            "ROLLBACK TRANSACTION",
+        )),
+        "clickhouse" => {
+            Err("[UNSUPPORTED] Driver clickhouse is read-only in this import flow".to_string())
+        }
+        _ => Err(format!(
+            "[UNSUPPORTED] Driver {} is not supported for SQL import",
+            original_driver
+        )),
+    }
+}
+
+fn normalize_driver_name(driver: &str) -> String {
+    let normalized = driver.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "postgresql" | "pgsql" => "postgres".to_string(),
+        _ => normalized,
+    }
+}
+
+fn prepare_import_plan(sql: &str, normalized_driver: &str) -> Result<PreparedImportPlan, String> {
+    let units = if normalized_driver == "mssql" {
+        let batches = parse_mssql_batches(sql)?;
+        batches
+            .into_iter()
+            .enumerate()
+            .map(|(idx, batch)| ImportExecutionUnit {
+                preview: build_statement_preview(&batch),
+                sql: batch,
+                batch_index: idx + 1,
+            })
+            .collect::<Vec<_>>()
+    } else {
+        parse_sql_statements(sql, normalized_driver)?
+            .into_iter()
+            .enumerate()
+            .map(|(idx, statement)| ImportExecutionUnit {
+                preview: build_statement_preview(&statement),
+                sql: statement,
+                batch_index: idx + 1,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let script_managed_transaction = units
+        .iter()
+        .any(|unit| statement_controls_transaction(&unit.sql, normalized_driver));
+
+    Ok(PreparedImportPlan {
+        units,
+        script_managed_transaction,
+    })
+}
+
+fn build_statement_preview(statement: &str) -> String {
+    let compact = statement.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut preview = String::new();
+    for (idx, ch) in compact.chars().enumerate() {
+        if idx >= 160 {
+            preview.push_str("...");
+            break;
+        }
+        preview.push(ch);
+    }
+    if preview.is_empty() {
+        "<empty>".to_string()
+    } else {
+        preview
+    }
+}
+
+fn leading_sql_tokens(sql: &str, max_tokens: usize) -> Vec<String> {
+    let chars: Vec<char> = sql.chars().collect();
+    let mut tokens = Vec::new();
+    let mut i = 0usize;
+
+    while i < chars.len() && tokens.len() < max_tokens {
+        let ch = chars[i];
+        let next = chars.get(i + 1).copied();
+
+        if ch.is_whitespace() || ch == ';' {
+            i += 1;
+            continue;
+        }
+
+        if ch == '-' && next == Some('-') {
+            i += 2;
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+
+        if ch == '/' && next == Some('*') {
+            i += 2;
+            while i + 1 < chars.len() && !(chars[i] == '*' && chars[i + 1] == '/') {
+                i += 1;
+            }
+            if i + 1 < chars.len() {
+                i += 2;
+            }
+            continue;
+        }
+
+        if ch.is_ascii_alphabetic() {
+            let start = i;
+            i += 1;
+            while i < chars.len() && (chars[i].is_ascii_alphabetic() || chars[i] == '_') {
+                i += 1;
+            }
+            tokens.push(
+                chars[start..i]
+                    .iter()
+                    .collect::<String>()
+                    .to_ascii_lowercase(),
+            );
+            continue;
+        }
+
+        i += 1;
+    }
+
+    tokens
+}
+
+fn statement_controls_transaction(statement: &str, normalized_driver: &str) -> bool {
+    let tokens = leading_sql_tokens(statement, 2);
+    if tokens.is_empty() {
+        return false;
+    }
+
+    let first = tokens[0].as_str();
+    let second = tokens.get(1).map(|s| s.as_str()).unwrap_or("");
+
+    match first {
+        "commit" | "rollback" => true,
+        "start" => second == "transaction",
+        "begin" => {
+            if normalized_driver == "mssql" {
+                second == "transaction" || second == "tran"
+            } else {
+                true
+            }
+        }
+        _ => false,
+    }
+}
+
+fn parse_mssql_go_line_count(line: &str) -> Option<usize> {
+    let trimmed = line.trim();
+    let prefix = trimmed.get(..2)?;
+    if !prefix.eq_ignore_ascii_case("go") {
+        return None;
+    }
+    let rest = trimmed[2..].trim();
+    if rest.is_empty() {
+        return Some(1);
+    }
+    if rest.chars().all(|ch| ch.is_ascii_digit()) {
+        let count = rest.parse::<usize>().ok()?;
+        if count > 0 {
+            return Some(count);
+        }
+    }
+    None
+}
+
+fn update_mssql_line_state(state: &mut SqlScanState, line: &str) {
+    let chars: Vec<char> = line.chars().collect();
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        match state {
+            SqlScanState::Normal => {
+                let ch = chars[i];
+                let next = chars.get(i + 1).copied();
+                if ch == '-' && next == Some('-') {
+                    *state = SqlScanState::LineComment;
+                    break;
+                }
+                if ch == '/' && next == Some('*') {
+                    *state = SqlScanState::BlockComment;
+                    i += 2;
+                    continue;
+                }
+                if ch == '\'' {
+                    *state = SqlScanState::SingleQuoted;
+                    i += 1;
+                    continue;
+                }
+                if ch == '"' {
+                    *state = SqlScanState::DoubleQuoted;
+                    i += 1;
+                    continue;
+                }
+                i += 1;
+            }
+            SqlScanState::SingleQuoted => {
+                if chars[i] == '\'' {
+                    if chars.get(i + 1) == Some(&'\'') {
+                        i += 2;
+                        continue;
+                    }
+                    *state = SqlScanState::Normal;
+                }
+                i += 1;
+            }
+            SqlScanState::DoubleQuoted => {
+                if chars[i] == '"' {
+                    if chars.get(i + 1) == Some(&'"') {
+                        i += 2;
+                        continue;
+                    }
+                    *state = SqlScanState::Normal;
+                }
+                i += 1;
+            }
+            SqlScanState::BlockComment => {
+                if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
+                    *state = SqlScanState::Normal;
+                    i += 2;
+                    continue;
+                }
+                i += 1;
+            }
+            SqlScanState::LineComment => {
+                break;
+            }
+            SqlScanState::BacktickQuoted | SqlScanState::DollarQuoted(_) => {
+                *state = SqlScanState::Normal;
+            }
+        }
+    }
+
+    if matches!(state, SqlScanState::LineComment) {
+        *state = SqlScanState::Normal;
+    }
+}
+
+fn parse_mssql_batches(sql: &str) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut state = SqlScanState::Normal;
+
+    for line in sql.split_inclusive('\n') {
+        if matches!(state, SqlScanState::Normal) {
+            let plain_line = line.trim_end_matches(|ch| ch == '\r' || ch == '\n');
+            if let Some(go_count) = parse_mssql_go_line_count(plain_line) {
+                let statement = current.trim();
+                if !statement.is_empty() {
+                    for _ in 0..go_count {
+                        out.push(statement.to_string());
+                    }
+                }
+                current.clear();
+                continue;
+            }
+        }
+
+        update_mssql_line_state(&mut state, line);
+        current.push_str(line);
+    }
+
+    match state {
+        SqlScanState::Normal | SqlScanState::LineComment => {}
+        SqlScanState::BlockComment => {
+            return Err("[IMPORT_ERROR] Unterminated block comment in SQL file".to_string());
+        }
+        SqlScanState::SingleQuoted
+        | SqlScanState::DoubleQuoted
+        | SqlScanState::BacktickQuoted
+        | SqlScanState::DollarQuoted(_) => {
+            return Err("[IMPORT_ERROR] Unterminated string literal in SQL file".to_string());
+        }
+    }
+
+    let tail = current.trim();
+    if !tail.is_empty() {
+        out.push(tail.to_string());
+    }
+    Ok(out)
+}
+
 fn extension_for_format(format: &ExportFormat) -> &'static str {
     match format {
         ExportFormat::Csv => "csv",
@@ -230,6 +930,250 @@ fn resolve_output_path(
         fs::create_dir_all(parent).map_err(|e| format!("[EXPORT_ERROR] create dir failed: {e}"))?;
     }
     Ok(path)
+}
+
+fn validate_import_path(path: &Path) -> Result<(), String> {
+    if path.as_os_str().is_empty() {
+        return Err("[IMPORT_ERROR] Invalid import path".to_string());
+    }
+    if path.is_dir() {
+        return Err("[IMPORT_ERROR] Import path points to a directory".to_string());
+    }
+    if !path.exists() {
+        return Err("[IMPORT_ERROR] Import file does not exist".to_string());
+    }
+    let Some(ext) = path.extension().and_then(|v| v.to_str()) else {
+        return Err("[IMPORT_ERROR] Import file must use .sql extension".to_string());
+    };
+    if !ext.eq_ignore_ascii_case("sql") {
+        return Err("[IMPORT_ERROR] Import file must use .sql extension".to_string());
+    }
+    Ok(())
+}
+
+fn validate_import_file_size(path: &Path) -> Result<(), String> {
+    let metadata = fs::metadata(path)
+        .map_err(|e| format!("[IMPORT_ERROR] failed to read file metadata: {e}"))?;
+    if metadata.len() > MAX_IMPORT_FILE_SIZE_BYTES {
+        return Err(format!(
+            "[IMPORT_ERROR] file is too large (max {} bytes)",
+            MAX_IMPORT_FILE_SIZE_BYTES
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+enum SqlScanState {
+    Normal,
+    SingleQuoted,
+    DoubleQuoted,
+    BacktickQuoted,
+    DollarQuoted(String),
+    LineComment,
+    BlockComment,
+}
+
+fn parse_sql_statements(sql: &str, driver: &str) -> Result<Vec<String>, String> {
+    let mysql_style_hash_comment = matches!(driver, "mysql" | "mariadb" | "tidb");
+    let chars: Vec<char> = sql.chars().collect();
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut state = SqlScanState::Normal;
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        match &state {
+            SqlScanState::Normal => {
+                let ch = chars[i];
+                let next = chars.get(i + 1).copied();
+
+                if ch == '-' && next == Some('-') {
+                    state = SqlScanState::LineComment;
+                    i += 2;
+                    continue;
+                }
+                if mysql_style_hash_comment && ch == '#' {
+                    state = SqlScanState::LineComment;
+                    i += 1;
+                    continue;
+                }
+                if ch == '/' && next == Some('*') {
+                    state = SqlScanState::BlockComment;
+                    i += 2;
+                    continue;
+                }
+                if ch == '\'' {
+                    current.push(ch);
+                    state = SqlScanState::SingleQuoted;
+                    i += 1;
+                    continue;
+                }
+                if ch == '"' {
+                    current.push(ch);
+                    state = SqlScanState::DoubleQuoted;
+                    i += 1;
+                    continue;
+                }
+                if ch == '`' {
+                    current.push(ch);
+                    state = SqlScanState::BacktickQuoted;
+                    i += 1;
+                    continue;
+                }
+                if ch == '$' {
+                    if let Some((tag, end_idx)) = parse_dollar_quote_tag(&chars, i) {
+                        current.push_str(&tag);
+                        state = SqlScanState::DollarQuoted(tag);
+                        i = end_idx + 1;
+                        continue;
+                    }
+                }
+                if ch == ';' {
+                    let statement = current.trim();
+                    if !statement.is_empty() {
+                        out.push(statement.to_string());
+                    }
+                    current.clear();
+                    i += 1;
+                    continue;
+                }
+                current.push(ch);
+                i += 1;
+            }
+            SqlScanState::SingleQuoted => {
+                let ch = chars[i];
+                current.push(ch);
+                if ch == '\\' {
+                    if let Some(next) = chars.get(i + 1) {
+                        current.push(*next);
+                        i += 2;
+                        continue;
+                    }
+                }
+                if ch == '\'' {
+                    if chars.get(i + 1) == Some(&'\'') {
+                        current.push('\'');
+                        i += 2;
+                        continue;
+                    }
+                    state = SqlScanState::Normal;
+                }
+                i += 1;
+            }
+            SqlScanState::DoubleQuoted => {
+                let ch = chars[i];
+                current.push(ch);
+                if ch == '"' {
+                    if chars.get(i + 1) == Some(&'"') {
+                        current.push('"');
+                        i += 2;
+                        continue;
+                    }
+                    state = SqlScanState::Normal;
+                }
+                i += 1;
+            }
+            SqlScanState::BacktickQuoted => {
+                let ch = chars[i];
+                current.push(ch);
+                if ch == '`' {
+                    if chars.get(i + 1) == Some(&'`') {
+                        current.push('`');
+                        i += 2;
+                        continue;
+                    }
+                    state = SqlScanState::Normal;
+                }
+                i += 1;
+            }
+            SqlScanState::DollarQuoted(tag) => {
+                if starts_with_tag(&chars, i, tag) {
+                    current.push_str(tag);
+                    i += tag.chars().count();
+                    state = SqlScanState::Normal;
+                    continue;
+                }
+                current.push(chars[i]);
+                i += 1;
+            }
+            SqlScanState::LineComment => {
+                if chars[i] == '\n' {
+                    current.push('\n');
+                    state = SqlScanState::Normal;
+                }
+                i += 1;
+            }
+            SqlScanState::BlockComment => {
+                if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
+                    state = SqlScanState::Normal;
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+        }
+    }
+
+    match state {
+        SqlScanState::Normal | SqlScanState::LineComment => {}
+        SqlScanState::BlockComment => {
+            return Err("[IMPORT_ERROR] Unterminated block comment in SQL file".to_string());
+        }
+        SqlScanState::SingleQuoted
+        | SqlScanState::DoubleQuoted
+        | SqlScanState::BacktickQuoted
+        | SqlScanState::DollarQuoted(_) => {
+            return Err("[IMPORT_ERROR] Unterminated string literal in SQL file".to_string());
+        }
+    }
+
+    let tail = current.trim();
+    if !tail.is_empty() {
+        out.push(tail.to_string());
+    }
+    Ok(out)
+}
+
+fn parse_dollar_quote_tag(chars: &[char], start: usize) -> Option<(String, usize)> {
+    if chars.get(start) != Some(&'$') {
+        return None;
+    }
+    let mut idx = start + 1;
+    while idx < chars.len() && (chars[idx].is_ascii_alphanumeric() || chars[idx] == '_') {
+        idx += 1;
+    }
+    if idx < chars.len() && chars[idx] == '$' {
+        let tag: String = chars[start..=idx].iter().collect();
+        return Some((tag, idx));
+    }
+    None
+}
+
+fn starts_with_tag(chars: &[char], idx: usize, tag: &str) -> bool {
+    let tag_chars: Vec<char> = tag.chars().collect();
+    if idx + tag_chars.len() > chars.len() {
+        return false;
+    }
+    for (offset, ch) in tag_chars.iter().enumerate() {
+        if chars[idx + offset] != *ch {
+            return false;
+        }
+    }
+    true
+}
+
+fn truncate_error_message(message: &str) -> String {
+    const MAX_CHARS: usize = 500;
+    let mut out = String::new();
+    for (idx, ch) in message.chars().enumerate() {
+        if idx >= MAX_CHARS {
+            out.push_str("...");
+            break;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 fn validate_output_path(path: &PathBuf) -> Result<(), String> {
@@ -508,7 +1452,10 @@ mod tests {
             sql_value(&Value::String("O'Reilly".to_string())),
             "'O''Reilly'"
         );
-        assert_eq!(sql_value(&Value::Number(serde_json::Number::from(42))), "42");
+        assert_eq!(
+            sql_value(&Value::Number(serde_json::Number::from(42))),
+            "42"
+        );
         assert_eq!(sql_value(&Value::Bool(false)), "FALSE");
     }
 
@@ -612,5 +1559,133 @@ mod tests {
             .unwrap_err();
         assert_eq!(err, "[EXPORT_ERROR] row is not a JSON object");
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn parse_sql_statements_handles_quotes_and_comments() {
+        let sql = r#"
+            -- comment 1
+            INSERT INTO users (name, note) VALUES ('alice', 'hello;world');
+            /* block comment ; ; */
+            INSERT INTO users (name) VALUES ("bob");
+            # mysql style comment
+            INSERT INTO users(name) VALUES ($tag$semi;inside$tag$);
+        "#;
+
+        let statements = parse_sql_statements(sql, "mysql").unwrap();
+        assert_eq!(statements.len(), 3);
+        assert!(statements[0].starts_with("INSERT INTO users"));
+        assert!(statements[1].contains("\"bob\""));
+        assert!(statements[2].contains("$tag$semi;inside$tag$"));
+    }
+
+    #[test]
+    fn parse_sql_statements_rejects_unterminated_block_comment() {
+        let err = parse_sql_statements("INSERT INTO t VALUES (1); /*", "mysql").unwrap_err();
+        assert!(err.contains("Unterminated block comment"));
+    }
+
+    #[test]
+    fn parse_sql_statements_preserves_hash_for_postgres() {
+        let sql = "SELECT 1 # 2;\nSELECT '#not_comment';";
+        let statements = parse_sql_statements(sql, "postgres").unwrap();
+        assert_eq!(statements.len(), 2);
+        assert_eq!(statements[0], "SELECT 1 # 2");
+        assert_eq!(statements[1], "SELECT '#not_comment'");
+    }
+
+    #[test]
+    fn parse_mssql_batches_splits_on_go_lines_only() {
+        let sql = r#"
+            SELECT 1;
+            GO
+            SELECT 'GO should stay in string';
+            -- GO in comment should not split
+            SELECT 2;
+            GO
+            /* GO in block comment
+               GO
+            */
+            SELECT 3;
+        "#;
+
+        let batches = parse_mssql_batches(sql).unwrap();
+        assert_eq!(batches.len(), 3);
+        assert!(batches[0].contains("SELECT 1"));
+        assert!(batches[1].contains("SELECT 'GO should stay in string'"));
+        assert!(batches[2].contains("SELECT 3"));
+    }
+
+    #[test]
+    fn parse_mssql_batches_supports_go_repeat_count() {
+        let sql = "SELECT 1\nGO 3\nSELECT 2\nGO";
+        let batches = parse_mssql_batches(sql).unwrap();
+        assert_eq!(batches.len(), 4);
+        assert_eq!(batches[0], "SELECT 1");
+        assert_eq!(batches[1], "SELECT 1");
+        assert_eq!(batches[2], "SELECT 1");
+        assert_eq!(batches[3], "SELECT 2");
+    }
+
+    #[test]
+    fn statement_controls_transaction_detects_driver_specific_tokens() {
+        assert!(statement_controls_transaction("BEGIN TRANSACTION", "mssql"));
+        assert!(!statement_controls_transaction("BEGIN TRY", "mssql"));
+        assert!(statement_controls_transaction("BEGIN", "sqlite"));
+        assert!(statement_controls_transaction("START TRANSACTION", "mysql"));
+        assert!(statement_controls_transaction("ROLLBACK", "postgres"));
+    }
+
+    #[test]
+    fn prepare_import_plan_disables_outer_tx_when_script_controls_it() {
+        let sqlite_plan =
+            prepare_import_plan("BEGIN;\nCREATE TABLE t(id INTEGER);\nCOMMIT;", "sqlite").unwrap();
+        assert_eq!(sqlite_plan.units.len(), 3);
+        assert!(sqlite_plan.script_managed_transaction);
+
+        let mssql_plan = prepare_import_plan("SELECT 1\nGO\nSELECT 2", "mssql").unwrap();
+        assert_eq!(mssql_plan.units.len(), 2);
+        assert!(!mssql_plan.script_managed_transaction);
+    }
+
+    #[test]
+    fn import_transaction_sql_maps_per_driver() {
+        assert_eq!(
+            import_transaction_sql("mysql", "mysql").unwrap(),
+            ("START TRANSACTION", "COMMIT", "ROLLBACK")
+        );
+        assert_eq!(
+            import_transaction_sql("postgres", "postgres").unwrap(),
+            ("BEGIN", "COMMIT", "ROLLBACK")
+        );
+        assert_eq!(
+            import_transaction_sql("postgres", "postgresql").unwrap(),
+            ("BEGIN", "COMMIT", "ROLLBACK")
+        );
+        assert_eq!(
+            import_transaction_sql("mssql", "mssql").unwrap(),
+            (
+                "BEGIN TRANSACTION",
+                "COMMIT TRANSACTION",
+                "ROLLBACK TRANSACTION"
+            )
+        );
+        assert!(import_transaction_sql("clickhouse", "clickhouse").is_err());
+    }
+
+    #[test]
+    fn normalize_driver_name_maps_aliases() {
+        assert_eq!(normalize_driver_name("postgres"), "postgres");
+        assert_eq!(normalize_driver_name("postgresql"), "postgres");
+        assert_eq!(normalize_driver_name("pgsql"), "postgres");
+        assert_eq!(normalize_driver_name("mysql"), "mysql");
+    }
+
+    #[test]
+    fn truncate_error_message_caps_length() {
+        let source = "x".repeat(600);
+        let truncated = truncate_error_message(&source);
+        assert!(truncated.len() <= 503);
+        assert!(truncated.ends_with("..."));
     }
 }

@@ -70,6 +70,40 @@ export type Driver =
   | "mariadb"
   | "clickhouse"
   | "mssql";
+
+export type ImportDriverCapability =
+  | "supported"
+  | "read_only_not_supported"
+  | "unsupported";
+
+export const normalizeImportDriver = (driver: string): string => {
+  const normalized = (driver || "").trim().toLowerCase();
+  if (normalized === "postgresql" || normalized === "pgsql") {
+    return "postgres";
+  }
+  return normalized;
+};
+
+export const getImportDriverCapability = (
+  driver: string,
+): ImportDriverCapability => {
+  const normalized = normalizeImportDriver(driver);
+  if (normalized === "clickhouse") {
+    return "read_only_not_supported";
+  }
+  if (
+    normalized === "postgres" ||
+    normalized === "mysql" ||
+    normalized === "mariadb" ||
+    normalized === "tidb" ||
+    normalized === "sqlite" ||
+    normalized === "duckdb" ||
+    normalized === "mssql"
+  ) {
+    return "supported";
+  }
+  return "unsupported";
+};
 export interface ConnectionForm {
   driver: Driver;
   name?: string;
@@ -298,6 +332,18 @@ export interface ExportResult {
   rowCount: number;
 }
 
+export interface ImportSqlResult {
+  filePath: string;
+  totalStatements: number;
+  successStatements: number;
+  failedAt?: number;
+  failedBatch?: number;
+  failedStatementPreview?: string;
+  error?: string;
+  timeTakenMs: number;
+  rolledBack: boolean;
+}
+
 export const api = {
   query: {
     execute: (
@@ -426,6 +472,12 @@ export const api = {
       format: TransferFormat;
       filePath?: string;
     }) => invoke<ExportResult>("export_query_result", params),
+    importSqlFile: (params: {
+      id: number;
+      database?: string;
+      filePath: string;
+      driver: string;
+    }) => invoke<ImportSqlResult>("import_sql_file", params),
   },
   connections: {
     list: () => invoke<any[]>("get_connections"),
@@ -473,7 +525,9 @@ export const api = {
       setDefault: (id: number) =>
         invoke<void>("ai_set_default_provider", { id }),
       clearApiKey: (providerType: string) =>
-        invoke<void>("ai_clear_provider_api_key", { provider_type: providerType }),
+        invoke<void>("ai_clear_provider_api_key", {
+          provider_type: providerType,
+        }),
     },
     chat: {
       start: (request: AIChatRequest) =>
