@@ -600,13 +600,8 @@ export function ConnectionList({
   const handlePickSshKeyFile = async () => {
     const selectedPath = await pickSingleFile({
       title: t("connection.dialog.sshKeyFileDialogTitle"),
-      filters: [
-        {
-          name: t("connection.dialog.fileFilterPem"),
-          extensions: ["pem", "key", "ppk"],
-        },
-        { name: t("connection.dialog.fileFilterAll"), extensions: ["*"] },
-      ],
+      // SSH private keys are often extensionless (for example ~/.ssh/id_rsa),
+      // so filtering by extension can hide valid keys in the native picker.
     });
     if (!selectedPath) return;
     setForm((f) => ({ ...f, sshKeyPath: selectedPath }));
