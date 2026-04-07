@@ -88,6 +88,8 @@ import {
   sortRows,
 } from "./tableView/utils";
 import { ComplexValueViewer } from "./ComplexValueViewer";
+import { ColumnAutocompleteInput } from "./tableView/ColumnAutocompleteInput";
+import type { ColumnAutocompleteOption } from "./tableView/columnAutocomplete";
 import { toast } from "sonner";
 
 interface PendingChange {
@@ -244,6 +246,16 @@ export function TableView({
   const [columnComments, setColumnComments] = useState<Record<string, string>>(
     {},
   );
+  const columnAutocompleteOptions = useMemo<ColumnAutocompleteOption[]>(() => {
+    if (tableColumns.length > 0) {
+      return tableColumns.map((column) => ({
+        name: column.name,
+        type: column.type,
+      }));
+    }
+
+    return columns.map((column) => ({ name: column }));
+  }, [columns, tableColumns]);
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1833,32 +1845,24 @@ export function TableView({
             <div className="pt-1 border-t border-border/40 flex items-center gap-2">
               <div className="relative flex-1 min-w-0">
                 <Filter className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  type="text"
+                <ColumnAutocompleteInput
                   placeholder="WHERE ..."
                   className="pl-8 h-7 w-full font-mono text-xs"
                   value={whereInput}
-                  onChange={(e) => setWhereInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      onFilterChange(whereInput, orderByInput);
-                    }
-                  }}
+                  onValueChange={setWhereInput}
+                  onSubmit={() => onFilterChange(whereInput, orderByInput)}
+                  options={columnAutocompleteOptions}
                 />
               </div>
               <div className="relative flex-1 min-w-0">
                 <ArrowUpDown className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  type="text"
+                <ColumnAutocompleteInput
                   placeholder="ORDER BY ..."
                   className="pl-8 h-7 w-full font-mono text-xs"
                   value={orderByInput}
-                  onChange={(e) => setOrderByInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      onFilterChange(whereInput, orderByInput);
-                    }
-                  }}
+                  onValueChange={setOrderByInput}
+                  onSubmit={() => onFilterChange(whereInput, orderByInput)}
+                  options={columnAutocompleteOptions}
                 />
               </div>
               {tableContext && mutabilityHint && (
