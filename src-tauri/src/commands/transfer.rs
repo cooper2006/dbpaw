@@ -1,9 +1,11 @@
+use crate::db::drivers::DatabaseDriver;
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tauri::State;
 
 const DEFAULT_CHUNK_SIZE: i64 = 2000;
@@ -62,6 +64,102 @@ struct PreparedImportPlan {
     script_managed_transaction: bool,
 }
 
+async fn do_table_export(
+    db_driver: Arc<dyn DatabaseDriver>,
+    output_path: PathBuf,
+    schema: String,
+    table: String,
+    driver: String,
+    format: ExportFormat,
+    scope: ExportScope,
+    filter: Option<String>,
+    order_by: Option<String>,
+    sort_column: Option<String>,
+    sort_direction: Option<String>,
+    page: Option<i64>,
+    limit: Option<i64>,
+    chunk: i64,
+) -> Result<ExportResult, String> {
+    let mut writer = ExportWriter::new(output_path.clone(), format.clone())?;
+    let mut exported = 0i64;
+
+    if matches!(format, ExportFormat::SqlDdl | ExportFormat::SqlFull) {
+        let ddl = db_driver
+            .get_table_ddl(schema.clone(), table.clone())
+            .await?;
+        writer.write_ddl(&ddl)?;
+    }
+
+    if !matches!(format, ExportFormat::SqlDdl) {
+        let columns: Vec<String> = db_driver
+            .get_table_metadata(schema.clone(), table.clone())
+            .await?
+            .columns
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+
+        writer.write_csv_header(&columns)?;
+
+        match scope {
+            ExportScope::CurrentPage => {
+                let resp = db_driver
+                    .get_table_data_chunk(
+                        schema.clone(),
+                        table.clone(),
+                        page.unwrap_or(1).max(1),
+                        limit.unwrap_or(50).max(1),
+                        sort_column,
+                        sort_direction,
+                        filter,
+                        order_by,
+                    )
+                    .await?;
+                exported +=
+                    writer.write_rows(&resp.data, &columns, Some(&schema), &table, &driver)?;
+            }
+            ExportScope::Filtered | ExportScope::FullTable => {
+                let (eff_filter, eff_order, eff_sort_col, eff_sort_dir) =
+                    if matches!(scope, ExportScope::Filtered) {
+                        (filter, order_by, sort_column, sort_direction)
+                    } else {
+                        (None, None, None, None)
+                    };
+                let mut current_page = 1;
+                loop {
+                    let resp = db_driver
+                        .get_table_data_chunk(
+                            schema.clone(),
+                            table.clone(),
+                            current_page,
+                            chunk,
+                            eff_sort_col.clone(),
+                            eff_sort_dir.clone(),
+                            eff_filter.clone(),
+                            eff_order.clone(),
+                        )
+                        .await?;
+                    if resp.data.is_empty() {
+                        break;
+                    }
+                    exported +=
+                        writer.write_rows(&resp.data, &columns, Some(&schema), &table, &driver)?;
+                    if exported >= resp.total {
+                        break;
+                    }
+                    current_page += 1;
+                }
+            }
+        }
+    }
+
+    writer.finish()?;
+    Ok(ExportResult {
+        file_path: output_path.to_string_lossy().to_string(),
+        row_count: exported,
+    })
+}
+
 #[tauri::command]
 pub async fn export_table_data(
     state: State<'_, AppState>,
@@ -82,9 +180,7 @@ pub async fn export_table_data(
     chunk_size: Option<i64>,
 ) -> Result<ExportResult, String> {
     let output_path = resolve_output_path(file_path, &table, extension_for_format(&format))?;
-
     let chunk = chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE).max(1);
-
     super::execute_with_retry(&state, id, database, |db_driver| {
         let output_path = output_path.clone();
         let schema = schema.clone();
@@ -97,111 +193,23 @@ pub async fn export_table_data(
         let scope = scope.clone();
         let format = format.clone();
         async move {
-            let columns = db_driver
-                .get_table_metadata(schema.clone(), table.clone())
-                .await?
-                .columns
-                .into_iter()
-                .map(|c| c.name)
-                .collect::<Vec<_>>();
-
-            let mut writer =
-                ExportWriter::new(output_path.clone(), format.clone(), columns.clone())?;
-            let mut exported = 0i64;
-
-            if matches!(format, ExportFormat::SqlDdl | ExportFormat::SqlFull) {
-                let ddl = db_driver
-                    .get_table_ddl(schema.clone(), table.clone())
-                    .await?;
-                writer.write_ddl(&ddl)?;
-            }
-
-            if !matches!(format, ExportFormat::SqlDdl) {
-                match scope {
-                    ExportScope::CurrentPage => {
-                        let use_page = page.unwrap_or(1).max(1);
-                        let use_limit = limit.unwrap_or(50).max(1);
-                        let resp = db_driver
-                            .get_table_data_chunk(
-                                schema.clone(),
-                                table.clone(),
-                                use_page,
-                                use_limit,
-                                sort_column.clone(),
-                                sort_direction.clone(),
-                                filter.clone(),
-                                order_by.clone(),
-                            )
-                            .await?;
-                        exported += writer.write_rows(
-                            &resp.data,
-                            &columns,
-                            Some(&schema),
-                            &table,
-                            &driver,
-                        )?;
-                    }
-                    ExportScope::Filtered | ExportScope::FullTable => {
-                        let filter_for_scope = if matches!(scope, ExportScope::Filtered) {
-                            filter.clone()
-                        } else {
-                            None
-                        };
-                        let order_for_scope = if matches!(scope, ExportScope::Filtered) {
-                            order_by.clone()
-                        } else {
-                            None
-                        };
-                        let sort_col_for_scope = if matches!(scope, ExportScope::Filtered) {
-                            sort_column.clone()
-                        } else {
-                            None
-                        };
-                        let sort_dir_for_scope = if matches!(scope, ExportScope::Filtered) {
-                            sort_direction.clone()
-                        } else {
-                            None
-                        };
-
-                        let mut current_page = 1;
-                        loop {
-                            let resp = db_driver
-                                .get_table_data_chunk(
-                                    schema.clone(),
-                                    table.clone(),
-                                    current_page,
-                                    chunk,
-                                    sort_col_for_scope.clone(),
-                                    sort_dir_for_scope.clone(),
-                                    filter_for_scope.clone(),
-                                    order_for_scope.clone(),
-                                )
-                                .await?;
-                            if resp.data.is_empty() {
-                                break;
-                            }
-
-                            exported += writer.write_rows(
-                                &resp.data,
-                                &columns,
-                                Some(&schema),
-                                &table,
-                                &driver,
-                            )?;
-                            if exported >= resp.total {
-                                break;
-                            }
-                            current_page += 1;
-                        }
-                    }
-                }
-            }
-
-            writer.finish()?;
-            Ok(ExportResult {
-                file_path: output_path.to_string_lossy().to_string(),
-                row_count: exported,
-            })
+            do_table_export(
+                db_driver,
+                output_path,
+                schema,
+                table,
+                driver,
+                format,
+                scope,
+                filter,
+                order_by,
+                sort_column,
+                sort_direction,
+                page,
+                limit,
+                chunk,
+            )
+            .await
         }
     })
     .await
@@ -227,7 +235,6 @@ pub async fn export_table_data_direct(
 ) -> Result<ExportResult, String> {
     let output_path = resolve_output_path(file_path, &table, extension_for_format(&format))?;
     let chunk = chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE).max(1);
-
     super::execute_with_retry_from_app_state(state, id, database, |db_driver| {
         let output_path = output_path.clone();
         let schema = schema.clone();
@@ -240,111 +247,23 @@ pub async fn export_table_data_direct(
         let scope = scope.clone();
         let format = format.clone();
         async move {
-            let columns = db_driver
-                .get_table_metadata(schema.clone(), table.clone())
-                .await?
-                .columns
-                .into_iter()
-                .map(|c| c.name)
-                .collect::<Vec<_>>();
-
-            let mut writer =
-                ExportWriter::new(output_path.clone(), format.clone(), columns.clone())?;
-            let mut exported = 0i64;
-
-            if matches!(format, ExportFormat::SqlDdl | ExportFormat::SqlFull) {
-                let ddl = db_driver
-                    .get_table_ddl(schema.clone(), table.clone())
-                    .await?;
-                writer.write_ddl(&ddl)?;
-            }
-
-            if !matches!(format, ExportFormat::SqlDdl) {
-                match scope {
-                    ExportScope::CurrentPage => {
-                        let use_page = page.unwrap_or(1).max(1);
-                        let use_limit = limit.unwrap_or(50).max(1);
-                        let resp = db_driver
-                            .get_table_data_chunk(
-                                schema.clone(),
-                                table.clone(),
-                                use_page,
-                                use_limit,
-                                sort_column.clone(),
-                                sort_direction.clone(),
-                                filter.clone(),
-                                order_by.clone(),
-                            )
-                            .await?;
-                        exported += writer.write_rows(
-                            &resp.data,
-                            &columns,
-                            Some(&schema),
-                            &table,
-                            &driver,
-                        )?;
-                    }
-                    ExportScope::Filtered | ExportScope::FullTable => {
-                        let filter_for_scope = if matches!(scope, ExportScope::Filtered) {
-                            filter.clone()
-                        } else {
-                            None
-                        };
-                        let order_for_scope = if matches!(scope, ExportScope::Filtered) {
-                            order_by.clone()
-                        } else {
-                            None
-                        };
-                        let sort_col_for_scope = if matches!(scope, ExportScope::Filtered) {
-                            sort_column.clone()
-                        } else {
-                            None
-                        };
-                        let sort_dir_for_scope = if matches!(scope, ExportScope::Filtered) {
-                            sort_direction.clone()
-                        } else {
-                            None
-                        };
-
-                        let mut current_page = 1;
-                        loop {
-                            let resp = db_driver
-                                .get_table_data_chunk(
-                                    schema.clone(),
-                                    table.clone(),
-                                    current_page,
-                                    chunk,
-                                    sort_col_for_scope.clone(),
-                                    sort_dir_for_scope.clone(),
-                                    filter_for_scope.clone(),
-                                    order_for_scope.clone(),
-                                )
-                                .await?;
-                            if resp.data.is_empty() {
-                                break;
-                            }
-
-                            exported += writer.write_rows(
-                                &resp.data,
-                                &columns,
-                                Some(&schema),
-                                &table,
-                                &driver,
-                            )?;
-                            if exported >= resp.total {
-                                break;
-                            }
-                            current_page += 1;
-                        }
-                    }
-                }
-            }
-
-            writer.finish()?;
-            Ok(ExportResult {
-                file_path: output_path.to_string_lossy().to_string(),
-                row_count: exported,
-            })
+            do_table_export(
+                db_driver,
+                output_path,
+                schema,
+                table,
+                driver,
+                format,
+                scope,
+                filter,
+                order_by,
+                sort_column,
+                sort_direction,
+                page,
+                limit,
+                chunk,
+            )
+            .await
         }
     })
     .await
@@ -375,7 +294,8 @@ pub async fn export_query_result(
                 .into_iter()
                 .map(|c| c.name)
                 .collect::<Vec<_>>();
-            let mut writer = ExportWriter::new(output_path.clone(), format, columns.clone())?;
+            let mut writer = ExportWriter::new(output_path.clone(), format)?;
+            writer.write_csv_header(&columns)?;
             let exported =
                 writer.write_rows(&result.data, &columns, None, "query_result", &driver)?;
             writer.finish()?;
@@ -412,7 +332,8 @@ pub async fn export_query_result_direct(
                 .into_iter()
                 .map(|c| c.name)
                 .collect::<Vec<_>>();
-            let mut writer = ExportWriter::new(output_path.clone(), format, columns.clone())?;
+            let mut writer = ExportWriter::new(output_path.clone(), format)?;
+            writer.write_csv_header(&columns)?;
             let exported =
                 writer.write_rows(&result.data, &columns, None, "query_result", &driver)?;
             writer.finish()?;
@@ -1263,28 +1184,15 @@ struct ExportWriter {
 }
 
 impl ExportWriter {
-    fn new(path: PathBuf, format: ExportFormat, columns: Vec<String>) -> Result<Self, String> {
+    fn new(path: PathBuf, format: ExportFormat) -> Result<Self, String> {
         let file =
             File::create(path).map_err(|e| format!("[EXPORT_ERROR] create file failed: {e}"))?;
         let mut writer = BufWriter::new(file);
 
-        match format {
-            ExportFormat::Csv => {
-                let header = columns
-                    .iter()
-                    .map(|c| csv_escape(c))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                writer
-                    .write_all(format!("{header}\n").as_bytes())
-                    .map_err(|e| format!("[EXPORT_ERROR] write csv header failed: {e}"))?;
-            }
-            ExportFormat::Json => {
-                writer
-                    .write_all(b"[\n")
-                    .map_err(|e| format!("[EXPORT_ERROR] write json header failed: {e}"))?;
-            }
-            ExportFormat::SqlDml | ExportFormat::SqlDdl | ExportFormat::SqlFull => {}
+        if matches!(format, ExportFormat::Json) {
+            writer
+                .write_all(b"[\n")
+                .map_err(|e| format!("[EXPORT_ERROR] write json header failed: {e}"))?;
         }
 
         Ok(Self {
@@ -1292,6 +1200,20 @@ impl ExportWriter {
             writer,
             first_json_row: true,
         })
+    }
+
+    fn write_csv_header(&mut self, columns: &[String]) -> Result<(), String> {
+        if !matches!(self.format, ExportFormat::Csv) {
+            return Ok(());
+        }
+        let header = columns
+            .iter()
+            .map(|c| csv_escape(c))
+            .collect::<Vec<_>>()
+            .join(",");
+        self.writer
+            .write_all(format!("{header}\n").as_bytes())
+            .map_err(|e| format!("[EXPORT_ERROR] write csv header failed: {e}"))
     }
 
     fn write_rows(
@@ -1370,9 +1292,7 @@ impl ExportWriter {
                     .write_all(statement.as_bytes())
                     .map_err(|e| format!("[EXPORT_ERROR] write sql row failed: {e}"))?;
             }
-            ExportFormat::SqlDdl => {
-                // DDL-only mode: rows are not written
-            }
+            ExportFormat::SqlDdl => unreachable!("SqlDdl rows are never written"),
         }
         Ok(())
     }
@@ -1589,8 +1509,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let path = std::env::temp_dir().join(format!("dbpaw-transfer-test-{unique}.json"));
-        let mut writer =
-            ExportWriter::new(path.clone(), ExportFormat::Json, vec!["a".to_string()]).unwrap();
+        let mut writer = ExportWriter::new(path.clone(), ExportFormat::Json).unwrap();
         let err = writer
             .write_rows(
                 &[Value::String("not-object".to_string())],
@@ -1762,10 +1681,39 @@ mod tests {
     }
 
     #[test]
+    fn export_writer_csv_writes_header_then_rows() {
+        let path = tmp_path("csv_header.csv");
+        let cols = vec!["id".to_string(), "name".to_string()];
+        let mut writer = ExportWriter::new(path.clone(), ExportFormat::Csv).unwrap();
+        writer.write_csv_header(&cols).unwrap();
+        let rows = vec![make_row(&[
+            ("id", Value::Number(1.into())),
+            ("name", Value::String("alice".to_string())),
+        ])];
+        writer.write_rows(&rows, &cols, None, "t", "postgres").unwrap();
+        writer.finish().unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.starts_with("id,name\n"));
+        assert!(content.contains("1,alice"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn write_csv_header_is_noop_for_sql_formats() {
+        let path = tmp_path("sql_noop_header.sql");
+        let mut writer = ExportWriter::new(path.clone(), ExportFormat::SqlDml).unwrap();
+        writer.write_csv_header(&["id".to_string()]).unwrap();
+        writer.finish().unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
     fn export_writer_sql_dml_writes_insert_statements() {
         let path = tmp_path("sql_dml.sql");
         let cols = vec!["id".to_string(), "name".to_string()];
-        let mut writer = ExportWriter::new(path.clone(), ExportFormat::SqlDml, cols.clone()).unwrap();
+        let mut writer = ExportWriter::new(path.clone(), ExportFormat::SqlDml).unwrap();
         let rows = vec![
             make_row(&[("id", Value::Number(1.into())), ("name", Value::String("alice".to_string()))]),
             make_row(&[("id", Value::Number(2.into())), ("name", Value::Null)]),
@@ -1782,16 +1730,11 @@ mod tests {
     }
 
     #[test]
-    fn export_writer_sql_ddl_writes_ddl_and_no_rows() {
+    fn export_writer_sql_ddl_writes_only_ddl() {
         let path = tmp_path("sql_ddl.sql");
-        let cols = vec!["id".to_string()];
-        let mut writer = ExportWriter::new(path.clone(), ExportFormat::SqlDdl, cols.clone()).unwrap();
+        let mut writer = ExportWriter::new(path.clone(), ExportFormat::SqlDdl).unwrap();
         writer.write_ddl("CREATE TABLE users (id INTEGER);").unwrap();
-        // In DDL-only mode write_rows is a no-op, but we test write_ddl here
-        let rows = vec![make_row(&[("id", Value::Number(1.into()))])];
-        let count = writer.write_rows(&rows, &cols, Some("public"), "users", "postgres").unwrap();
         writer.finish().unwrap();
-        assert_eq!(count, 1); // write_rows counts rows even if they produce no output
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("CREATE TABLE users (id INTEGER);"));
         assert!(!content.contains("INSERT INTO"));
@@ -1802,7 +1745,7 @@ mod tests {
     fn export_writer_sql_full_writes_ddl_then_inserts() {
         let path = tmp_path("sql_full.sql");
         let cols = vec!["id".to_string(), "val".to_string()];
-        let mut writer = ExportWriter::new(path.clone(), ExportFormat::SqlFull, cols.clone()).unwrap();
+        let mut writer = ExportWriter::new(path.clone(), ExportFormat::SqlFull).unwrap();
         writer.write_ddl("CREATE TABLE t (id INT, val TEXT);").unwrap();
         let rows = vec![make_row(&[
             ("id", Value::Number(1.into())),
@@ -1822,7 +1765,7 @@ mod tests {
     #[test]
     fn write_ddl_trims_trailing_whitespace_and_adds_blank_line() {
         let path = tmp_path("ddl_trim.sql");
-        let mut writer = ExportWriter::new(path.clone(), ExportFormat::SqlDdl, vec![]).unwrap();
+        let mut writer = ExportWriter::new(path.clone(), ExportFormat::SqlDdl).unwrap();
         writer.write_ddl("CREATE TABLE t (id INT);   \n\n").unwrap();
         writer.finish().unwrap();
         let content = fs::read_to_string(&path).unwrap();
