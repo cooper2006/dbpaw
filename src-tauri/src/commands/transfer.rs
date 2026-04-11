@@ -396,6 +396,9 @@ pub async fn export_query_result(
     format: ExportFormat,
     file_path: Option<String>,
 ) -> Result<ExportResult, String> {
+    if matches!(format, ExportFormat::SqlDdl) {
+        return Err("[EXPORT_ERROR] SqlDdl format is not supported for query exports".to_string());
+    }
     let output_path =
         resolve_output_path(file_path, "query_result", extension_for_format(&format))?;
 
@@ -434,6 +437,9 @@ pub async fn export_query_result_direct(
     format: ExportFormat,
     file_path: Option<String>,
 ) -> Result<ExportResult, String> {
+    if matches!(format, ExportFormat::SqlDdl) {
+        return Err("[EXPORT_ERROR] SqlDdl format is not supported for query exports".to_string());
+    }
     let output_path =
         resolve_output_path(file_path, "query_result", extension_for_format(&format))?;
 
