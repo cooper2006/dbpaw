@@ -4,6 +4,7 @@ import { readTextFile } from "@tauri-apps/plugin-fs";
 import {
   Database,
   Table,
+  Table2 as TableIcon,
   Key,
   Copy,
   Edit3,
@@ -317,6 +318,12 @@ interface ConnectionListProps {
     driver: string;
     filePath: string;
   }) => void;
+  onCreateTable?: (
+    connectionId: number,
+    database: string,
+    schema: string,
+    driver: string,
+  ) => void;
   activeTableTarget?: {
     connectionId: number;
     database: string;
@@ -341,6 +348,7 @@ export function ConnectionList({
   onCreateQuery,
   onExportTable,
   onExportDatabase,
+  onCreateTable,
   activeTableTarget,
   sidebarRevealRequest,
   onSelectSavedQuery,
@@ -3226,6 +3234,26 @@ export function ConnectionList({
                 <FileCode className="w-4 h-4" />
                 {t("connection.menu.newQuery")}
               </button>
+              {contextMenu.connectionId &&
+              contextMenu.databaseName &&
+              contextMenuDatabaseConnection &&
+              onCreateTable ? (
+                <button
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                  onClick={() => {
+                    onCreateTable(
+                      Number(contextMenu.connectionId),
+                      contextMenu.databaseName!,
+                      "",
+                      contextMenuDatabaseConnection.type,
+                    );
+                    setContextMenu((prev) => ({ ...prev, visible: false }));
+                  }}
+                >
+                  <TableIcon className="w-4 h-4" />
+                  {t("connection.menu.newTable")}
+                </button>
+              ) : null}
             </>
           ) : contextMenu.type === "schema" ? (
             <>
@@ -3257,6 +3285,26 @@ export function ConnectionList({
                 <FileCode className="w-4 h-4" />
                 {t("connection.menu.newQuery")}
               </button>
+              {contextMenu.connectionId &&
+              contextMenu.databaseName &&
+              contextMenuConnection &&
+              onCreateTable ? (
+                <button
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                  onClick={() => {
+                    onCreateTable(
+                      Number(contextMenu.connectionId),
+                      contextMenu.databaseName!,
+                      contextMenu.schemaName ?? "",
+                      contextMenuConnection.type,
+                    );
+                    setContextMenu((prev) => ({ ...prev, visible: false }));
+                  }}
+                >
+                  <TableIcon className="w-4 h-4" />
+                  {t("connection.menu.newTable")}
+                </button>
+              ) : null}
             </>
           ) : null}
         </div>

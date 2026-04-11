@@ -293,6 +293,7 @@ export const en = {
       delete: "Delete",
       refreshTables: "Refresh Tables",
       newQuery: "New Query",
+      newTable: "New Table",
       newDatabase: "New Database",
       importSql: "Import SQL",
       importSqlReadOnly: "Import SQL (Read-only, unsupported)",
@@ -442,6 +443,62 @@ export const en = {
     },
     toast: {
       columnNameCopied: "Copied column name: {{column}}",
+    },
+  },
+  createTable: {
+    tab: {
+      title: "New Table ({{database}})",
+    },
+    form: {
+      tableName: "Table Name",
+      tableNamePlaceholder: "e.g. users",
+      columns: "Columns",
+      addColumn: "Add Column",
+      noColumns: 'No columns defined. Click "Add Column" to get started.',
+      columnName: "Name",
+      columnType: "Type",
+      columnLength: "Length",
+      columnNotNull: "Not Null",
+      columnPrimaryKey: "PK",
+      columnAutoIncrement: "AI",
+      columnDefault: "Default",
+      columnComment: "Comment",
+      remove: "Remove",
+    },
+    sqlPreview: {
+      title: "SQL Preview",
+      copy: "Copy",
+      copied: "Copied!",
+    },
+    actions: {
+      execute: "Create Table",
+      executing: "Creating...",
+      cancel: "Cancel",
+    },
+    starrocks: {
+      distributionTitle: "Distribution",
+      distributionType: "Distribution Type",
+      distributionHash: "HASH",
+      distributionRandom: "RANDOM",
+      distributionColumns: "Distribution Key (columns)",
+      distributionColumnsPlaceholder: "Select columns for HASH distribution",
+      distributionBuckets: "Buckets",
+      distributionBucketsPlaceholder: "e.g. 10 or AUTO",
+      distributionColumnRequired:
+        "HASH distribution requires at least one column",
+    },
+    validation: {
+      tableNameRequired: "Table name is required",
+      noColumns: "At least one column is required",
+      columnNameRequired: "Column name is required (row {{index}})",
+      columnTypeRequired: "Column type is required (row {{index}})",
+      duplicateColumnName: "Duplicate column name: {{name}}",
+      starrocksHashColumnsRequired:
+        "HASH distribution requires at least one distribution column",
+    },
+    toast: {
+      success: 'Table "{{table}}" created successfully',
+      error: "Failed to create table",
     },
   },
 } as const;

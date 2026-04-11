@@ -69,7 +69,7 @@ import { getSetting } from "@/services/store";
 
 interface TabItem {
   id: string;
-  type: "editor" | "table" | "ddl";
+  type: "editor" | "table" | "ddl" | "create-table";
   title: string;
   connection?: string;
   database?: string;
@@ -143,6 +143,11 @@ const AISidebar = lazy(async () => {
 const SettingsDialog = lazy(async () => {
   const mod = await import("@/components/settings/SettingsDialog");
   return { default: mod.SettingsDialog };
+});
+
+const CreateTableView = lazy(async () => {
+  const mod = await import("@/components/business/CreateTable/CreateTableView");
+  return { default: mod.CreateTableView };
 });
 
 function LazyPanelFallback({
@@ -904,6 +909,55 @@ export default function App() {
     setActiveTab(tabId);
   };
 
+  const handleCreateTable = (
+    connectionId: number,
+    database: string,
+    schema: string,
+    driver: string,
+  ) => {
+    const tabId = `create-table-${connectionId}-${database}-${schema}-${Date.now()}`;
+    const newTab: TabItem = {
+      id: tabId,
+      type: "create-table",
+      title: t("createTable.tab.title", { database: database || "—" }),
+      connectionId,
+      database,
+      schema,
+      driver,
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTab(tabId);
+  };
+
+  const handleCreateTableSuccess = (
+    tabId: string,
+    connectionId: number,
+    database: string,
+    schema: string | undefined,
+    tableName: string,
+    driver: string,
+  ) => {
+    // Close the create-table tab
+    closeTabNow(tabId);
+    // Open the newly created table (use connectionId as connection name for tab ID uniqueness)
+    void handleTableSelect(
+      String(connectionId),
+      database,
+      tableName,
+      connectionId,
+      driver,
+      schema,
+    );
+    // Trigger sidebar reveal so the new table is visible in the tree
+    setSidebarRevealRequest({
+      id: Date.now(),
+      connectionId,
+      database,
+      table: tableName,
+      schema,
+    });
+  };
+
   const handleTableRefresh = async (
     tabId: string,
     overrides?: TableRefreshOverrides,
@@ -1504,6 +1558,7 @@ export default function App() {
               onCreateQuery={handleCreateQuery}
               onExportTable={handleExportTableFromTree}
               onExportDatabase={handleExportDatabaseFromTree}
+              onCreateTable={handleCreateTable}
               onSelectSavedQuery={handleOpenSavedQuery}
               lastUpdated={queriesLastUpdated}
               activeTableTarget={activeTableTarget}
@@ -1757,6 +1812,33 @@ export default function App() {
                             }
                             showColumnComments={showColumnComments}
                           />
+                        ) : tab.type === "create-table" &&
+                          tab.connectionId !== undefined &&
+                          tab.database &&
+                          tab.driver ? (
+                          <Suspense
+                            fallback={
+                              <LazyPanelFallback label={t("common.loading")} />
+                            }
+                          >
+                            <CreateTableView
+                              connectionId={tab.connectionId}
+                              database={tab.database}
+                              schema={tab.schema ?? ""}
+                              driver={tab.driver}
+                              onSuccess={(tableName) =>
+                                handleCreateTableSuccess(
+                                  tab.id,
+                                  tab.connectionId!,
+                                  tab.database!,
+                                  tab.schema,
+                                  tableName,
+                                  tab.driver!,
+                                )
+                              }
+                              onCancel={() => handleCloseTab(tab.id)}
+                            />
+                          </Suspense>
                         ) : tab.connectionId &&
                           tab.database &&
                           tab.schema &&

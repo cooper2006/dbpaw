@@ -48,6 +48,12 @@ interface SidebarProps {
     driver: string;
     filePath: string;
   }) => void;
+  onCreateTable?: (
+    connectionId: number,
+    database: string,
+    schema: string,
+    driver: string,
+  ) => void;
   onSelectSavedQuery: (query: SavedQuery) => void;
   lastUpdated?: number;
   activeTableTarget?: ActiveTableTarget;
@@ -61,6 +67,7 @@ export function Sidebar({
   onCreateQuery,
   onExportTable,
   onExportDatabase,
+  onCreateTable,
   onSelectSavedQuery,
   lastUpdated,
   activeTableTarget,
@@ -86,6 +93,7 @@ export function Sidebar({
           onCreateQuery={onCreateQuery}
           onExportTable={onExportTable}
           onExportDatabase={onExportDatabase}
+          onCreateTable={onCreateTable}
           activeTableTarget={activeTableTarget}
           sidebarRevealRequest={sidebarRevealRequest}
           onSelectSavedQuery={onSelectSavedQuery}
@@ -128,6 +136,7 @@ export function Sidebar({
               onCreateQuery={onCreateQuery}
               onExportTable={onExportTable}
               onExportDatabase={onExportDatabase}
+              onCreateTable={onCreateTable}
               activeTableTarget={activeTableTarget}
               sidebarRevealRequest={sidebarRevealRequest}
             />
