@@ -852,6 +852,32 @@ export default function App() {
     }
   };
 
+  const handleExportDatabaseFromTree = async (ctx: {
+    connectionId: number;
+    database: string;
+    driver: string;
+    filePath: string;
+  }) => {
+    try {
+      const result = await api.transfer.exportDatabase({
+        id: ctx.connectionId,
+        database: ctx.database,
+        driver: ctx.driver,
+        filePath: ctx.filePath,
+      });
+      toast.success(
+        t("app.success.exportCompleted", { count: result.rowCount }),
+        {
+          description: result.filePath,
+        },
+      );
+    } catch (e) {
+      toast.error(t("app.error.exportFailed"), {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
+
   const handleOpenTableDDL = (ctx: {
     connectionId: number;
     database: string;
@@ -1477,6 +1503,7 @@ export default function App() {
               onConnect={() => {}}
               onCreateQuery={handleCreateQuery}
               onExportTable={handleExportTableFromTree}
+              onExportDatabase={handleExportDatabaseFromTree}
               onSelectSavedQuery={handleOpenSavedQuery}
               lastUpdated={queriesLastUpdated}
               activeTableTarget={activeTableTarget}

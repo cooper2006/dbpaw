@@ -1340,6 +1340,14 @@ export async function mockExportTableData(_params: any): Promise<ExportResult> {
   };
 }
 
+export async function mockExportDatabaseSql(_params: any): Promise<ExportResult> {
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  return {
+    filePath: `/tmp/dbpaw-database-export-${Date.now()}.sql`,
+    rowCount: mockTableData.total,
+  };
+}
+
 /**
  * Mock export query result
  */
@@ -1490,6 +1498,9 @@ export async function invokeMock<T>(cmd: string, args?: any): Promise<T> {
     // Transfer commands
     case "export_table_data":
       return mockExportTableData(args) as Promise<T>;
+
+    case "export_database_sql":
+      return mockExportDatabaseSql(args) as Promise<T>;
 
     case "export_query_result":
       return mockExportQueryResult(args) as Promise<T>;

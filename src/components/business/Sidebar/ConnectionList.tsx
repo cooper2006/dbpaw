@@ -311,6 +311,12 @@ interface ConnectionListProps {
     format: "csv" | "json" | "sql_dml" | "sql_ddl" | "sql_full",
     filePath: string,
   ) => void;
+  onExportDatabase?: (ctx: {
+    connectionId: number;
+    database: string;
+    driver: string;
+    filePath: string;
+  }) => void;
   activeTableTarget?: {
     connectionId: number;
     database: string;
@@ -334,6 +340,7 @@ export function ConnectionList({
   onConnect,
   onCreateQuery,
   onExportTable,
+  onExportDatabase,
   activeTableTarget,
   sidebarRevealRequest,
   onSelectSavedQuery,
@@ -1811,6 +1818,39 @@ export function ConnectionList({
     setIsImportConfirmOpen(true);
   };
 
+  const handleDatabaseExport = async (
+    connection: Connection,
+    database: DatabaseInfo,
+  ) => {
+    if (!onExportDatabase) return;
+    if (!isTauri()) {
+      toast.error(t("connection.toast.exportDesktopOnly"));
+      return;
+    }
+
+    try {
+      const selected = await save({
+        title: t("connection.toast.saveExportFile"),
+        defaultPath: getExportDefaultName(database.name, "sql_full"),
+        filters: getExportFilter("sql_full"),
+      });
+      if (!selected) return;
+      const filePath = Array.isArray(selected) ? selected[0] : selected;
+      if (!filePath) return;
+
+      onExportDatabase({
+        connectionId: Number(connection.id),
+        database: database.name,
+        driver: connection.type,
+        filePath,
+      });
+    } catch (e) {
+      toast.error(t("connection.toast.openSaveDialogFailed"), {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
+
   const handleConfirmImport = async () => {
     if (!pendingImport) return;
 
@@ -3153,6 +3193,26 @@ export function ConnectionList({
                     : t("connection.menu.importSql")}
                 </button>
               ) : null}
+              <button
+                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                onClick={async () => {
+                  if (contextMenu.connectionId && contextMenu.databaseName) {
+                    const connection = connections.find(
+                      (conn) => conn.id === contextMenu.connectionId,
+                    );
+                    const database = connection?.databases.find(
+                      (db) => db.name === contextMenu.databaseName,
+                    );
+                    if (connection && database) {
+                      await handleDatabaseExport(connection, database);
+                    }
+                  }
+                  setContextMenu((prev) => ({ ...prev, visible: false }));
+                }}
+              >
+                <Download className="w-4 h-4" />
+                {t("connection.menu.exportDatabaseSql")}
+              </button>
               <button
                 className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
                 onClick={() => {

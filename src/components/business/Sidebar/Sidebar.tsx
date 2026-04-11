@@ -42,6 +42,12 @@ interface SidebarProps {
     format: "csv" | "json" | "sql_dml" | "sql_ddl" | "sql_full",
     filePath: string,
   ) => void;
+  onExportDatabase?: (ctx: {
+    connectionId: number;
+    database: string;
+    driver: string;
+    filePath: string;
+  }) => void;
   onSelectSavedQuery: (query: SavedQuery) => void;
   lastUpdated?: number;
   activeTableTarget?: ActiveTableTarget;
@@ -54,6 +60,7 @@ export function Sidebar({
   onConnect,
   onCreateQuery,
   onExportTable,
+  onExportDatabase,
   onSelectSavedQuery,
   lastUpdated,
   activeTableTarget,
@@ -78,6 +85,7 @@ export function Sidebar({
           onConnect={onConnect}
           onCreateQuery={onCreateQuery}
           onExportTable={onExportTable}
+          onExportDatabase={onExportDatabase}
           activeTableTarget={activeTableTarget}
           sidebarRevealRequest={sidebarRevealRequest}
           onSelectSavedQuery={onSelectSavedQuery}
@@ -119,6 +127,7 @@ export function Sidebar({
               onConnect={onConnect}
               onCreateQuery={onCreateQuery}
               onExportTable={onExportTable}
+              onExportDatabase={onExportDatabase}
               activeTableTarget={activeTableTarget}
               sidebarRevealRequest={sidebarRevealRequest}
             />

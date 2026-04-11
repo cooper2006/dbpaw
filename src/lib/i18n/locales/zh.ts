@@ -296,6 +296,7 @@ export const zh: Translations = {
       exportSqlDml: "导出 DML (INSERT)",
       exportSqlDdl: "导出 DDL (CREATE)",
       exportSqlFull: "导出 DML & DDL",
+      exportDatabaseSql: "导出 Database SQL",
     },
     importDialog: {
       title: "导入 SQL",

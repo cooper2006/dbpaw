@@ -448,6 +448,13 @@ export const api = {
       filePath?: string;
       chunkSize?: number;
     }) => invoke<ExportResult>("export_table_data", params),
+    exportDatabase: (params: {
+      id: number;
+      database: string;
+      driver: string;
+      filePath?: string;
+      chunkSize?: number;
+    }) => invoke<ExportResult>("export_database_sql", params),
     exportQueryResult: (params: {
       id: number;
       database?: string;

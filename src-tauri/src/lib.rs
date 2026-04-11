@@ -174,6 +174,7 @@ pub fn run() {
             commands::ai::ai_get_conversation,
             commands::ai::ai_delete_conversation,
             commands::transfer::export_table_data,
+            commands::transfer::export_database_sql,
             commands::transfer::export_query_result,
             commands::transfer::import_sql_file,
         ])

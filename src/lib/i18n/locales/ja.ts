@@ -304,6 +304,7 @@ export const ja: Translations = {
       exportSqlDml: "DML をエクスポート (INSERT)",
       exportSqlDdl: "DDL をエクスポート (CREATE)",
       exportSqlFull: "DML & DDL をエクスポート",
+      exportDatabaseSql: "Database SQL をエクスポート",
     },
     importDialog: {
       title: "SQL をインポート",

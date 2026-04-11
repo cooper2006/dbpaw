@@ -70,6 +70,11 @@ describe("getExportDefaultName", () => {
     const name = getExportDefaultName("my_table", "sql_dml");
     expect(name.startsWith("my_table_")).toBe(true);
   });
+
+  test("supports database names for sql export defaults", () => {
+    const name = getExportDefaultName("analytics", "sql_full");
+    expect(name).toMatch(/^analytics_.*\.sql$/);
+  });
 });
 
 describe("getExportFilter", () => {

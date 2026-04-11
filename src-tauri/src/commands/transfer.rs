@@ -64,9 +64,9 @@ struct PreparedImportPlan {
     script_managed_transaction: bool,
 }
 
-async fn do_table_export(
+async fn write_table_export(
     db_driver: Arc<dyn DatabaseDriver>,
-    output_path: PathBuf,
+    writer: &mut ExportWriter,
     schema: String,
     table: String,
     driver: String,
@@ -79,8 +79,7 @@ async fn do_table_export(
     page: Option<i64>,
     limit: Option<i64>,
     chunk: i64,
-) -> Result<ExportResult, String> {
-    let mut writer = ExportWriter::new(output_path.clone(), format.clone())?;
+) -> Result<i64, String> {
     let mut exported = 0i64;
 
     if matches!(format, ExportFormat::SqlDdl | ExportFormat::SqlFull) {
@@ -153,7 +152,83 @@ async fn do_table_export(
         }
     }
 
+    Ok(exported)
+}
+
+async fn do_table_export(
+    db_driver: Arc<dyn DatabaseDriver>,
+    output_path: PathBuf,
+    schema: String,
+    table: String,
+    driver: String,
+    format: ExportFormat,
+    scope: ExportScope,
+    filter: Option<String>,
+    order_by: Option<String>,
+    sort_column: Option<String>,
+    sort_direction: Option<String>,
+    page: Option<i64>,
+    limit: Option<i64>,
+    chunk: i64,
+) -> Result<ExportResult, String> {
+    let mut writer = ExportWriter::new(output_path.clone(), format.clone())?;
+    let exported = write_table_export(
+        db_driver,
+        &mut writer,
+        schema,
+        table,
+        driver,
+        format,
+        scope,
+        filter,
+        order_by,
+        sort_column,
+        sort_direction,
+        page,
+        limit,
+        chunk,
+    )
+    .await?;
+
     writer.finish()?;
+    Ok(ExportResult {
+        file_path: output_path.to_string_lossy().to_string(),
+        row_count: exported,
+    })
+}
+
+async fn do_database_export(
+    db_driver: Arc<dyn DatabaseDriver>,
+    output_path: PathBuf,
+    driver: String,
+    chunk: i64,
+) -> Result<ExportResult, String> {
+    let mut tables = db_driver.list_tables(None).await?;
+    tables.sort_by(|a, b| a.schema.cmp(&b.schema).then(a.name.cmp(&b.name)));
+
+    let mut writer = ExportWriter::new(output_path.clone(), ExportFormat::SqlFull)?;
+    let mut exported = 0i64;
+    for table in tables {
+        exported += write_table_export(
+            db_driver.clone(),
+            &mut writer,
+            table.schema,
+            table.name,
+            driver.clone(),
+            ExportFormat::SqlFull,
+            ExportScope::FullTable,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            chunk,
+        )
+        .await?;
+    }
+    writer.finish()?;
+
     Ok(ExportResult {
         file_path: output_path.to_string_lossy().to_string(),
         row_count: exported,
@@ -265,6 +340,43 @@ pub async fn export_table_data_direct(
             )
             .await
         }
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn export_database_sql(
+    state: State<'_, AppState>,
+    id: i64,
+    database: String,
+    driver: String,
+    file_path: Option<String>,
+    chunk_size: Option<i64>,
+) -> Result<ExportResult, String> {
+    let output_path = resolve_output_path(file_path, &database, "sql")?;
+    let chunk = chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE).max(1);
+    super::execute_with_retry(&state, id, Some(database), |db_driver| {
+        let output_path = output_path.clone();
+        let driver = driver.clone();
+        async move { do_database_export(db_driver, output_path, driver, chunk).await }
+    })
+    .await
+}
+
+pub async fn export_database_sql_direct(
+    state: &AppState,
+    id: i64,
+    database: String,
+    driver: String,
+    file_path: Option<String>,
+    chunk_size: Option<i64>,
+) -> Result<ExportResult, String> {
+    let output_path = resolve_output_path(file_path, &database, "sql")?;
+    let chunk = chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE).max(1);
+    super::execute_with_retry_from_app_state(state, id, Some(database), |db_driver| {
+        let output_path = output_path.clone();
+        let driver = driver.clone();
+        async move { do_database_export(db_driver, output_path, driver, chunk).await }
     })
     .await
 }
@@ -1844,9 +1956,136 @@ fn quote_target(schema: Option<&str>, table: &str, driver: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{
+        QueryResult, SchemaOverview, TableDataResponse, TableInfo, TableMetadata, TableStructure,
+    };
+    use async_trait::async_trait;
+    use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct FakeExportDriver {
+        tables: Vec<TableInfo>,
+        ddls: HashMap<(String, String), String>,
+        rows: HashMap<(String, String), Vec<Value>>,
+    }
+
+    #[async_trait]
+    impl DatabaseDriver for FakeExportDriver {
+        async fn test_connection(&self) -> Result<(), String> {
+            Ok(())
+        }
+
+        async fn list_databases(&self) -> Result<Vec<String>, String> {
+            Ok(vec!["db".to_string()])
+        }
+
+        async fn list_tables(&self, _schema: Option<String>) -> Result<Vec<TableInfo>, String> {
+            Ok(self.tables.clone())
+        }
+
+        async fn get_table_structure(
+            &self,
+            _schema: String,
+            _table: String,
+        ) -> Result<TableStructure, String> {
+            Err("not used".to_string())
+        }
+
+        async fn get_table_metadata(
+            &self,
+            schema: String,
+            table: String,
+        ) -> Result<TableMetadata, String> {
+            let key = (schema, table);
+            let has_rows = self.rows.contains_key(&key);
+            let columns = if has_rows {
+                vec![crate::models::ColumnInfo {
+                    name: "id".to_string(),
+                    r#type: "INT".to_string(),
+                    nullable: false,
+                    default_value: None,
+                    primary_key: true,
+                    comment: None,
+                }]
+            } else {
+                Vec::new()
+            };
+            Ok(TableMetadata {
+                columns,
+                indexes: Vec::new(),
+                foreign_keys: Vec::new(),
+                clickhouse_extra: None,
+            })
+        }
+
+        async fn get_table_ddl(&self, schema: String, table: String) -> Result<String, String> {
+            self.ddls
+                .get(&(schema, table))
+                .cloned()
+                .ok_or_else(|| "missing ddl".to_string())
+        }
+
+        async fn get_table_data(
+            &self,
+            _schema: String,
+            _table: String,
+            _page: i64,
+            _limit: i64,
+            _sort_column: Option<String>,
+            _sort_direction: Option<String>,
+            _filter: Option<String>,
+            _order_by: Option<String>,
+        ) -> Result<TableDataResponse, String> {
+            Err("not used".to_string())
+        }
+
+        async fn get_table_data_chunk(
+            &self,
+            schema: String,
+            table: String,
+            page: i64,
+            limit: i64,
+            _sort_column: Option<String>,
+            _sort_direction: Option<String>,
+            _filter: Option<String>,
+            _order_by: Option<String>,
+        ) -> Result<TableDataResponse, String> {
+            let key = (schema, table);
+            let all_rows = self.rows.get(&key).cloned().unwrap_or_default();
+            let offset = ((page.max(1) - 1) * limit.max(1)) as usize;
+            let chunk = all_rows
+                .into_iter()
+                .skip(offset)
+                .take(limit.max(1) as usize)
+                .collect::<Vec<_>>();
+            Ok(TableDataResponse {
+                total: self
+                    .rows
+                    .get(&key)
+                    .map(|rows| rows.len() as i64)
+                    .unwrap_or(0),
+                data: chunk,
+                page,
+                limit,
+                execution_time_ms: 0,
+            })
+        }
+
+        async fn execute_query(&self, _sql: String) -> Result<QueryResult, String> {
+            Err("not used".to_string())
+        }
+
+        async fn get_schema_overview(
+            &self,
+            _schema: Option<String>,
+        ) -> Result<SchemaOverview, String> {
+            Err("not used".to_string())
+        }
+
+        async fn close(&self) {}
+    }
 
     #[test]
     fn csv_escape_works() {
@@ -2337,6 +2576,78 @@ mod tests {
         let dml_pos = content.find("INSERT INTO").unwrap();
         assert!(ddl_pos < dml_pos, "DDL should appear before DML");
         assert!(content.contains("VALUES (1, 'x')"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn database_export_writes_all_tables_in_schema_then_name_order() {
+        let path = tmp_path("database_export.sql");
+        let driver = Arc::new(FakeExportDriver {
+            tables: vec![
+                TableInfo {
+                    schema: "zeta".to_string(),
+                    name: "logs".to_string(),
+                    r#type: "table".to_string(),
+                },
+                TableInfo {
+                    schema: "alpha".to_string(),
+                    name: "users".to_string(),
+                    r#type: "table".to_string(),
+                },
+                TableInfo {
+                    schema: "alpha".to_string(),
+                    name: "accounts".to_string(),
+                    r#type: "table".to_string(),
+                },
+            ],
+            ddls: HashMap::from([
+                (
+                    ("alpha".to_string(), "accounts".to_string()),
+                    "CREATE TABLE accounts (id INT);".to_string(),
+                ),
+                (
+                    ("alpha".to_string(), "users".to_string()),
+                    "CREATE TABLE users (id INT);".to_string(),
+                ),
+                (
+                    ("zeta".to_string(), "logs".to_string()),
+                    "CREATE TABLE logs (id INT);".to_string(),
+                ),
+            ]),
+            rows: HashMap::from([
+                (
+                    ("alpha".to_string(), "accounts".to_string()),
+                    vec![make_row(&[("id", Value::Number(1.into()))])],
+                ),
+                (
+                    ("alpha".to_string(), "users".to_string()),
+                    vec![make_row(&[("id", Value::Number(2.into()))])],
+                ),
+                (
+                    ("zeta".to_string(), "logs".to_string()),
+                    vec![make_row(&[("id", Value::Number(3.into()))])],
+                ),
+            ]),
+        });
+
+        let result = tauri::async_runtime::block_on(do_database_export(
+            driver,
+            path.clone(),
+            "postgres".to_string(),
+            2000,
+        ))
+        .unwrap();
+
+        assert_eq!(result.row_count, 3);
+        let content = fs::read_to_string(&path).unwrap();
+        let accounts_pos = content.find("CREATE TABLE accounts").unwrap();
+        let users_pos = content.find("CREATE TABLE users").unwrap();
+        let logs_pos = content.find("CREATE TABLE logs").unwrap();
+        assert!(accounts_pos < users_pos);
+        assert!(users_pos < logs_pos);
+        assert!(content.contains("INSERT INTO \"alpha\".\"accounts\""));
+        assert!(content.contains("INSERT INTO \"alpha\".\"users\""));
+        assert!(content.contains("INSERT INTO \"zeta\".\"logs\""));
         let _ = fs::remove_file(path);
     }
 

@@ -269,6 +269,10 @@ describe("api command mapping", () => {
     ["get_connections", () => api.connections.list()],
     ["create_connection", () => api.connections.create({ driver: "postgres" })],
     ["delete_connection", () => api.connections.delete(1)],
+    [
+      "export_database_sql",
+      () => api.transfer.exportDatabase({ id: 1, database: "db", driver: "postgres" }),
+    ],
     ["get_saved_queries", () => api.queries.list()],
     ["delete_saved_query", () => api.queries.delete(1)],
     ["ai_list_providers", () => api.ai.providers.list()],
@@ -294,4 +298,28 @@ describe("api command mapping", () => {
       expect(captured).toBe(expectedCmd);
     });
   }
+
+  test("exportDatabase forwards expected arguments", async () => {
+    let capturedArgs: any = null;
+    tauriInvokeImpl = async (_cmd, args) => {
+      capturedArgs = args;
+      return undefined;
+    };
+
+    await api.transfer.exportDatabase({
+      id: 7,
+      database: "analytics",
+      driver: "postgres",
+      filePath: "/tmp/analytics.sql",
+      chunkSize: 500,
+    });
+
+    expect(capturedArgs).toEqual({
+      id: 7,
+      database: "analytics",
+      driver: "postgres",
+      filePath: "/tmp/analytics.sql",
+      chunkSize: 500,
+    });
+  });
 });

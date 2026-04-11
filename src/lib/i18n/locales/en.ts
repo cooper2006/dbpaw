@@ -301,6 +301,7 @@ export const en = {
       exportSqlDml: "Export DML (INSERT)",
       exportSqlDdl: "Export DDL (CREATE)",
       exportSqlFull: "Export DML & DDL",
+      exportDatabaseSql: "Export Database SQL",
     },
     importDialog: {
       title: "Import SQL",
