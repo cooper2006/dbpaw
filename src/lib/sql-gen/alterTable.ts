@@ -1,5 +1,5 @@
 import type { ColumnInfo } from "@/services/api";
-import { ColumnDef, DbDriver, supportsAutoIncrement } from "./createTable";
+import { ColumnDef, DbDriver, formatDefault, supportsAutoIncrement } from "./createTable";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -85,6 +85,7 @@ function colTypePart(col: ColumnDef): string {
   return t;
 }
 
+
 function supportsComment(driver: DbDriver): boolean {
   return ["mysql", "mariadb", "tidb", "starrocks", "clickhouse"].includes(
     driver,
@@ -95,7 +96,8 @@ function supportsComment(driver: DbDriver): boolean {
 function buildColDef(col: ColumnDef, driver: DbDriver, includePk = true): string {
   const parts = [`${q(col.name, driver)} ${colTypePart(col)}`];
   if (col.notNull) parts.push("NOT NULL");
-  if (col.defaultValue.trim()) parts.push(`DEFAULT ${col.defaultValue.trim()}`);
+  if (col.defaultValue.trim())
+    parts.push(`DEFAULT ${formatDefault(col.defaultValue, col.dataType)}`);
   if (col.autoIncrement && supportsAutoIncrement(driver)) {
     parts.push(driver === "sqlite" ? "AUTOINCREMENT" : "AUTO_INCREMENT");
   }
@@ -236,7 +238,7 @@ export function generateAlterTableSQL(
         if (defaultChanged) {
           statements.push(
             col.defaultValue.trim()
-              ? `ALTER TABLE ${tr} ALTER COLUMN ${q(colName, driver)} SET DEFAULT ${col.defaultValue.trim()};`
+              ? `ALTER TABLE ${tr} ALTER COLUMN ${q(colName, driver)} SET DEFAULT ${formatDefault(col.defaultValue, col.dataType)};`
               : `ALTER TABLE ${tr} ALTER COLUMN ${q(colName, driver)} DROP DEFAULT;`,
           );
         }

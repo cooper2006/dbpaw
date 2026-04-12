@@ -241,6 +241,35 @@ function buildTableRef(
   }
 }
 
+/** String-like column types whose DEFAULT values must be single-quoted. */
+const STRING_TYPES =
+  /^(ENUM|SET|VARCHAR|NVARCHAR|CHAR|NCHAR|TEXT|TINYTEXT|MEDIUMTEXT|LONGTEXT)$/i;
+
+/** SQL keywords / expressions that must NOT be quoted. */
+const UNQUOTED_EXPR =
+  /^(NULL|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|NOW\s*\(\s*\))$/i;
+
+/**
+ * Returns the properly formatted DEFAULT expression for a column.
+ * Bare words (e.g. `user`) are quoted when the column type is string-like.
+ */
+export function formatDefault(value: string, dataType: string): string {
+  const v = value.trim();
+  if (
+    v.startsWith("'") ||
+    v.startsWith('"') ||
+    UNQUOTED_EXPR.test(v) ||
+    /^\w+\s*\(/.test(v) ||
+    /^-?\d+(\.\d+)?$/.test(v)
+  ) {
+    return v;
+  }
+  if (STRING_TYPES.test(dataType.trim())) {
+    return `'${v.replace(/'/g, "''")}'`;
+  }
+  return v;
+}
+
 function buildColumnLine(
   col: ColumnDef,
   driver: DbDriver,
@@ -262,7 +291,7 @@ function buildColumnLine(
   }
 
   if (col.defaultValue.trim()) {
-    parts.push(`DEFAULT ${col.defaultValue.trim()}`);
+    parts.push(`DEFAULT ${formatDefault(col.defaultValue, col.dataType)}`);
   }
 
   // AUTO_INCREMENT / AUTOINCREMENT
