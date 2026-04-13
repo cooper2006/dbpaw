@@ -3,13 +3,13 @@ mod mariadb_context;
 
 use dbpaw_lib::db::drivers::mysql::MysqlDriver;
 use dbpaw_lib::db::drivers::DatabaseDriver;
-use testcontainers::clients::Cli;
+
+use mariadb_context::shared_mariadb_form;
 
 #[tokio::test]
 #[ignore]
 async fn test_mariadb_integration_flow() {
-    let docker = (!mariadb_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mariadb_context::mariadb_form_from_test_context(docker.as_ref());
+    let form = shared_mariadb_form();
     let database = form
         .database
         .clone()
@@ -151,8 +151,7 @@ async fn test_mariadb_integration_flow() {
 #[tokio::test]
 #[ignore]
 async fn test_mariadb_get_table_data_supports_pagination_sort_filter_and_order_by() {
-    let docker = (!mariadb_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mariadb_context::mariadb_form_from_test_context(docker.as_ref());
+    let form = shared_mariadb_form();
     let database = form
         .database
         .clone()
@@ -246,8 +245,7 @@ async fn test_mariadb_get_table_data_supports_pagination_sort_filter_and_order_b
 #[tokio::test]
 #[ignore]
 async fn test_mariadb_get_table_data_rejects_invalid_sort_column() {
-    let docker = (!mariadb_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mariadb_context::mariadb_form_from_test_context(docker.as_ref());
+    let form = shared_mariadb_form();
     let database = form
         .database
         .clone()
@@ -293,8 +291,7 @@ async fn test_mariadb_get_table_data_rejects_invalid_sort_column() {
 #[tokio::test]
 #[ignore]
 async fn test_mariadb_table_structure_and_schema_overview() {
-    let docker = (!mariadb_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mariadb_context::mariadb_form_from_test_context(docker.as_ref());
+    let form = shared_mariadb_form();
     let database = form
         .database
         .clone()
@@ -352,8 +349,7 @@ async fn test_mariadb_table_structure_and_schema_overview() {
 #[tokio::test]
 #[ignore]
 async fn test_mariadb_metadata_includes_indexes_and_foreign_keys() {
-    let docker = (!mariadb_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mariadb_context::mariadb_form_from_test_context(docker.as_ref());
+    let form = shared_mariadb_form();
     let database = form
         .database
         .clone()
@@ -426,8 +422,7 @@ async fn test_mariadb_metadata_includes_indexes_and_foreign_keys() {
 #[tokio::test]
 #[ignore]
 async fn test_mariadb_boolean_and_json_type_mapping_regression() {
-    let docker = (!mariadb_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mariadb_context::mariadb_form_from_test_context(docker.as_ref());
+    let form = shared_mariadb_form();
     let database = form
         .database
         .clone()

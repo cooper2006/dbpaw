@@ -3,7 +3,8 @@ mod mssql_context;
 
 use dbpaw_lib::db::drivers::mssql::MssqlDriver;
 use dbpaw_lib::db::drivers::DatabaseDriver;
-use testcontainers::clients::Cli;
+
+use mssql_context::{shared_mssql_form, connect_with_retry};
 
 fn scalar_to_i64(value: &serde_json::Value) -> i64 {
     if let Some(v) = value.as_i64() {
@@ -18,14 +19,13 @@ fn scalar_to_i64(value: &serde_json::Value) -> i64 {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_integration_flow() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let database = form
         .database
         .clone()
         .expect("MSSQL_DB or container default database should be present");
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     driver
         .test_connection()
@@ -144,10 +144,9 @@ async fn test_mssql_integration_flow() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_get_table_data_supports_pagination_sort_filter_and_order_by() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let table_name = "dbpaw_mssql_grid_probe";
     let qualified = format!("[dbo].[{}]", table_name);
@@ -240,10 +239,9 @@ async fn test_mssql_get_table_data_supports_pagination_sort_filter_and_order_by(
 #[tokio::test]
 #[ignore]
 async fn test_mssql_get_table_data_rejects_invalid_sort_column() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let table_name = "dbpaw_mssql_invalid_sort_probe";
     let qualified = format!("[dbo].[{}]", table_name);
@@ -290,10 +288,9 @@ async fn test_mssql_get_table_data_rejects_invalid_sort_column() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_table_structure_and_schema_overview() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let table_name = "dbpaw_mssql_overview_probe";
     let qualified = format!("[dbo].[{}]", table_name);
@@ -349,10 +346,9 @@ async fn test_mssql_table_structure_and_schema_overview() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_metadata_includes_indexes_and_foreign_keys() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let parent = "dbpaw_mssql_parent_meta_probe";
     let child = "dbpaw_mssql_child_meta_probe";
@@ -437,10 +433,9 @@ async fn test_mssql_metadata_includes_indexes_and_foreign_keys() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_boolean_and_json_type_mapping_regression() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let table_name = "dbpaw_mssql_bool_json_probe";
     let qualified = format!("[dbo].[{}]", table_name);
@@ -529,10 +524,9 @@ async fn test_mssql_boolean_and_json_type_mapping_regression() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_execute_query_reports_affected_rows_for_update_delete() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let table_name = "dbpaw_mssql_affected_rows_probe";
     let qualified = format!("[dbo].[{}]", table_name);
@@ -586,10 +580,9 @@ async fn test_mssql_execute_query_reports_affected_rows_for_update_delete() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_transaction_commit_and_rollback() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let table_name = "dbpaw_mssql_txn_probe";
     let qualified = format!("[dbo].[{}]", table_name);
@@ -673,10 +666,9 @@ async fn test_mssql_transaction_commit_and_rollback() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_error_handling_for_sql_error() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let err = driver
         .execute_query("SELECT * FROM __dbpaw_table_not_exists".to_string())
@@ -692,8 +684,7 @@ async fn test_mssql_error_handling_for_sql_error() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_connection_failure_with_wrong_password() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, mut form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let mut form = shared_mssql_form();
     form.password = Some("dbpaw_wrong_password".to_string());
 
     let err = match MssqlDriver::connect(&form).await {
@@ -746,10 +737,9 @@ async fn test_mssql_connection_timeout_or_unreachable_host_error() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_batch_insert_and_batch_execute_flow() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let table_name = "dbpaw_mssql_batch_probe";
     let qualified = format!("[dbo].[{}]", table_name);
@@ -834,10 +824,9 @@ async fn test_mssql_batch_insert_and_batch_execute_flow() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_large_text_and_blob_round_trip() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let table_name = "dbpaw_mssql_large_field_probe";
     let qualified = format!("[dbo].[{}]", table_name);
@@ -899,10 +888,9 @@ async fn test_mssql_large_text_and_blob_round_trip() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_concurrent_connections_can_query() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let table_name = "dbpaw_mssql_concurrent_probe";
     let qualified = format!("[dbo].[{}]", table_name);
@@ -931,7 +919,7 @@ async fn test_mssql_concurrent_connections_can_query() {
         let task_form = form.clone();
         handles.push(tokio::spawn(async move {
             let task_driver =
-                mssql_context::connect_with_retry(|| MssqlDriver::connect(&task_form)).await;
+                connect_with_retry(|| MssqlDriver::connect(&task_form)).await;
             let result = task_driver
                 .execute_query("SELECT 1 AS ok".to_string())
                 .await;
@@ -950,7 +938,7 @@ async fn test_mssql_concurrent_connections_can_query() {
     }
 
     let cleanup_driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
     let _ = cleanup_driver
         .execute_query(format!(
             "IF OBJECT_ID(N'dbo.{}', N'U') IS NOT NULL DROP TABLE {};",
@@ -963,10 +951,9 @@ async fn test_mssql_concurrent_connections_can_query() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_view_can_be_listed_and_queried() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let base_table = "dbpaw_mssql_view_base_probe";
     let view_name = "dbpaw_mssql_view_probe_v";
@@ -1057,10 +1044,9 @@ async fn test_mssql_view_can_be_listed_and_queried() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_prepared_statements_prepare_execute_and_deallocate() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
+    let form = shared_mssql_form();
     let driver: MssqlDriver =
-        mssql_context::connect_with_retry(|| MssqlDriver::connect(&form)).await;
+        connect_with_retry(|| MssqlDriver::connect(&form)).await;
 
     let table_name = "dbpaw_mssql_prepared_stmt_probe";
     let qualified = format!("[dbo].[{}]", table_name);

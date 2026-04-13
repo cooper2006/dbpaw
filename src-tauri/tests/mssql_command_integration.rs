@@ -5,32 +5,8 @@ use dbpaw_lib::commands::{connection, metadata, query};
 use dbpaw_lib::db::drivers::mssql::MssqlDriver;
 use dbpaw_lib::db::drivers::DatabaseDriver;
 use dbpaw_lib::models::ConnectionForm;
-use std::time::{SystemTime, UNIX_EPOCH};
-use testcontainers::clients::Cli;
-use tokio::time::{sleep, Duration};
 
-fn unique_table_name(prefix: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time should be after unix epoch")
-        .as_millis();
-    format!("{}_{}", prefix, millis)
-}
-
-async fn wait_until_mssql_ready(form: &ConnectionForm) {
-    let mut last_error = String::new();
-    for _ in 0..60 {
-        let probe = form.clone();
-        match connection::test_connection_ephemeral(probe).await {
-            Ok(_) => return,
-            Err(err) => {
-                last_error = err;
-                sleep(Duration::from_secs(1)).await;
-            }
-        }
-    }
-    panic!("mssql is not ready for command tests: {last_error}");
-}
+use mssql_context::{shared_mssql_form, unique_name, wait_until_ready};
 
 async fn prepare_query_test_table(form: &ConnectionForm, table: &str) {
     let driver = MssqlDriver::connect(form)
@@ -85,9 +61,8 @@ async fn execute_by_conn_sql(
 #[tokio::test]
 #[ignore]
 async fn test_mssql_command_test_connection_success() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mssql_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
-    wait_until_mssql_ready(&form).await;
+    let form = shared_mssql_form();
+    wait_until_ready(&form).await;
 
     let result = connection::test_connection_ephemeral(form)
         .await
@@ -100,10 +75,9 @@ async fn test_mssql_command_test_connection_success() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_command_test_connection_invalid_password_returns_error() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mssql_container, mut form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
-    let ready_form = form.clone();
-    wait_until_mssql_ready(&ready_form).await;
+    let form = shared_mssql_form();
+    wait_until_ready(&form).await;
+    let mut form = form;
     form.password = Some("dbpaw_wrong_password".to_string());
 
     let result = connection::test_connection_ephemeral(form).await;
@@ -116,10 +90,9 @@ async fn test_mssql_command_test_connection_invalid_password_returns_error() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_command_list_tables_by_conn_contains_created_table() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mssql_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
-    wait_until_mssql_ready(&form).await;
-    let table = unique_table_name("dbpaw_cmd_tables");
+    let form = shared_mssql_form();
+    wait_until_ready(&form).await;
+    let table = unique_name("dbpaw_cmd_tables");
     prepare_query_test_table(&form, &table).await;
 
     let tables = metadata::list_tables_by_conn(form.clone())
@@ -133,10 +106,9 @@ async fn test_mssql_command_list_tables_by_conn_contains_created_table() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_command_list_tables_by_conn_invalid_credentials_returns_error() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mssql_container, mut form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
-    let ready_form = form.clone();
-    wait_until_mssql_ready(&ready_form).await;
+    let form = shared_mssql_form();
+    wait_until_ready(&form).await;
+    let mut form = form;
     form.password = Some("dbpaw_wrong_password".to_string());
 
     let result = metadata::list_tables_by_conn(form).await;
@@ -149,9 +121,8 @@ async fn test_mssql_command_list_tables_by_conn_invalid_credentials_returns_erro
 #[tokio::test]
 #[ignore]
 async fn test_mssql_command_list_databases_contains_target_db() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mssql_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
-    wait_until_mssql_ready(&form).await;
+    let form = shared_mssql_form();
+    wait_until_ready(&form).await;
     let target_db = form
         .database
         .clone()
@@ -169,10 +140,9 @@ async fn test_mssql_command_list_databases_contains_target_db() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_command_list_databases_invalid_credentials_returns_error() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mssql_container, mut form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
-    let ready_form = form.clone();
-    wait_until_mssql_ready(&ready_form).await;
+    let form = shared_mssql_form();
+    wait_until_ready(&form).await;
+    let mut form = form;
     form.password = Some("dbpaw_wrong_password".to_string());
 
     let result = connection::list_databases(form).await;
@@ -185,10 +155,9 @@ async fn test_mssql_command_list_databases_invalid_credentials_returns_error() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_command_execute_by_conn_select_returns_rows() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mssql_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
-    wait_until_mssql_ready(&form).await;
-    let table = unique_table_name("dbpaw_cmd_exec_select");
+    let form = shared_mssql_form();
+    wait_until_ready(&form).await;
+    let table = unique_name("dbpaw_cmd_exec_select");
     prepare_query_test_table(&form, &table).await;
 
     let sql = format!("SELECT id, name FROM {} ORDER BY id", table);
@@ -208,9 +177,8 @@ async fn test_mssql_command_execute_by_conn_select_returns_rows() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_command_execute_by_conn_invalid_sql_returns_error() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mssql_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
-    wait_until_mssql_ready(&form).await;
+    let form = shared_mssql_form();
+    wait_until_ready(&form).await;
 
     let result = execute_by_conn_sql(
         form,
@@ -226,10 +194,9 @@ async fn test_mssql_command_execute_by_conn_invalid_sql_returns_error() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_command_execute_by_conn_insert_affects_rows() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mssql_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
-    wait_until_mssql_ready(&form).await;
-    let table = unique_table_name("dbpaw_cmd_exec_insert");
+    let form = shared_mssql_form();
+    wait_until_ready(&form).await;
+    let table = unique_name("dbpaw_cmd_exec_insert");
 
     let driver = MssqlDriver::connect(&form)
         .await
@@ -263,15 +230,14 @@ async fn test_mssql_command_execute_by_conn_insert_affects_rows() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_command_get_table_data_by_conn_pagination_works() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mssql_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
-    wait_until_mssql_ready(&form).await;
+    let form = shared_mssql_form();
+    wait_until_ready(&form).await;
 
     let database = form
         .database
         .clone()
         .unwrap_or_else(|| "master".to_string());
-    let table = unique_table_name("dbpaw_cmd_page");
+    let table = unique_name("dbpaw_cmd_page");
 
     let driver = MssqlDriver::connect(&form)
         .await
@@ -318,15 +284,14 @@ async fn test_mssql_command_get_table_data_by_conn_pagination_works() {
 #[tokio::test]
 #[ignore]
 async fn test_mssql_command_get_table_data_by_conn_invalid_pagination_returns_error() {
-    let docker = (!mssql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mssql_container, form) = mssql_context::mssql_form_from_test_context(docker.as_ref());
-    wait_until_mssql_ready(&form).await;
+    let form = shared_mssql_form();
+    wait_until_ready(&form).await;
 
     let database = form
         .database
         .clone()
         .unwrap_or_else(|| "master".to_string());
-    let table = unique_table_name("dbpaw_cmd_invalid_page");
+    let table = unique_name("dbpaw_cmd_invalid_page");
     prepare_query_test_table(&form, &table).await;
 
     let result = query::get_table_data_by_conn(form.clone(), database, table.clone(), 0, 10).await;
