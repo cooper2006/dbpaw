@@ -12,26 +12,7 @@ use dbpaw_lib::models::{AiProviderForm, ConnectionForm};
 use dbpaw_lib::state::AppState;
 use std::fs;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-use testcontainers::clients::Cli;
-
-fn unique_name(prefix: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time should be after unix epoch")
-        .as_millis();
-    format!("{}_{}", prefix, millis)
-}
-
-async fn wait_until_postgres_ready(form: &ConnectionForm) {
-    let probe = form.clone();
-    let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&probe)).await;
-    driver
-        .test_connection()
-        .await
-        .expect("postgres should accept connections for stateful command tests");
-    driver.close().await;
-}
+use postgres_context::{shared_postgres_form, unique_name, wait_until_ready};
 
 async fn init_state_with_local_db() -> AppState {
     let state = AppState::new();
@@ -159,9 +140,8 @@ async fn get_local_db(state: &AppState) -> Arc<LocalDb> {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_create_database_by_id_success() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_postgres_connection_for_state(&state, &form, "create-db-success").await;
 
@@ -191,9 +171,8 @@ async fn test_postgres_command_create_database_by_id_success() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_create_database_by_id_if_not_exists_idempotent() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_postgres_connection_for_state(&state, &form, "create-db-idempotent").await;
 
@@ -222,9 +201,8 @@ async fn test_postgres_command_create_database_by_id_if_not_exists_idempotent() 
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_create_database_by_id_invalid_name_returns_validation_error() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_postgres_connection_for_state(&state, &form, "invalid-db-name").await;
 
@@ -248,9 +226,8 @@ async fn test_postgres_command_create_database_by_id_invalid_name_returns_valida
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_list_databases_by_id_success() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_postgres_connection_for_state(&state, &form, "list-db-success").await;
 
@@ -280,9 +257,8 @@ async fn test_postgres_command_list_databases_by_id_invalid_id_returns_error() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_connection_crud_flow_create_get_update_delete() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
 
     let unique = unique_name("dbpaw_cmd_conn");
@@ -319,9 +295,8 @@ async fn test_postgres_command_connection_crud_flow_create_get_update_delete() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_get_table_structure_success() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id =
         create_postgres_connection_for_state(&state, &form, "meta-structure-success").await;
@@ -344,9 +319,8 @@ async fn test_postgres_command_get_table_structure_success() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_get_table_structure_missing_table_returns_error() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id =
         create_postgres_connection_for_state(&state, &form, "meta-structure-missing").await;
@@ -364,9 +338,8 @@ async fn test_postgres_command_get_table_structure_missing_table_returns_error()
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_get_table_ddl_success() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_postgres_connection_for_state(&state, &form, "meta-ddl-success").await;
     let schema = "public".to_string();
@@ -397,9 +370,8 @@ async fn test_postgres_command_get_table_ddl_success() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_get_table_metadata_contains_indexes_and_foreign_keys() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id =
         create_postgres_connection_for_state(&state, &form, "meta-metadata-success").await;
@@ -431,9 +403,8 @@ async fn test_postgres_command_get_table_metadata_contains_indexes_and_foreign_k
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_get_schema_overview_contains_target_schema() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_postgres_connection_for_state(&state, &form, "meta-schema-overview").await;
     let schema = "public".to_string();
@@ -461,9 +432,8 @@ async fn test_postgres_command_get_schema_overview_contains_target_schema() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_execute_query_by_id_success() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_postgres_connection_for_state(&state, &form, "query-by-id-success").await;
     let database = form
@@ -491,9 +461,8 @@ async fn test_postgres_command_execute_query_by_id_success() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_execute_query_by_id_invalid_sql_returns_error() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_postgres_connection_for_state(&state, &form, "query-by-id-invalid").await;
     let database = form
@@ -520,9 +489,8 @@ async fn test_postgres_command_execute_query_by_id_invalid_sql_returns_error() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_list_sql_execution_logs_contains_recent_entries() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_postgres_connection_for_state(&state, &form, "query-log-list").await;
     let database = form
@@ -557,9 +525,8 @@ async fn test_postgres_command_list_sql_execution_logs_contains_recent_entries()
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_cancel_query_non_clickhouse_returns_false() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_postgres_connection_for_state(&state, &form, "query-cancel-non-ch").await;
 
@@ -619,9 +586,8 @@ async fn test_postgres_command_storage_saved_query_crud_flow() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_transfer_export_and_import_minimal_flow() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_postgres_connection_for_state(&state, &form, "transfer-minimal").await;
     let database = form
@@ -737,9 +703,8 @@ async fn test_postgres_command_transfer_export_and_import_minimal_flow() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_import_sql_file_supports_function_trigger_script() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_postgres_connection_for_state(&state, &form, "import-trigger").await;
     let database = form
@@ -817,8 +782,8 @@ EXECUTE FUNCTION "{schema}"."{func_name}"();
         .await
         .expect("verify postgres trigger should succeed");
     let count = verify.data[0]["c"]
-        .as_str()
-        .and_then(|v| v.parse::<i64>().ok())
+        .as_i64()
+        .or_else(|| verify.data[0]["c"].as_str().and_then(|v| v.parse::<i64>().ok()))
         .expect("touch_count should parse");
     assert_eq!(count, 2);
 

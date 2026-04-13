@@ -12,32 +12,8 @@ use dbpaw_lib::models::{AiProviderForm, ConnectionForm};
 use dbpaw_lib::state::AppState;
 use std::fs;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-use testcontainers::clients::Cli;
-use tokio::time::{sleep, Duration};
 
-fn unique_name(prefix: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time should be after unix epoch")
-        .as_millis();
-    format!("{}_{}", prefix, millis)
-}
-
-async fn wait_until_mysql_ready(form: &ConnectionForm) {
-    let mut last_error = String::new();
-    for _ in 0..45 {
-        let probe = form.clone();
-        match connection::test_connection_ephemeral(probe).await {
-            Ok(_) => return,
-            Err(err) => {
-                last_error = err;
-                sleep(Duration::from_secs(1)).await;
-            }
-        }
-    }
-    panic!("mysql is not ready for stateful command tests: {last_error}");
-}
+use mysql_context::{shared_mysql_form, unique_name, wait_until_ready};
 
 async fn init_state_with_local_db() -> AppState {
     let state = AppState::new();
@@ -159,9 +135,8 @@ async fn get_local_db(state: &AppState) -> Arc<LocalDb> {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_create_database_by_id_success() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "create-db-success").await;
 
@@ -191,9 +166,8 @@ async fn test_mysql_command_create_database_by_id_success() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_create_database_by_id_if_not_exists_idempotent() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "create-db-idempotent").await;
 
@@ -222,9 +196,8 @@ async fn test_mysql_command_create_database_by_id_if_not_exists_idempotent() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_create_database_by_id_invalid_name_returns_validation_error() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "invalid-db-name").await;
 
@@ -248,9 +221,8 @@ async fn test_mysql_command_create_database_by_id_invalid_name_returns_validatio
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_list_databases_by_id_success() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "list-db-success").await;
 
@@ -280,9 +252,8 @@ async fn test_mysql_command_list_databases_by_id_invalid_id_returns_error() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_connection_crud_flow_create_get_update_delete() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
 
     let unique = unique_name("dbpaw_cmd_conn");
@@ -319,9 +290,8 @@ async fn test_mysql_command_connection_crud_flow_create_get_update_delete() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_get_table_structure_success() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "meta-structure-success").await;
     let schema = form
@@ -346,9 +316,8 @@ async fn test_mysql_command_get_table_structure_success() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_get_table_structure_missing_table_returns_error() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "meta-structure-missing").await;
     let schema = form
@@ -368,9 +337,8 @@ async fn test_mysql_command_get_table_structure_missing_table_returns_error() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_get_table_ddl_success() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "meta-ddl-success").await;
     let schema = form
@@ -400,9 +368,8 @@ async fn test_mysql_command_get_table_ddl_success() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_get_table_metadata_contains_indexes_and_foreign_keys() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "meta-metadata-success").await;
     let schema = form
@@ -432,9 +399,8 @@ async fn test_mysql_command_get_table_metadata_contains_indexes_and_foreign_keys
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_get_schema_overview_contains_target_schema() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "meta-schema-overview").await;
     let schema = form
@@ -465,9 +431,8 @@ async fn test_mysql_command_get_schema_overview_contains_target_schema() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_execute_query_by_id_success() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "query-by-id-success").await;
     let schema = form
@@ -495,9 +460,8 @@ async fn test_mysql_command_execute_query_by_id_success() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_execute_query_by_id_invalid_sql_returns_error() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "query-by-id-invalid").await;
     let schema = form
@@ -524,9 +488,8 @@ async fn test_mysql_command_execute_query_by_id_invalid_sql_returns_error() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_list_sql_execution_logs_contains_recent_entries() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "query-log-list").await;
     let schema = form
@@ -561,9 +524,8 @@ async fn test_mysql_command_list_sql_execution_logs_contains_recent_entries() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_cancel_query_non_clickhouse_returns_false() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "query-cancel-non-ch").await;
 
@@ -623,9 +585,8 @@ async fn test_mysql_command_storage_saved_query_crud_flow() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_transfer_export_and_import_minimal_flow() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "transfer-minimal").await;
     let schema = form
@@ -743,9 +704,8 @@ async fn test_mysql_command_transfer_export_and_import_minimal_flow() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_import_sql_file_supports_delimiter_script() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "import-delimiter").await;
     let schema = form
@@ -968,9 +928,8 @@ async fn test_mysql_command_ai_minimal_provider_conversation_and_chat_flow() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_get_charsets_by_id_returns_standard_charsets() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "get-charsets").await;
 
@@ -1015,9 +974,8 @@ async fn test_mysql_command_get_charsets_by_id_invalid_connection_returns_error(
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_get_collations_by_id_without_charset_returns_all() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "get-collations-all").await;
 
@@ -1047,9 +1005,8 @@ async fn test_mysql_command_get_collations_by_id_without_charset_returns_all() {
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_get_collations_by_id_with_charset_returns_only_matching() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id = create_mysql_connection_for_state(&state, &form, "get-collations-filtered").await;
 
@@ -1081,9 +1038,8 @@ async fn test_mysql_command_get_collations_by_id_with_charset_returns_only_match
 #[tokio::test]
 #[ignore]
 async fn test_mysql_command_get_collations_by_id_with_invalid_charset_returns_error() {
-    let docker = (!mysql_context::should_reuse_local_db()).then(Cli::default);
-    let (_mysql_container, form) = mysql_context::mysql_form_from_test_context(docker.as_ref());
-    wait_until_mysql_ready(&form).await;
+    let form = shared_mysql_form();
+    wait_until_ready(&form).await;
     let state = init_state_with_local_db().await;
     let conn_id =
         create_mysql_connection_for_state(&state, &form, "get-collations-invalid-cs").await;

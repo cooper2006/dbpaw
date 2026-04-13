@@ -50,6 +50,17 @@ pub fn ensure_docker_available() {
     }
 }
 
+/// Generate a unique name suffix using milliseconds since epoch.
+/// Suitable for table names and other database objects created during tests.
+#[allow(dead_code)]
+pub fn unique_name(prefix: &str) -> String {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_millis();
+    format!("{}_{}", prefix, ts)
+}
+
 pub fn unique_container_name(kind: &str) -> String {
     let prefix = env::var("IT_CONTAINER_PREFIX").unwrap_or_else(|_| "dbpaw-it-".to_string());
     let pid = std::process::id();

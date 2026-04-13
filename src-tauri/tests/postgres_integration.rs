@@ -3,13 +3,13 @@ mod postgres_context;
 
 use dbpaw_lib::db::drivers::postgres::PostgresDriver;
 use dbpaw_lib::db::drivers::DatabaseDriver;
-use testcontainers::clients::Cli;
+
+use postgres_context::shared_postgres_form;
 
 #[tokio::test]
 #[ignore]
 async fn test_postgres_integration_flow() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
 
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
@@ -150,8 +150,7 @@ async fn test_postgres_integration_flow() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_get_table_data_supports_pagination_sort_filter_and_order_by() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let table_name = "dbpaw_pg_grid_probe";
@@ -239,8 +238,7 @@ async fn test_postgres_get_table_data_supports_pagination_sort_filter_and_order_
 #[tokio::test]
 #[ignore]
 async fn test_postgres_get_table_data_rejects_invalid_sort_column() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let table_name = "dbpaw_pg_invalid_sort_probe";
@@ -281,8 +279,7 @@ async fn test_postgres_get_table_data_rejects_invalid_sort_column() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_table_structure_and_schema_overview() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let table_name = "dbpaw_pg_overview_probe";
@@ -333,8 +330,7 @@ async fn test_postgres_table_structure_and_schema_overview() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_metadata_includes_indexes_and_foreign_keys() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let parent = "dbpaw_pg_parent_meta_probe";
@@ -408,8 +404,7 @@ async fn test_postgres_metadata_includes_indexes_and_foreign_keys() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_boolean_and_json_type_mapping_regression() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let table_name = "dbpaw_pg_bool_json_probe";
@@ -477,8 +472,7 @@ async fn test_postgres_boolean_and_json_type_mapping_regression() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_transaction_commit_and_rollback() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let table_name = "dbpaw_pg_txn_probe";
@@ -550,8 +544,7 @@ async fn test_postgres_transaction_commit_and_rollback() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_execute_query_reports_affected_rows_for_update_delete() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let table_name = "dbpaw_pg_affected_rows_probe";
@@ -607,8 +600,7 @@ async fn test_postgres_execute_query_reports_affected_rows_for_update_delete() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_large_text_and_blob_round_trip() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let table_name = "dbpaw_pg_large_field_probe";
@@ -655,8 +647,7 @@ async fn test_postgres_large_text_and_blob_round_trip() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_error_handling_for_sql_error() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let err = driver
@@ -673,8 +664,7 @@ async fn test_postgres_error_handling_for_sql_error() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_concurrent_connections_can_query() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let mut handles = Vec::new();
 
     for _ in 0..8 {
@@ -699,8 +689,7 @@ async fn test_postgres_concurrent_connections_can_query() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_view_can_be_listed_and_queried() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let base_table = "dbpaw_pg_view_base_probe";
@@ -779,8 +768,7 @@ async fn test_postgres_view_can_be_listed_and_queried() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_array_types_decoded_as_json_arrays() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let table_name = "dbpaw_pg_array_type_probe";
@@ -952,8 +940,7 @@ async fn test_postgres_array_types_decoded_as_json_arrays() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_connection_failure_with_wrong_password() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, mut form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let mut form = shared_postgres_form();
     form.password = Some("dbpaw_wrong_password".to_string());
 
     let err = match PostgresDriver::connect(&form).await {
@@ -1004,8 +991,7 @@ async fn test_postgres_connection_timeout_or_unreachable_host_error() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_batch_insert_and_batch_execute_flow() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let table_name = "dbpaw_pg_batch_probe";
@@ -1092,8 +1078,7 @@ async fn test_postgres_batch_insert_and_batch_execute_flow() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_prepared_statements_prepare_execute_and_deallocate() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
+    let form = shared_postgres_form();
     let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&form)).await;
 
     let table_name = "dbpaw_pg_prepared_stmt_probe";

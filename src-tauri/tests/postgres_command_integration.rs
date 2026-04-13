@@ -5,26 +5,8 @@ use dbpaw_lib::commands::{connection, metadata, query};
 use dbpaw_lib::db::drivers::postgres::PostgresDriver;
 use dbpaw_lib::db::drivers::DatabaseDriver;
 use dbpaw_lib::models::ConnectionForm;
-use std::time::{SystemTime, UNIX_EPOCH};
-use testcontainers::clients::Cli;
 
-fn unique_table_name(prefix: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time should be after unix epoch")
-        .as_millis();
-    format!("{}_{}", prefix, millis)
-}
-
-async fn wait_until_postgres_ready(form: &ConnectionForm) {
-    let probe = form.clone();
-    let driver = postgres_context::connect_with_retry(|| PostgresDriver::connect(&probe)).await;
-    driver
-        .test_connection()
-        .await
-        .expect("postgres should accept connections for command tests");
-    driver.close().await;
-}
+use postgres_context::{shared_postgres_form, unique_name, wait_until_ready};
 
 async fn prepare_query_test_table(form: &ConnectionForm, schema: &str, table: &str) {
     let driver = PostgresDriver::connect(form)
@@ -75,9 +57,8 @@ async fn execute_by_conn_sql(
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_test_connection_success() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
 
     let result = connection::test_connection_ephemeral(form)
         .await
@@ -90,10 +71,9 @@ async fn test_postgres_command_test_connection_success() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_test_connection_invalid_password_returns_error() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, mut form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    let ready_form = form.clone();
-    wait_until_postgres_ready(&ready_form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
+    let mut form = form;
     form.password = Some("dbpaw_wrong_password".to_string());
 
     let result = connection::test_connection_ephemeral(form).await;
@@ -106,11 +86,10 @@ async fn test_postgres_command_test_connection_invalid_password_returns_error() 
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_list_tables_by_conn_contains_created_table() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, mut form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let mut form = shared_postgres_form();
+    wait_until_ready(&form).await;
     form.schema = Some("public".to_string());
-    let table = unique_table_name("dbpaw_cmd_tables");
+    let table = unique_name("dbpaw_cmd_tables");
     prepare_query_test_table(&form, "public", &table).await;
 
     let tables = metadata::list_tables_by_conn(form.clone())
@@ -126,10 +105,9 @@ async fn test_postgres_command_list_tables_by_conn_contains_created_table() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_list_tables_by_conn_invalid_credentials_returns_error() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, mut form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    let ready_form = form.clone();
-    wait_until_postgres_ready(&ready_form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
+    let mut form = form;
     form.password = Some("dbpaw_wrong_password".to_string());
 
     let result = metadata::list_tables_by_conn(form).await;
@@ -142,9 +120,8 @@ async fn test_postgres_command_list_tables_by_conn_invalid_credentials_returns_e
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_list_databases_contains_target_db() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
     let target_db = form
         .database
         .clone()
@@ -162,10 +139,9 @@ async fn test_postgres_command_list_databases_contains_target_db() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_list_databases_invalid_credentials_returns_error() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, mut form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    let ready_form = form.clone();
-    wait_until_postgres_ready(&ready_form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
+    let mut form = form;
     form.password = Some("dbpaw_wrong_password".to_string());
 
     let result = connection::list_databases(form).await;
@@ -178,10 +154,9 @@ async fn test_postgres_command_list_databases_invalid_credentials_returns_error(
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_execute_by_conn_select_returns_rows() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
-    let table = unique_table_name("dbpaw_cmd_exec_select");
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
+    let table = unique_name("dbpaw_cmd_exec_select");
     let qualified = format!("\"public\".\"{}\"", table);
     prepare_query_test_table(&form, "public", &table).await;
 
@@ -202,9 +177,8 @@ async fn test_postgres_command_execute_by_conn_select_returns_rows() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_execute_by_conn_invalid_sql_returns_error() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
 
     let result = execute_by_conn_sql(
         form,
@@ -220,10 +194,9 @@ async fn test_postgres_command_execute_by_conn_invalid_sql_returns_error() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_execute_by_conn_insert_affects_rows() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
-    let table = unique_table_name("dbpaw_cmd_exec_insert");
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
+    let table = unique_name("dbpaw_cmd_exec_insert");
     let qualified = format!("\"public\".\"{}\"", table);
 
     let driver = PostgresDriver::connect(&form)
@@ -270,12 +243,11 @@ async fn test_postgres_command_execute_by_conn_insert_affects_rows() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_get_table_data_by_conn_pagination_works() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
 
     let schema = "public".to_string();
-    let table = unique_table_name("dbpaw_cmd_page");
+    let table = unique_name("dbpaw_cmd_page");
     let qualified = format!("\"{}\".\"{}\"", schema, table);
 
     let driver = PostgresDriver::connect(&form)
@@ -320,12 +292,11 @@ async fn test_postgres_command_get_table_data_by_conn_pagination_works() {
 #[tokio::test]
 #[ignore]
 async fn test_postgres_command_get_table_data_by_conn_invalid_pagination_returns_error() {
-    let docker = (!postgres_context::should_reuse_local_db()).then(Cli::default);
-    let (_container, form) = postgres_context::postgres_form_from_test_context(docker.as_ref());
-    wait_until_postgres_ready(&form).await;
+    let form = shared_postgres_form();
+    wait_until_ready(&form).await;
 
     let schema = "public".to_string();
-    let table = unique_table_name("dbpaw_cmd_invalid_page");
+    let table = unique_name("dbpaw_cmd_invalid_page");
     prepare_query_test_table(&form, "public", &table).await;
 
     let result = query::get_table_data_by_conn(form.clone(), schema, table.clone(), 0, 10).await;
