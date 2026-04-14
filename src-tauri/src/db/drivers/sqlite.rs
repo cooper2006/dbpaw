@@ -33,7 +33,7 @@ impl SqliteDriver {
         }
 
         let pool = SqlitePoolOptions::new()
-            .max_connections(5)
+            .max_connections(1)
             .acquire_timeout(std::time::Duration::from_secs(3))
             .connect_with(opts)
             .await

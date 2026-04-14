@@ -50,6 +50,7 @@ case "${it_db}" in
   mariadb)
     run_integration_test "mariadb_integration"
     run_integration_test "mariadb_command_integration"
+    run_integration_test "mariadb_stateful_command_integration"
     ;;
   postgres)
     run_integration_test "postgres_integration"
@@ -71,6 +72,7 @@ case "${it_db}" in
   sqlite)
     run_integration_test "sqlite_integration"
     run_integration_test "sqlite_command_integration"
+    run_integration_test "sqlite_stateful_command_integration"
     ;;
   oracle)
     run_integration_test "oracle_integration"
@@ -82,6 +84,7 @@ case "${it_db}" in
     run_integration_test "mysql_stateful_command_integration"
     run_integration_test "mariadb_integration"
     run_integration_test "mariadb_command_integration"
+    run_integration_test "mariadb_stateful_command_integration"
     run_integration_test "doris_integration"
     run_integration_test "doris_command_integration"
     run_integration_test "postgres_integration"
@@ -95,6 +98,7 @@ case "${it_db}" in
     run_integration_test "duckdb_command_integration"
     run_integration_test "sqlite_integration"
     run_integration_test "sqlite_command_integration"
+    run_integration_test "sqlite_stateful_command_integration"
     run_integration_test "oracle_integration"
     run_integration_test "oracle_command_integration"
     ;;
