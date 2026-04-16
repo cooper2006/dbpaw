@@ -7,7 +7,15 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react({
+      // Enable React performance optimizations
+      babel: {
+        plugins: [],
+      },
+    }),
+    tailwindcss(),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -34,5 +42,58 @@ export default defineConfig(async () => ({
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
+  },
+
+  // Build optimizations
+  build: {
+    target: "esnext",
+    minify: "esbuild",
+    // Enable code splitting
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Split vendor libraries
+          vendor: ["react", "react-dom", "react-i18next"],
+          ui: [
+            "@/components/ui/button",
+            "@/components/ui/dialog",
+            "@/components/ui/input",
+            "@/components/ui/select",
+          ],
+          codemirror: [
+            "@codemirror/autocomplete",
+            "@codemirror/commands",
+            "@codemirror/lang-sql",
+            "@codemirror/language",
+            "@codemirror/state",
+            "@codemirror/view",
+          ],
+          mui: ["@mui/material", "@mui/icons-material", "@emotion/react", "@emotion/styled"],
+        },
+      },
+    },
+    // Tree shaking
+    cssCodeSplit: true,
+    // Generate sourcemaps for production builds
+    sourcemap: false,
+    // Chunk size warning limit
+    chunkSizeWarningLimit: 1000,
+  },
+
+  // Optimize dependencies
+  optimizeDeps: {
+    include: [
+      "react",
+      "react-dom",
+      "react-i18next",
+      "@/components/ui/button",
+      "@/components/ui/dialog",
+    ],
+    exclude: ["@tauri-apps/api"],
+  },
+
+  // Production console removal
+  esbuild: {
+    drop: process.env.NODE_ENV === "production" ? ["console", "debugger"] : [],
   },
 }));
