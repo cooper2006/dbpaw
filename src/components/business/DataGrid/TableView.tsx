@@ -1359,22 +1359,22 @@ export function TableView({
     if (!resizingRef.current) return;
     const { column, startX, startWidth } = resizingRef.current;
     const diff = e.clientX - startX;
-    const newWidth = Math.max(50, startWidth + diff); // Min width 50px
+    const newWidth = Math.max(50, startWidth + diff);
     setColumnWidths((prev) => ({ ...prev, [column]: newWidth }));
   }, []);
 
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUpRef = useRef<() => void>(() => {});
+  handleMouseUpRef.current = () => {
     resizingRef.current = null;
     document.removeEventListener("mousemove", handleMouseMove);
-    document.removeEventListener("mouseup", handleMouseUp);
+    document.removeEventListener("mouseup", handleMouseUpRef.current);
     document.body.style.cursor = "default";
-  }, [handleMouseMove]);
+  };
 
   const handleMouseDown = (e: React.MouseEvent, column: string) => {
     e.preventDefault();
     e.stopPropagation();
 
-    // Get the current actual width from the DOM element
     const currentTh = thRefs.current[column];
     const startWidth = currentTh
       ? currentTh.getBoundingClientRect().width
@@ -1382,7 +1382,7 @@ export function TableView({
 
     resizingRef.current = { column, startX: e.clientX, startWidth };
     document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("mouseup", handleMouseUpRef.current);
     document.body.style.cursor = "col-resize";
   };
 
@@ -1401,9 +1401,9 @@ export function TableView({
   useEffect(() => {
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("mouseup", handleMouseUpRef.current);
     };
-  }, [handleMouseMove, handleMouseUp]);
+  }, [handleMouseMove]);
 
   useEffect(() => {
     setSearchCursorIndex(-1);

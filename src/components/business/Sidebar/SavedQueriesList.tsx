@@ -27,6 +27,7 @@ interface SavedQueriesListProps {
     connectionId: number,
     databaseName: string,
     driver: string,
+    sqlContent?: string,
   ) => void;
   lastUpdated?: number;
 }

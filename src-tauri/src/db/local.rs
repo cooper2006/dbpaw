@@ -216,7 +216,8 @@ impl LocalDb {
         }
 
         let mut key = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut key);
+        let mut rng = rand::rng();
+        rng.fill_bytes(&mut key);
         fs::write(&key_path, &key).map_err(|e| format!("[AI_MASTER_KEY_WRITE] {e}"))?;
         #[cfg(unix)]
         {
@@ -231,7 +232,8 @@ impl LocalDb {
         let cipher =
             Aes256Gcm::new_from_slice(master_key).map_err(|e| format!("[AI_KEY_CIPHER] {e}"))?;
         let mut nonce_bytes = [0u8; 12];
-        rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
+        let mut rng = rand::rng();
+        rng.fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher
             .encrypt(nonce, plaintext.as_bytes())
@@ -937,7 +939,8 @@ mod tests {
         }
 
         let mut ai_master_key = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut ai_master_key);
+        let mut rng = rand::rng();
+        rng.fill_bytes(&mut ai_master_key);
 
         LocalDb {
             pool,
@@ -967,7 +970,8 @@ mod tests {
     #[test]
     fn api_key_encrypt_decrypt_round_trip_and_format_validation() {
         let mut key = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut key);
+        let mut rng = rand::rng();
+        rng.fill_bytes(&mut key);
         let encrypted = LocalDb::encrypt_ai_api_key_raw(&key, "secret-123").unwrap();
         assert!(LocalDb::has_encrypted_ai_api_key(&encrypted));
         let decrypted = LocalDb::decrypt_ai_api_key_raw(&key, &encrypted).unwrap();

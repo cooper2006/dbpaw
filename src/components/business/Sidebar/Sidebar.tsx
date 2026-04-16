@@ -62,6 +62,13 @@ interface SidebarProps {
     table: string,
     driver: string,
   ) => void;
+  onViewTableMetadata?: (
+    connectionId: number,
+    database: string,
+    schema: string,
+    table: string,
+    driver: string,
+  ) => void;
   onSelectSavedQuery: (query: SavedQuery) => void;
   lastUpdated?: number;
   activeTableTarget?: ActiveTableTarget;
@@ -77,6 +84,7 @@ export function Sidebar({
   onExportDatabase,
   onCreateTable,
   onAlterTable,
+  onViewTableMetadata,
   onSelectSavedQuery,
   lastUpdated,
   activeTableTarget,
@@ -104,6 +112,7 @@ export function Sidebar({
           onExportDatabase={onExportDatabase}
           onCreateTable={onCreateTable}
           onAlterTable={onAlterTable}
+          onViewTableMetadata={onViewTableMetadata}
           activeTableTarget={activeTableTarget}
           sidebarRevealRequest={sidebarRevealRequest}
           onSelectSavedQuery={onSelectSavedQuery}
@@ -148,6 +157,7 @@ export function Sidebar({
               onExportDatabase={onExportDatabase}
               onCreateTable={onCreateTable}
               onAlterTable={onAlterTable}
+              onViewTableMetadata={onViewTableMetadata}
               activeTableTarget={activeTableTarget}
               sidebarRevealRequest={sidebarRevealRequest}
             />

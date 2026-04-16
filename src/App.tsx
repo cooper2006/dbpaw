@@ -69,7 +69,7 @@ import { getSetting } from "@/services/store";
 
 interface TabItem {
   id: string;
-  type: "editor" | "table" | "ddl" | "create-table" | "alter-table";
+  type: "editor" | "table" | "ddl" | "create-table" | "alter-table" | "metadata";
   title: string;
   connection?: string;
   database?: string;
@@ -410,6 +410,7 @@ export default function App() {
     connectionId: number,
     databaseName: string,
     driver: string,
+    sqlContent?: string,
   ) => {
     const normalizedDatabaseName = databaseName.trim();
     const fallbackDatabaseLabel = t("app.tab.defaultDatabase");
@@ -427,8 +428,8 @@ export default function App() {
         initialDatabase ? [initialDatabase] : [],
         initialDatabase,
       ),
-      sqlContent: DEFAULT_SQL,
-      lastSavedSql: DEFAULT_SQL,
+      sqlContent: sqlContent || DEFAULT_SQL,
+      lastSavedSql: sqlContent || DEFAULT_SQL,
       isDirty: false,
       queryResults: null,
     };
@@ -982,6 +983,33 @@ export default function App() {
       id: tabId,
       type: "alter-table",
       title: t("alterTable.tab.title", { table }),
+      connectionId,
+      database,
+      schema,
+      tableName: table,
+      driver,
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTab(tabId);
+  };
+
+  const handleViewTableMetadata = (
+    connectionId: number,
+    database: string,
+    schema: string,
+    table: string,
+    driver: string,
+  ) => {
+    const tabId = `metadata-${connectionId}-${database}-${schema}-${table}`;
+    const existingTab = tabs.find((t) => t.id === tabId);
+    if (existingTab) {
+      setActiveTab(tabId);
+      return;
+    }
+    const newTab: TabItem = {
+      id: tabId,
+      type: "metadata",
+      title: `Metadata: ${table}`,
       connectionId,
       database,
       schema,
@@ -1598,6 +1626,7 @@ export default function App() {
               onExportDatabase={handleExportDatabaseFromTree}
               onCreateTable={handleCreateTable}
               onAlterTable={handleAlterTable}
+              onViewTableMetadata={handleViewTableMetadata}
               onSelectSavedQuery={handleOpenSavedQuery}
               lastUpdated={queriesLastUpdated}
               activeTableTarget={activeTableTarget}
@@ -1896,6 +1925,23 @@ export default function App() {
                               driver={tab.driver}
                               onSuccess={() => handleAlterTableSuccess(tab.id)}
                               onCancel={() => handleCloseTab(tab.id)}
+                            />
+                          </Suspense>
+                        ) : tab.type === "metadata" &&
+                          tab.connectionId !== undefined &&
+                          tab.database &&
+                          tab.tableName &&
+                          tab.schema ? (
+                          <Suspense
+                            fallback={
+                              <LazyPanelFallback label={t("common.loading")} />
+                            }
+                          >
+                            <TableMetadataView
+                              connectionId={tab.connectionId}
+                              database={tab.database}
+                              schema={tab.schema}
+                              table={tab.tableName}
                             />
                           </Suspense>
                         ) : tab.connectionId &&

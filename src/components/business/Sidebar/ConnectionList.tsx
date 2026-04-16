@@ -18,6 +18,7 @@ import {
   Download,
   FolderOpen,
   Upload,
+  Code,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -305,6 +306,7 @@ interface ConnectionListProps {
     connectionId: number,
     databaseName: string,
     driver: string,
+    sqlContent?: string,
   ) => void;
   onExportTable?: (
     ctx: {
@@ -337,6 +339,13 @@ interface ConnectionListProps {
     table: string,
     driver: string,
   ) => void;
+  onViewTableMetadata?: (
+    connectionId: number,
+    database: string,
+    schema: string,
+    table: string,
+    driver: string,
+  ) => void;
   activeTableTarget?: {
     connectionId: number;
     database: string;
@@ -363,6 +372,7 @@ export function ConnectionList({
   onExportDatabase,
   onCreateTable,
   onAlterTable,
+  onViewTableMetadata,
   activeTableTarget,
   sidebarRevealRequest,
   onSelectSavedQuery,
@@ -1410,6 +1420,49 @@ export function ConnectionList({
     }
 
     onCreateQuery(Number(connectionId), resolvedDatabaseName, connection.type);
+  };
+
+  const handleViewTableStructure = (connection: Connection, database: DatabaseInfo, table: TableInfo) => {
+    if (onViewTableMetadata) {
+      onViewTableMetadata(
+        Number(connection.id),
+        database.name,
+        table.schema,
+        table.name,
+        connection.type
+      );
+    }
+  };
+
+  const handleGenerateTableSQL = (connection: Connection, database: DatabaseInfo, table: TableInfo) => {
+    if (onCreateQuery) {
+      const schema = table.schema ? `${table.schema}.` : "";
+      const tableName = `${schema}${table.name}`;
+      
+      // Generate sample SQL statements
+      const selectSql = `SELECT * FROM ${tableName} LIMIT 100;`;
+      const insertSql = `INSERT INTO ${tableName} VALUES ();`;
+      const deleteSql = `DELETE FROM ${tableName} WHERE id = ?;`;
+      
+      const combinedSql = `-- Select sample data
+${selectSql}
+
+-- Insert sample data
+${insertSql}
+
+-- Delete sample data
+${deleteSql}`;
+      
+      onCreateQuery(Number(connection.id), database.name, connection.type, combinedSql);
+    }
+  };
+
+  const handleViewTableData = (connection: Connection, database: DatabaseInfo, table: TableInfo) => {
+    if (onCreateQuery) {
+      const schema = table.schema ? `${table.schema}.` : "";
+      const selectQuery = `SELECT * FROM ${schema}${table.name} LIMIT 100;`;
+      onCreateQuery(Number(connection.id), database.name, connection.type, selectQuery);
+    }
   };
 
   const openCreateDatabaseDialog = (connectionId: string) => {
@@ -2739,6 +2792,42 @@ export function ConnectionList({
                                 </ContextMenuItem>
                                 <ContextMenuItem
                                   onClick={() =>
+                                    handleViewTableStructure(
+                                      connection,
+                                      database,
+                                      table,
+                                    )
+                                  }
+                                >
+                                  <Table className="w-4 h-4 mr-2" />
+                                  {t("connection.menu.viewStructure")}
+                                </ContextMenuItem>
+                                <ContextMenuItem
+                                  onClick={() =>
+                                    handleGenerateTableSQL(
+                                      connection,
+                                      database,
+                                      table,
+                                    )
+                                  }
+                                >
+                                  <Code className="w-4 h-4 mr-2" />
+                                  {t("connection.menu.generateSQL")}
+                                </ContextMenuItem>
+                                <ContextMenuItem
+                                  onClick={() =>
+                                    handleViewTableData(
+                                      connection,
+                                      database,
+                                      table,
+                                    )
+                                  }
+                                >
+                                  <Database className="w-4 h-4 mr-2" />
+                                  {t("connection.menu.viewData")}
+                                </ContextMenuItem>
+                                <ContextMenuItem
+                                  onClick={() =>
                                     handleTableExportDialog(
                                       connection,
                                       database,
@@ -2958,6 +3047,42 @@ export function ConnectionList({
                               >
                                 <FileCode className="w-4 h-4 mr-2" />
                                 {t("connection.menu.newQuery")}
+                              </ContextMenuItem>
+                              <ContextMenuItem
+                                onClick={() =>
+                                  handleViewTableStructure(
+                                    connection,
+                                    database,
+                                    table,
+                                  )
+                                }
+                              >
+                                <Table className="w-4 h-4 mr-2" />
+                                {t("connection.menu.viewStructure")}
+                              </ContextMenuItem>
+                              <ContextMenuItem
+                                onClick={() =>
+                                  handleGenerateTableSQL(
+                                    connection,
+                                    database,
+                                    table,
+                                  )
+                                }
+                              >
+                                <Code className="w-4 h-4 mr-2" />
+                                {t("connection.menu.generateSQL")}
+                              </ContextMenuItem>
+                              <ContextMenuItem
+                                onClick={() =>
+                                  handleViewTableData(
+                                    connection,
+                                    database,
+                                    table,
+                                  )
+                                }
+                              >
+                                <Database className="w-4 h-4 mr-2" />
+                                {t("connection.menu.viewData")}
                               </ContextMenuItem>
                               <ContextMenuItem
                                 onClick={() =>

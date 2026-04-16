@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Copy, Check } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import {
   Table,
   TableBody,
@@ -26,6 +27,7 @@ interface CopyButtonProps {
 }
 
 function CopyButton({ text }: CopyButtonProps) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -33,10 +35,10 @@ function CopyButton({ text }: CopyButtonProps) {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      toast.success("Copied");
+      toast.success(t("tableMetadata.copy.copied"));
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("Copy failed");
+      toast.error(t("tableMetadata.copy.copyFailed"));
     }
   };
 
@@ -53,7 +55,7 @@ function CopyButton({ text }: CopyButtonProps) {
       ) : (
         <Copy className="h-3.5 w-3.5 mr-1" />
       )}
-      {copied ? "Copied" : "Copy"}
+      {copied ? t("tableMetadata.copy.copied") : t("tableMetadata.copy.copy")}
     </Button>
   );
 }
@@ -71,6 +73,7 @@ export function TableMetadataView({
   schema,
   table,
 }: TableMetadataViewProps) {
+  const { t } = useTranslation();
   const [metadata, setMetadata] = useState<TableMetadata | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,10 +141,10 @@ export function TableMetadataView({
           <div className="text-sm text-muted-foreground truncate">
             {schema}.{table}
           </div>
-          <div className="text-lg font-semibold truncate">Table Metadata</div>
+          <div className="text-lg font-semibold truncate">{t("tableMetadata.title")}</div>
         </div>
-        {loading && <Badge variant="secondary">Loading</Badge>}
-        {error && <Badge variant="destructive">Error</Badge>}
+        {loading && <Badge variant="secondary">{t("tableMetadata.loading")}</Badge>}
+        {error && <Badge variant="destructive">{t("tableMetadata.error")}</Badge>}
       </div>
 
       {error && (
@@ -149,24 +152,24 @@ export function TableMetadataView({
       )}
 
       <section className="space-y-2">
-        <div className="text-sm font-semibold">Columns</div>
+        <div className="text-sm font-semibold">{t("tableMetadata.columns.title")}</div>
         <div className="border border-border rounded-md overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[220px]">Column Name</TableHead>
-                <TableHead className="w-[220px]">Type</TableHead>
-                <TableHead className="w-[90px]">Nullable</TableHead>
-                <TableHead className="w-[220px]">Default Value</TableHead>
-                <TableHead className="w-[160px]">PK/FK</TableHead>
-                <TableHead>Description</TableHead>
+                <TableHead className="w-[220px]">{t("tableMetadata.columns.name")}</TableHead>
+                <TableHead className="w-[220px]">{t("tableMetadata.columns.type")}</TableHead>
+                <TableHead className="w-[90px]">{t("tableMetadata.columns.nullable")}</TableHead>
+                <TableHead className="w-[220px]">{t("tableMetadata.columns.defaultValue")}</TableHead>
+                <TableHead className="w-[160px]">{t("tableMetadata.columns.pkFk")}</TableHead>
+                <TableHead>{t("tableMetadata.columns.description")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {(metadata?.columns ?? []).length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-muted-foreground">
-                    No column information
+                    {t("tableMetadata.columns.noData")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -176,7 +179,7 @@ export function TableMetadataView({
                     <TableRow key={col.name}>
                       <TableCell className="font-mono">{col.name}</TableCell>
                       <TableCell className="font-mono">{col.type}</TableCell>
-                      <TableCell>{col.nullable ? "YES" : "NO"}</TableCell>
+                      <TableCell>{col.nullable ? t("tableMetadata.columns.yes") : t("tableMetadata.columns.no")}</TableCell>
                       <TableCell className="font-mono">
                         {col.defaultValue ?? ""}
                       </TableCell>
@@ -197,10 +200,10 @@ export function TableMetadataView({
       <section className="space-y-2">
         {clickhouseExtra && (
           <>
-            <div className="text-sm font-semibold">ClickHouse</div>
+            <div className="text-sm font-semibold">{t("tableMetadata.clickhouse.title")}</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <div className="border border-border rounded-md p-2">
-                <div className="text-xs text-muted-foreground">Engine</div>
+                <div className="text-xs text-muted-foreground">{t("tableMetadata.clickhouse.engine")}</div>
                 <div className="font-mono text-sm break-words">
                   {clickhouseExtra.engine}
                 </div>
@@ -208,7 +211,7 @@ export function TableMetadataView({
               {clickhouseExtra.partitionKey && (
                 <div className="border border-border rounded-md p-2">
                   <div className="text-xs text-muted-foreground">
-                    Partition Key
+                    {t("tableMetadata.clickhouse.partitionKey")}
                   </div>
                   <div className="font-mono text-sm break-words">
                     {clickhouseExtra.partitionKey}
@@ -218,7 +221,7 @@ export function TableMetadataView({
               {clickhouseExtra.sortingKey && (
                 <div className="border border-border rounded-md p-2">
                   <div className="text-xs text-muted-foreground">
-                    Sorting Key
+                    {t("tableMetadata.clickhouse.sortingKey")}
                   </div>
                   <div className="font-mono text-sm break-words">
                     {clickhouseExtra.sortingKey}
@@ -228,7 +231,7 @@ export function TableMetadataView({
               {clickhouseExtra.primaryKeyExpr && (
                 <div className="border border-border rounded-md p-2">
                   <div className="text-xs text-muted-foreground">
-                    Primary Key Expr
+                    {t("tableMetadata.clickhouse.primaryKeyExpr")}
                   </div>
                   <div className="font-mono text-sm break-words">
                     {clickhouseExtra.primaryKeyExpr}
@@ -238,7 +241,7 @@ export function TableMetadataView({
               {clickhouseExtra.samplingKey && (
                 <div className="border border-border rounded-md p-2">
                   <div className="text-xs text-muted-foreground">
-                    Sampling Key
+                    {t("tableMetadata.clickhouse.samplingKey")}
                   </div>
                   <div className="font-mono text-sm break-words">
                     {clickhouseExtra.samplingKey}
@@ -247,7 +250,7 @@ export function TableMetadataView({
               )}
               {clickhouseExtra.ttlExpr && (
                 <div className="border border-border rounded-md p-2 md:col-span-2">
-                  <div className="text-xs text-muted-foreground">TTL</div>
+                  <div className="text-xs text-muted-foreground">{t("tableMetadata.clickhouse.ttl")}</div>
                   <div className="font-mono text-sm break-words">
                     {clickhouseExtra.ttlExpr}
                   </div>
@@ -259,22 +262,22 @@ export function TableMetadataView({
       </section>
 
       <section className="space-y-2">
-        <div className="text-sm font-semibold">Indexes</div>
+        <div className="text-sm font-semibold">{t("tableMetadata.indexes.title")}</div>
         <div className="border border-border rounded-md overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[240px]">Index Name</TableHead>
-                <TableHead className="w-[120px]">Unique</TableHead>
-                <TableHead className="w-[160px]">Type</TableHead>
-                <TableHead>Columns</TableHead>
+                <TableHead className="w-[240px]">{t("tableMetadata.indexes.name")}</TableHead>
+                <TableHead className="w-[120px]">{t("tableMetadata.indexes.unique")}</TableHead>
+                <TableHead className="w-[160px]">{t("tableMetadata.indexes.type")}</TableHead>
+                <TableHead>{t("tableMetadata.indexes.columns")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {(metadata?.indexes ?? []).length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-muted-foreground">
-                    No index information
+                    {t("tableMetadata.indexes.noData")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -283,9 +286,9 @@ export function TableMetadataView({
                     <TableCell className="font-mono">{idx.name}</TableCell>
                     <TableCell>
                       {idx.unique ? (
-                        <Badge variant="secondary">YES</Badge>
+                        <Badge variant="secondary">{t("tableMetadata.indexes.yes")}</Badge>
                       ) : (
-                        <Badge variant="outline">NO</Badge>
+                        <Badge variant="outline">{t("tableMetadata.indexes.no")}</Badge>
                       )}
                     </TableCell>
                     <TableCell className="font-mono">
@@ -303,23 +306,23 @@ export function TableMetadataView({
       </section>
 
       <section className="space-y-2">
-        <div className="text-sm font-semibold">Foreign Keys</div>
+        <div className="text-sm font-semibold">{t("tableMetadata.foreignKeys.title")}</div>
         <div className="border border-border rounded-md overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[240px]">FK Name</TableHead>
-                <TableHead className="w-[180px]">Local Column</TableHead>
-                <TableHead className="w-[320px]">References</TableHead>
-                <TableHead className="w-[140px]">On Update</TableHead>
-                <TableHead className="w-[140px]">On Delete</TableHead>
+                <TableHead className="w-[240px]">{t("tableMetadata.foreignKeys.name")}</TableHead>
+                <TableHead className="w-[180px]">{t("tableMetadata.foreignKeys.localColumn")}</TableHead>
+                <TableHead className="w-[320px]">{t("tableMetadata.foreignKeys.references")}</TableHead>
+                <TableHead className="w-[140px]">{t("tableMetadata.foreignKeys.onUpdate")}</TableHead>
+                <TableHead className="w-[140px]">{t("tableMetadata.foreignKeys.onDelete")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {(metadata?.foreignKeys ?? []).length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-muted-foreground">
-                    No foreign key information
+                    {t("tableMetadata.foreignKeys.noData")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -344,13 +347,13 @@ export function TableMetadataView({
 
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold">Create Table SQL</div>
+          <div className="text-sm font-semibold">{t("tableMetadata.createTableSql.title")}</div>
           <CopyButton text={ddl} />
         </div>
         <div className="border border-border rounded-md bg-muted/10">
           {ddlLoading ? (
             <div className="p-3 text-sm text-muted-foreground">
-              Loading DDL...
+              {t("tableMetadata.createTableSql.loading")}
             </div>
           ) : ddlError ? (
             <div className="p-3 text-sm text-destructive break-words">
@@ -362,7 +365,7 @@ export function TableMetadataView({
             </pre>
           ) : (
             <div className="p-3 text-sm text-muted-foreground">
-              No DDL available
+              {t("tableMetadata.createTableSql.noData")}
             </div>
           )}
         </div>

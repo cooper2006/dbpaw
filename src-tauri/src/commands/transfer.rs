@@ -692,7 +692,11 @@ fn import_transaction_sql<'a>(
             "[UNSUPPORTED] Driver {} does not support transactional SQL import in this flow",
             original_driver
         )),
-        "postgres" | "sqlite" | "duckdb" => Ok(("BEGIN", "COMMIT", "ROLLBACK")),
+        "postgres" | "sqlite" => Ok(("BEGIN", "COMMIT", "ROLLBACK")),
+        #[cfg(feature = "duckdb")]
+        "duckdb" => Ok(("BEGIN", "COMMIT", "ROLLBACK")),
+        #[cfg(not(feature = "duckdb"))]
+        "duckdb" => Err("[UNSUPPORTED] DuckDB driver is not compiled".to_string()),
         "mssql" => Ok((
             "BEGIN TRANSACTION",
             "COMMIT TRANSACTION",
@@ -1963,9 +1967,19 @@ fn quote_target(schema: Option<&str>, table: &str, driver: &str) -> String {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .and_then(|s| {
-            if driver.eq_ignore_ascii_case("duckdb")
-                && (s.eq_ignore_ascii_case("main") || s.eq_ignore_ascii_case("public"))
-            {
+            let skip_default_schema = if driver.eq_ignore_ascii_case("duckdb") {
+                #[cfg(feature = "duckdb")]
+                {
+                    s.eq_ignore_ascii_case("main") || s.eq_ignore_ascii_case("public")
+                }
+                #[cfg(not(feature = "duckdb"))]
+                {
+                    false
+                }
+            } else {
+                false
+            };
+            if skip_default_schema {
                 None
             } else {
                 Some(s)
@@ -2176,6 +2190,7 @@ mod tests {
         assert_eq!(quote_target(None, "users", "mariadb"), "`users`");
     }
 
+    #[cfg(feature = "duckdb")]
     #[test]
     fn quote_target_uses_unqualified_main_for_duckdb() {
         assert_eq!(quote_target(Some("main"), "users", "duckdb"), "\"users\"");

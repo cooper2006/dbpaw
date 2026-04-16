@@ -1,5 +1,4 @@
 use self::clickhouse::ClickHouseDriver;
-use self::duckdb::DuckdbDriver;
 use self::mssql::MssqlDriver;
 use self::mysql::MysqlDriver;
 use self::oracle::OracleDriver;
@@ -12,12 +11,14 @@ use crate::models::{
 use async_trait::async_trait;
 
 pub mod clickhouse;
-pub mod duckdb;
 pub mod mssql;
 pub mod mysql;
 pub mod oracle;
 pub mod postgres;
 pub mod sqlite;
+
+#[cfg(feature = "duckdb")]
+pub mod duckdb;
 
 pub fn is_mysql_family_driver(driver: &str) -> bool {
     matches!(driver, "mysql" | "mariadb" | "tidb" | "starrocks" | "doris")
@@ -157,9 +158,14 @@ pub async fn connect(form: &ConnectionForm) -> Result<Box<dyn DatabaseDriver>, S
             let driver = SqliteDriver::connect(form).await?;
             Ok(Box::new(driver) as Box<dyn DatabaseDriver>)
         }
+        #[cfg(feature = "duckdb")]
         "duckdb" => {
-            let driver = DuckdbDriver::connect(form).await?;
+            let driver = duckdb::DuckdbDriver::connect(form).await?;
             Ok(Box::new(driver) as Box<dyn DatabaseDriver>)
+        }
+        #[cfg(not(feature = "duckdb"))]
+        "duckdb" => {
+            Err("[UNSUPPORTED] DuckDB driver is not compiled (enable duckdb feature)".to_string())
         }
         "clickhouse" => {
             let driver = ClickHouseDriver::connect(form).await?;

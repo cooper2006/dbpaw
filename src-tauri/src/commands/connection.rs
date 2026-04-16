@@ -4,6 +4,22 @@ use serde::Deserialize;
 use std::time::Instant;
 use tauri::State;
 
+/// Check if DuckDB feature is enabled
+fn check_duckdb_feature(driver: &str) -> Result<(), String> {
+    if driver.eq_ignore_ascii_case("duckdb") {
+        #[cfg(feature = "duckdb")]
+        {
+            Ok(())
+        }
+        #[cfg(not(feature = "duckdb"))]
+        {
+            Err("[UNSUPPORTED] DuckDB driver is not compiled".to_string())
+        }
+    } else {
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateDatabasePayload {
@@ -259,7 +275,14 @@ pub async fn create_database_by_id(
             .to_lowercase()
     };
 
-    if matches!(driver.as_str(), "sqlite" | "duckdb") {
+    if matches!(driver.as_str(), "sqlite") {
+        return Err(format!(
+            "[UNSUPPORTED] Driver {} does not support creating databases in this flow",
+            driver
+        ));
+    }
+    check_duckdb_feature(&driver)?;
+    if driver.eq_ignore_ascii_case("duckdb") {
         return Err(format!(
             "[UNSUPPORTED] Driver {} does not support creating databases in this flow",
             driver
@@ -340,7 +363,14 @@ pub async fn create_database_by_id_direct(
             .to_lowercase()
     };
 
-    if matches!(driver.as_str(), "sqlite" | "duckdb") {
+    if matches!(driver.as_str(), "sqlite") {
+        return Err(format!(
+            "[UNSUPPORTED] Driver {} does not support creating databases in this flow",
+            driver
+        ));
+    }
+    check_duckdb_feature(&driver)?;
+    if driver.eq_ignore_ascii_case("duckdb") {
         return Err(format!(
             "[UNSUPPORTED] Driver {} does not support creating databases in this flow",
             driver

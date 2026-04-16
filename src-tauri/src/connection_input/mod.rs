@@ -62,9 +62,20 @@ pub fn normalize_connection_form(mut form: ConnectionForm) -> Result<ConnectionF
         }
     }
 
-    if matches!(driver.as_str(), "sqlite" | "duckdb") {
+    if matches!(driver.as_str(), "sqlite") {
         if form.file_path.is_none() {
             return Err("[VALIDATION_ERROR] file path cannot be empty".to_string());
+        }
+    } else if matches!(driver.as_str(), "duckdb") {
+        #[cfg(feature = "duckdb")]
+        {
+            if form.file_path.is_none() {
+                return Err("[VALIDATION_ERROR] file path cannot be empty".to_string());
+            }
+        }
+        #[cfg(not(feature = "duckdb"))]
+        {
+            return Err("[UNSUPPORTED] DuckDB driver is not compiled".to_string());
         }
     } else if form.host.is_none() {
         return Err("[VALIDATION_ERROR] host cannot be empty".to_string());
