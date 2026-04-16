@@ -46,7 +46,7 @@ export const MainWindow: React.FC<MainWindowProps> = React.memo(({
             <div className="flex-1 flex flex-col overflow-hidden">
               {tabs.length > 1 ? (
                 <SplitPane
-                  orientation="vertical"
+                  orientation="horizontal"
                   initialSize={defaultEditorSplit}
                   minSize={200}
                 >

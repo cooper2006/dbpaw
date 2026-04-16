@@ -75,7 +75,7 @@ export const SplitPane: React.FC<SplitPaneProps> = React.memo(({
       <div 
         className={`${orientation === 'horizontal' ? 'h-full' : 'w-full'} overflow-auto`}
         style={{ 
-          flex: `0 0 ${orientation === 'horizontal' ? size : size}%`,
+          flex: `0 0 ${size}%`,
           minWidth: orientation === 'horizontal' ? `${minSize}px` : undefined,
           minHeight: orientation === 'vertical' ? `${minSize}px` : undefined
         }}
