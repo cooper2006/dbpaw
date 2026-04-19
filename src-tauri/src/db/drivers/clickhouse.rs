@@ -193,6 +193,129 @@ fn ensure_json_format(sql: &str) -> String {
     }
 }
 
+fn infer_insert_values_row_count(sql: &str) -> Option<i64> {
+    let trimmed = trim_trailing_semicolon(sql);
+    if !matches!(first_sql_keyword(trimmed).as_deref(), Some("insert")) {
+        return None;
+    }
+
+    let bytes = trimmed.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut values_pos = None;
+
+    while i < len {
+        if i + 1 < len && bytes[i] == b'-' && bytes[i + 1] == b'-' {
+            i += 2;
+            while i < len && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+
+        if i + 1 < len && bytes[i] == b'/' && bytes[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < len && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            i = (i + 2).min(len);
+            continue;
+        }
+
+        if bytes[i] == b'\'' {
+            i += 1;
+            while i < len {
+                if bytes[i] == b'\\' {
+                    i += 2;
+                    continue;
+                }
+                if bytes[i] == b'\'' {
+                    if i + 1 < len && bytes[i + 1] == b'\'' {
+                        i += 2;
+                        continue;
+                    }
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+
+        if bytes[i].is_ascii_alphabetic() {
+            let start = i;
+            i += 1;
+            while i < len && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            if trimmed[start..i].eq_ignore_ascii_case("values") {
+                values_pos = Some(i);
+                break;
+            }
+            continue;
+        }
+
+        i += 1;
+    }
+
+    let mut i = values_pos?;
+    let mut tuple_count = 0_i64;
+    let mut paren_depth = 0_i32;
+    let mut in_single_quote = false;
+
+    while i < len {
+        let b = bytes[i];
+
+        if in_single_quote {
+            if b == b'\\' {
+                i += 2;
+                continue;
+            }
+            if b == b'\'' {
+                if i + 1 < len && bytes[i + 1] == b'\'' {
+                    i += 2;
+                    continue;
+                }
+                in_single_quote = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if b == b'\'' {
+            in_single_quote = true;
+            i += 1;
+            continue;
+        }
+
+        if b == b'(' {
+            paren_depth += 1;
+            if paren_depth == 1 {
+                tuple_count += 1;
+            }
+            i += 1;
+            continue;
+        }
+
+        if b == b')' {
+            paren_depth -= 1;
+            if paren_depth < 0 {
+                return None;
+            }
+            i += 1;
+            continue;
+        }
+
+        i += 1;
+    }
+
+    if tuple_count > 0 && paren_depth == 0 {
+        Some(tuple_count)
+    } else {
+        None
+    }
+}
+
 fn value_to_bool(v: &Value) -> bool {
     match v {
         Value::Bool(b) => *b,
@@ -845,6 +968,8 @@ impl DatabaseDriver for ClickHouseDriver {
             .or(summary.total_rows_to_read);
         let affected = if let Some(v) = affected_opt {
             v
+        } else if let Some(v) = infer_insert_values_row_count(&sql) {
+            v
         } else if raw.body.trim().is_empty() {
             0
         } else if let Ok(v) = raw.body.trim().parse::<i64>() {
@@ -1007,5 +1132,23 @@ mod tests {
 
         let missing = required_i64_from_json_row(None, "total", "SELECT count()");
         assert!(missing.is_err());
+    }
+
+    #[test]
+    fn infer_insert_values_row_count_counts_top_level_tuples() {
+        let sql = "INSERT INTO `default`.`events` (id, name) VALUES (1, 'alpha'), (2, 'beta')";
+        assert_eq!(infer_insert_values_row_count(sql), Some(2));
+    }
+
+    #[test]
+    fn infer_insert_values_row_count_ignores_parentheses_inside_values() {
+        let sql = "INSERT INTO logs (id, payload) VALUES (1, 'fn(a, b)'), (2, '(nested) text')";
+        assert_eq!(infer_insert_values_row_count(sql), Some(2));
+    }
+
+    #[test]
+    fn infer_insert_values_row_count_returns_none_for_non_values_insert() {
+        let sql = "INSERT INTO dst SELECT id, name FROM src";
+        assert_eq!(infer_insert_values_row_count(sql), None);
     }
 }
