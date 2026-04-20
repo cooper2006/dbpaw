@@ -383,7 +383,47 @@ impl DatabaseDriver for CalciteDriver {
     }
 
     async fn execute_query(&self, sql: String) -> Result<QueryResult, String> {
-        self.execute_single_query(&sql).await
+        // Try to execute as a federated query first
+        match self.execute_single_query(&sql).await {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                // If federated query fails, try to execute as a regular query
+                // This allows CalciteDriver to handle both federated and regular queries
+                if let Some(ref local_db_arc) = self.local_db {
+                    let connections = local_db_arc.list_connections().await.map_err(|e| e.to_string())?;
+                    if !connections.is_empty() {
+                        // Use the first connection for regular queries
+                        let first_conn = &connections[0];
+                        let config = ConnectionForm {
+                            driver: first_conn.db_type.clone(),
+                            name: Some(first_conn.name.clone()),
+                            host: Some(first_conn.host.clone()),
+                            port: Some(first_conn.port),
+                            database: Some(first_conn.database.clone()),
+                            schema: None,
+                            username: Some(first_conn.username.clone()),
+                            password: first_conn.password.clone(),
+                            ssl: Some(first_conn.ssl),
+                            ssl_mode: first_conn.ssl_mode.clone(),
+                            ssl_ca_cert: first_conn.ssl_ca_cert.clone(),
+                            file_path: first_conn.file_path.clone(),
+                            ssh_enabled: Some(first_conn.ssh_enabled),
+                            ssh_host: first_conn.ssh_host.clone(),
+                            ssh_port: first_conn.ssh_port,
+                            ssh_username: first_conn.ssh_username.clone(),
+                            ssh_password: first_conn.ssh_password.clone(),
+                            ssh_key_path: first_conn.ssh_key_path.clone(),
+                        };
+                        
+                        let driver = crate::db::drivers::connect(&config).await?;
+                        let result = driver.execute_query(sql).await;
+                        driver.close().await;
+                        return result;
+                    }
+                }
+                Err(e)
+            }
+        }
     }
 
     async fn get_schema_overview(&self, _schema: Option<String>) -> Result<SchemaOverview, String> {
