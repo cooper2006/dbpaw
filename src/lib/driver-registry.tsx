@@ -25,6 +25,7 @@ const DRIVER_IDS = [
   "clickhouse",
   "mssql",
   "oracle",
+  "calcite",
 ] as const;
 
 export type Driver = (typeof DRIVER_IDS)[number];
@@ -186,6 +187,18 @@ export const DRIVER_REGISTRY: DriverConfig[] = [
     supportsSchemaBrowsing: true,
     supportsCreateDatabase: false,
     importCapability: "supported",
+    icon: () => <Database className="w-4 h-4" />,
+  },
+  {
+    id: "calcite",
+    label: "Calcite",
+    defaultPort: null,
+    isFileBased: false,
+    isMysqlFamily: false,
+    supportsSSLCA: false,
+    supportsSchemaBrowsing: false,
+    supportsCreateDatabase: false,
+    importCapability: "unsupported",
     icon: () => <Database className="w-4 h-4" />,
   },
 ];

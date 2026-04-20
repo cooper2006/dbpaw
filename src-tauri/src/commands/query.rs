@@ -1,6 +1,9 @@
 use crate::models::{ConnectionForm, QueryResult, SqlExecutionLog, TableDataResponse};
 use crate::state::AppState;
+use crate::db::drivers::calcite::CalciteDriver;
+use crate::db::drivers::DatabaseDriver;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::sync::OnceLock;
 use tauri::{Emitter, State};
 use tokio::sync::Mutex;
@@ -705,7 +708,14 @@ pub async fn execute_query(
     database: Option<String>,
     source: Option<String>,
     query_id: Option<String>,
+    is_federated_mode: Option<bool>,
 ) -> Result<QueryResult, String> {
+    let is_federated = is_federated_mode.unwrap_or(false);
+    
+    if is_federated {
+        return execute_federated_query(app_handle, state, query, source).await;
+    }
+    
     let query_id = make_query_id(id, query_id);
     let _ = app_handle.emit(
         "query.progress",
@@ -743,7 +753,6 @@ pub async fn execute_query(
     }
 
     if let Ok(res) = &result {
-        // Stream first chunk for UX (simulated)
         if !res.data.is_empty() {
             let _ = app_handle.emit(
                 "query.chunk",
@@ -771,6 +780,90 @@ pub async fn execute_query(
             source,
             Some(id),
             database,
+            false,
+            Some(err.clone()),
+        )
+        .await;
+    }
+
+    result
+}
+
+#[tauri::command]
+pub async fn execute_federated_query(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+    query: String,
+    source: Option<String>,
+) -> Result<QueryResult, String> {
+    let query_id = make_query_id(-1, None);
+    let _ = app_handle.emit(
+        "query.progress",
+        serde_json::json!({"queryId": query_id.clone(), "phase": "prepare"}),
+    );
+    
+    let local_db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+    
+    if local_db.is_none() {
+        return Err("[FEDERATED_ERROR] Local DB not initialized. Cannot execute federated query.".to_string());
+    }
+    
+    let calcite_driver = CalciteDriver::connect(&ConnectionForm {
+        driver: "calcite".to_string(),
+        name: Some("Calcite Federated Engine".to_string()),
+        host: None,
+        port: None,
+        database: None,
+        schema: None,
+        username: None,
+        password: None,
+        ssl: None,
+        ssl_mode: None,
+        ssl_ca_cert: None,
+        file_path: None,
+        ssh_enabled: None,
+        ssh_host: None,
+        ssh_port: None,
+        ssh_username: None,
+        ssh_password: None,
+        ssh_key_path: None,
+    }).await?;
+    
+    let driver = calcite_driver.with_local_db(local_db);
+    
+    let result = driver.execute_query(query.clone()).await;
+    
+    if let Ok(res) = &result {
+        if !res.data.is_empty() {
+            let _ = app_handle.emit(
+                "query.chunk",
+                serde_json::json!({
+                    "queryId": query_id,
+                    "rows": res.data.iter().take(50).collect::<Vec<_>>()
+                }),
+            );
+        }
+
+        append_sql_execution_log(
+            &state,
+            query.clone(),
+            source,
+            None,
+            None,
+            true,
+            None,
+        )
+        .await;
+    } else if let Err(err) = &result {
+        append_sql_execution_log(
+            &state,
+            query.clone(),
+            source,
+            None,
+            None,
             false,
             Some(err.clone()),
         )

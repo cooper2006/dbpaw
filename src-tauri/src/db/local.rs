@@ -22,7 +22,7 @@ impl LocalDb {
     pub async fn init(app_handle: &tauri::AppHandle) -> Result<Self, String> {
         let app_dir = app_handle
             .path()
-            .app_data_dir()
+            .temp_dir()
             .map_err(|e| e.to_string())?;
         Self::init_with_app_dir(&app_dir).await
     }
@@ -363,7 +363,7 @@ impl LocalDb {
     pub async fn list_connections(&self) -> Result<Vec<Connection>, String> {
         let rows = sqlx::query_as::<_, Connection>(
             r#"SELECT 
-                id, uuid, name, type as db_type, host, port, database, username, ssl, ssl_mode, ssl_ca_cert, file_path, 
+                id, uuid, name, type as db_type, host, port, database, username, password, ssl, ssl_mode, ssl_ca_cert, file_path, 
                 ssh_enabled, ssh_host, ssh_port, ssh_username, ssh_password, ssh_key_path,
                 created_at, updated_at 
                FROM connections 
@@ -378,7 +378,7 @@ impl LocalDb {
     pub async fn get_connection_by_id(&self, id: i64) -> Result<Connection, String> {
         sqlx::query_as::<_, Connection>(
             r#"SELECT 
-                id, uuid, name, type as db_type, host, port, database, username, ssl, ssl_mode, ssl_ca_cert, file_path, 
+                id, uuid, name, type as db_type, host, port, database, username, password, ssl, ssl_mode, ssl_ca_cert, file_path, 
                 ssh_enabled, ssh_host, ssh_port, ssh_username, ssh_password, ssh_key_path,
                 created_at, updated_at 
                FROM connections 

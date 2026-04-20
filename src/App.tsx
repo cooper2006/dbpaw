@@ -676,7 +676,7 @@ export default function App() {
     );
   };
 
-  const handleExecuteQuery = async (tabId: string, sql: string) => {
+  const handleExecuteQuery = async (tabId: string, sql: string, isFederatedMode?: boolean) => {
     const tab = tabs.find((t) => t.id === tabId);
     if (!tab || !tab.connectionId) {
       // TODO: Prompt user to select connection if missing
@@ -702,6 +702,7 @@ export default function App() {
         tab.database,
         "sql_editor",
         queryId,
+        isFederatedMode,
       );
       const columns = (result.columns || []).map((c) => c.name);
       const execMs = Math.round(
@@ -1777,8 +1778,8 @@ export default function App() {
                             <SqlEditor
                               databaseName={tab.database}
                               availableDatabases={tab.availableDatabases}
-                              onExecute={(sql) =>
-                                handleExecuteQuery(tab.id, sql)
+                              onExecute={(sql, isFederatedMode) =>
+                                handleExecuteQuery(tab.id, sql, isFederatedMode)
                               }
                               onCancel={() =>
                                 tab.connectionId && tab.activeQueryId

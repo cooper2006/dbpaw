@@ -226,7 +226,7 @@ interface SqlEditorProps {
     executionTime?: string;
     error?: string;
   } | null;
-  onExecute?: (sql: string) => void;
+  onExecute?: (sql: string, isFederatedMode?: boolean) => void;
   onCancel?: () => void;
   databaseName?: string;
   availableDatabases?: string[];
@@ -267,6 +267,7 @@ export function SqlEditor({
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [isFormatting, setIsFormatting] = useState(false);
+  const [isFederatedMode, setIsFederatedMode] = useState(false);
   const canSwitchDatabase =
     !!databaseName &&
     !!onDatabaseChange &&
@@ -352,11 +353,16 @@ export function SqlEditor({
     if (!onExecute) return;
     const view = editorViewRef.current;
     if (view) {
-      executeFromEditorSelection(view);
+      const sqlToRun = collectSelectedSql({
+        ranges: view.state.selection.ranges,
+        sliceDoc: (from, to) => view.state.sliceDoc(from, to),
+        fullDoc: () => view.state.doc.toString(),
+      });
+      onExecute(sqlToRun, isFederatedMode);
       return;
     }
-    onExecute(code);
-  }, [onExecute, code, executeFromEditorSelection]);
+    onExecute(code, isFederatedMode);
+  }, [onExecute, code, isFederatedMode]);
 
   const handleClear = () => {
     handleSqlChange("");
@@ -724,6 +730,22 @@ export function SqlEditor({
 
           <TooltipProvider>
             <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={() => setIsFederatedMode(!isFederatedMode)}
+                    size="icon"
+                    variant={isFederatedMode ? "default" : "outline"}
+                    className="h-8 w-8"
+                  >
+                    <Database className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{isFederatedMode ? t("sqlEditor.tooltip.disableFederatedQuery") : t("sqlEditor.tooltip.enableFederatedQuery")}</p>
+                </TooltipContent>
+              </Tooltip>
+
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

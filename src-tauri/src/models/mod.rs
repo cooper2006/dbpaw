@@ -12,6 +12,7 @@ pub struct Connection {
     pub port: i64,
     pub database: String,
     pub username: String,
+    pub password: Option<String>,
     pub ssl: bool,
     pub ssl_mode: Option<String>,
     pub ssl_ca_cert: Option<String>,

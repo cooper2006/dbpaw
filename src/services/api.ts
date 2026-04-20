@@ -336,6 +336,7 @@ export const api = {
       database?: string,
       source?: SqlExecutionSource,
       queryId?: string,
+      isFederatedMode?: boolean,
     ) =>
       invoke<QueryResult>("execute_query", {
         id,
@@ -343,11 +344,14 @@ export const api = {
         database,
         source,
         queryId,
+        isFederatedMode,
       }),
     cancel: (uuid: string, queryId: string) =>
       invoke<boolean>("cancel_query", { uuid, queryId }),
     executeByConn: (form: ConnectionForm, sql: string) =>
       invoke<QueryResult>("execute_by_conn", { form, sql }),
+    executeFederated: (sql: string) =>
+      invoke<QueryResult>("execute_federated_query", { sql }),
   },
   sqlLogs: {
     list: (limit = 100) =>

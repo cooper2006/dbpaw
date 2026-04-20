@@ -303,6 +303,9 @@ export const ja: Translations = {
       importSqlReadOnly: "SQL をインポート（読み取り専用で未対応）",
       exportTable: "エクスポート…",
       exportDatabaseSql: "Database SQL をエクスポート",
+      viewStructure: "構造を表示",
+      generateSQL: "SQL を生成",
+      viewData: "データを表示",
     },
     importDialog: {
       title: "SQL をインポート",

@@ -37,6 +37,7 @@ bb8 = "0.8.6"
 async-trait = "0.1"
 ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 rand = "0.9"
+regex = "1"
 tauri-plugin-updater = "2.10.0"
 tauri-plugin-process = "2.3.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
@@ -51,3 +52,4 @@ duckdb = []
 
 [dev-dependencies]
 testcontainers = "0.15.0"
+tempfile = "3.10"

@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "vite",
     "dev:mock": "VITE_USE_MOCK=true vite",
-    "build": "bun run typecheck && vite build",
+    "build": "npm run typecheck && vite build",
     "typecheck": "tsc -b",
     "lint:web": "prettier --check \"package.json\" \"package-lock.json\" \"tsconfig*.json\" \"vite.config.ts\" \"src-tauri/tauri.conf.json\" \"src-tauri/capabilities/**/*.json\" \".github/workflows/*.{yml,yaml}\"",
     "lint:rust": "bun run rust:check",
