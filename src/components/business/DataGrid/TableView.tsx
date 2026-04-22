@@ -928,12 +928,7 @@ export function TableView({
     setIsDeleting(true);
     setSaveError(null);
     try {
-      await api.query.execute(
-        tableContext.connectionId,
-        sql,
-        tableContext.database,
-        "table_view_save",
-      );
+      await api.query.executeFederated(sql, "table_view_save");
       setDeleteDialogOpen(false);
       const nextSelectedRows = new Set<number>();
       selectedRowsRef.current = nextSelectedRows;
@@ -983,12 +978,7 @@ export function TableView({
     const errors: string[] = [];
     for (const sql of sqls) {
       try {
-        await api.query.execute(
-          tableContext.connectionId,
-          sql,
-          tableContext.database,
-          "table_view_save",
-        );
+        await api.query.executeFederated(sql, "table_view_save");
       } catch (e) {
         errors.push(
           `${sql}\n  -> ${e instanceof Error ? e.message : String(e)}`,

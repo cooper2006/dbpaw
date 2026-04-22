@@ -7,7 +7,7 @@ pub mod storage;
 pub mod transfer;
 
 use crate::db::drivers::DatabaseDriver;
-use crate::state::AppState;
+use crate::state::{AppState, SharedAppState};
 use std::sync::Arc;
 use tauri::State;
 
@@ -21,14 +21,14 @@ fn connection_pool_key(id: i64, database: &Option<String>) -> String {
 }
 
 pub async fn ensure_connection(
-    state: &State<'_, AppState>,
+    state: &State<'_, SharedAppState>,
     id: i64,
 ) -> Result<Arc<dyn DatabaseDriver>, String> {
     ensure_connection_with_db(state, id, None).await
 }
 
 pub async fn ensure_connection_with_db(
-    state: &State<'_, AppState>,
+    state: &State<'_, SharedAppState>,
     id: i64,
     database: Option<String>,
 ) -> Result<Arc<dyn DatabaseDriver>, String> {
@@ -140,7 +140,7 @@ where
 }
 
 pub async fn execute_with_retry<F, Fut, T>(
-    state: &State<'_, AppState>,
+    state: &State<'_, SharedAppState>,
     id: i64,
     database: Option<String>,
     task: F,

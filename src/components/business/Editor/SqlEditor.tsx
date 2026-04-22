@@ -226,7 +226,7 @@ interface SqlEditorProps {
     executionTime?: string;
     error?: string;
   } | null;
-  onExecute?: (sql: string, isFederatedMode?: boolean) => void;
+  onExecute?: (sql: string) => void;
   onCancel?: () => void;
   databaseName?: string;
   availableDatabases?: string[];
@@ -358,11 +358,11 @@ export function SqlEditor({
         sliceDoc: (from, to) => view.state.sliceDoc(from, to),
         fullDoc: () => view.state.doc.toString(),
       });
-      onExecute(sqlToRun, isFederatedMode);
+      onExecute(sqlToRun);
       return;
     }
-    onExecute(code, isFederatedMode);
-  }, [onExecute, code, isFederatedMode]);
+    onExecute(code);
+  }, [onExecute, code]);
 
   const handleClear = () => {
     handleSqlChange("");

@@ -16,3 +16,9 @@ impl AppState {
         }
     }
 }
+
+pub type SharedAppState = Arc<AppState>;
+
+pub fn new_shared_app_state() -> SharedAppState {
+    Arc::new(AppState::new())
+}

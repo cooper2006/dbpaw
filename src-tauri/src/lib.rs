@@ -1,9 +1,8 @@
 use crate::db::local::LocalDb;
-use crate::state::AppState;
+use crate::state::{AppState, SharedAppState};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -11,6 +10,11 @@ fn greet(name: &str) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let shared_state = crate::state::new_shared_app_state();
+
+    let shared_state_for_server = shared_state.clone();
+    let shared_state_for_exit = shared_state.clone();
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -36,14 +40,13 @@ pub fn run() {
                 }
             }
         })
-        .manage(AppState::new())
+        .manage(shared_state)
         .setup(|app| {
             let handle = app.handle().clone();
 
             #[cfg(target_os = "macos")]
             {
                 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-                // Use a closure to handle potential errors gracefully
                 if let Err(e) = (|| -> tauri::Result<()> {
                     let app_menu = Submenu::new(&handle, "App", true)?;
                     let edit_menu = Submenu::new(&handle, "Edit", true)?;
@@ -119,7 +122,7 @@ pub fn run() {
 
             // Initialize local database (blocking to avoid race conditions)
             tauri::async_runtime::block_on(async move {
-                let state = handle.state::<AppState>();
+                let state = handle.state::<SharedAppState>();
                 match LocalDb::init(&handle).await {
                     Ok(db) => {
                         let mut lock = state.local_db.lock().await;
@@ -128,10 +131,19 @@ pub fn run() {
                     }
                     Err(e) => {
                         eprintln!("Failed to initialize local DB: {}", e);
-                        // Make the error visible in the frontend if possible, or at least easier to debug
                     }
                 }
             });
+
+            // Start HTTP API server in background
+            let port = std::env::var("DBPAW_API_PORT")
+                .ok()
+                .and_then(|p| p.parse::<u16>().ok())
+                .unwrap_or(17300);
+            tauri::async_runtime::spawn(async move {
+                crate::server::start_server(shared_state_for_server, port).await;
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -181,11 +193,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|app_handle, event| match event {
+    app.run(move |_app_handle, event| match event {
         tauri::RunEvent::Exit => {
-            let state = app_handle.state::<AppState>();
             tauri::async_runtime::block_on(async {
-                state.pool_manager.close_all().await;
+                shared_state_for_exit.pool_manager.close_all().await;
             });
         }
         _ => {}
@@ -199,6 +210,7 @@ pub mod db;
 pub mod error;
 pub mod events;
 pub mod models;
+pub mod server;
 pub mod ssh;
 pub mod state;
 pub mod utils;

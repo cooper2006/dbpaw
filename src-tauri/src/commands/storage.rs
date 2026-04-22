@@ -1,10 +1,10 @@
 use crate::models::SavedQuery;
-use crate::state::AppState;
+use crate::state::{AppState, SharedAppState};
 use tauri::State;
 
 #[tauri::command]
 pub async fn save_query(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     name: String,
     query: String,
     description: Option<String>,
@@ -39,7 +39,7 @@ pub async fn save_query_direct(
 
 #[tauri::command]
 pub async fn update_saved_query(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     name: String,
     query: String,
@@ -75,7 +75,7 @@ pub async fn update_saved_query_direct(
 }
 
 #[tauri::command]
-pub async fn delete_saved_query(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+pub async fn delete_saved_query(state: State<'_, SharedAppState>, id: i64) -> Result<(), String> {
     let local_db = state.local_db.lock().await;
     if let Some(db) = local_db.as_ref() {
         db.delete_saved_query(id).await
@@ -94,7 +94,7 @@ pub async fn delete_saved_query_direct(state: &AppState, id: i64) -> Result<(), 
 }
 
 #[tauri::command]
-pub async fn get_saved_queries(state: State<'_, AppState>) -> Result<Vec<SavedQuery>, String> {
+pub async fn get_saved_queries(state: State<'_, SharedAppState>) -> Result<Vec<SavedQuery>, String> {
     let local_db = state.local_db.lock().await;
     if let Some(db) = local_db.as_ref() {
         db.list_saved_queries().await

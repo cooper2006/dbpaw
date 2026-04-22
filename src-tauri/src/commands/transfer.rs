@@ -1,5 +1,5 @@
 use crate::db::drivers::DatabaseDriver;
-use crate::state::AppState;
+use crate::state::{AppState, SharedAppState};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::fs::{self, File};
@@ -238,7 +238,7 @@ async fn do_database_export(
 
 #[tauri::command]
 pub async fn export_table_data(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     database: Option<String>,
     schema: String,
@@ -347,7 +347,7 @@ pub async fn export_table_data_direct(
 
 #[tauri::command]
 pub async fn export_database_sql(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     database: String,
     driver: String,
@@ -388,7 +388,7 @@ pub async fn export_database_sql_direct(
 
 #[tauri::command]
 pub async fn export_query_result(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     database: Option<String>,
     sql: String,
@@ -471,7 +471,7 @@ pub async fn export_query_result_direct(
 
 #[tauri::command]
 pub async fn import_sql_file(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     database: Option<String>,
     file_path: String,

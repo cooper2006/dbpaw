@@ -1,5 +1,5 @@
 use crate::models::{Connection, ConnectionForm, TestConnectionResult};
-use crate::state::AppState;
+use crate::state::{AppState, SharedAppState};
 use serde::Deserialize;
 use std::time::Instant;
 use tauri::State;
@@ -239,7 +239,7 @@ pub async fn list_databases(form: ConnectionForm) -> Result<Vec<String>, String>
 
 #[tauri::command]
 pub async fn list_databases_by_id(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
 ) -> Result<Vec<String>, String> {
     super::execute_with_retry(&state, id, None, |driver| async move {
@@ -257,7 +257,7 @@ pub async fn list_databases_by_id_direct(state: &AppState, id: i64) -> Result<Ve
 
 #[tauri::command]
 pub async fn create_database_by_id(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     payload: CreateDatabasePayload,
 ) -> Result<(), String> {
@@ -451,7 +451,7 @@ pub async fn test_connection_ephemeral(
 
 #[tauri::command]
 pub async fn get_mysql_charsets_by_id(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
 ) -> Result<Vec<String>, String> {
     super::execute_with_retry(&state, id, None, |driver| async move {
@@ -475,7 +475,7 @@ pub async fn get_mysql_charsets_by_id(
 
 #[tauri::command]
 pub async fn get_mysql_collations_by_id(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     charset: Option<String>,
 ) -> Result<Vec<String>, String> {
@@ -566,7 +566,7 @@ pub async fn get_mysql_collations_by_id_direct(
 }
 
 #[tauri::command]
-pub async fn get_connections(state: State<'_, AppState>) -> Result<Vec<Connection>, String> {
+pub async fn get_connections(state: State<'_, SharedAppState>) -> Result<Vec<Connection>, String> {
     let local_db = {
         let lock = state.local_db.lock().await;
         lock.clone()
@@ -592,7 +592,7 @@ pub async fn get_connections_direct(state: &AppState) -> Result<Vec<Connection>,
 
 #[tauri::command]
 pub async fn create_connection(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     form: ConnectionForm,
 ) -> Result<Connection, String> {
     let form = crate::connection_input::normalize_connection_form(form)?;
@@ -625,7 +625,7 @@ pub async fn create_connection_direct(
 
 #[tauri::command]
 pub async fn update_connection(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     form: ConnectionForm,
 ) -> Result<Connection, String> {
@@ -663,7 +663,7 @@ pub async fn update_connection_direct(
 }
 
 #[tauri::command]
-pub async fn delete_connection(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+pub async fn delete_connection(state: State<'_, SharedAppState>, id: i64) -> Result<(), String> {
     let local_db = {
         let lock = state.local_db.lock().await;
         lock.clone()

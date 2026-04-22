@@ -1,5 +1,5 @@
 use crate::models::{ConnectionForm, SchemaOverview, TableInfo, TableMetadata, TableStructure};
-use crate::state::AppState;
+use crate::state::{AppState, SharedAppState};
 use tauri::State;
 
 fn ensure_table_structure_found(
@@ -17,7 +17,7 @@ fn ensure_table_structure_found(
 
 #[tauri::command]
 pub async fn get_schema_overview(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     database: Option<String>,
     schema: Option<String>,
@@ -48,9 +48,22 @@ pub async fn list_tables_by_conn(form: ConnectionForm) -> Result<Vec<TableInfo>,
     driver.list_tables(form.schema).await
 }
 
+pub async fn list_tables_direct(
+    state: &AppState,
+    id: i64,
+    database: Option<String>,
+    schema: Option<String>,
+) -> Result<Vec<TableInfo>, String> {
+    super::execute_with_retry_from_app_state(state, id, database, |driver| {
+        let schema_clone = schema.clone();
+        async move { driver.list_tables(schema_clone).await }
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn list_tables(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     database: Option<String>,
     schema: Option<String>,
@@ -67,7 +80,7 @@ pub async fn list_tables(
 
 #[tauri::command]
 pub async fn get_table_structure(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     schema: String,
     table: String,
@@ -100,7 +113,7 @@ pub async fn get_table_structure_direct(
 
 #[tauri::command]
 pub async fn get_table_ddl(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     database: Option<String>,
     schema: String,
@@ -131,7 +144,7 @@ pub async fn get_table_ddl_direct(
 
 #[tauri::command]
 pub async fn get_table_metadata(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     database: Option<String>,
     schema: String,

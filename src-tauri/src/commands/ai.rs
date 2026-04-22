@@ -6,7 +6,7 @@ use crate::ai::types::{
     AiSchemaOverview, AiStartResponse, AiStartedPayload, AiTableSummary,
 };
 use crate::models::{AiConversation, AiMessage, AiProviderForm, AiProviderPublic};
-use crate::state::AppState;
+use crate::state::{AppState, SharedAppState};
 use std::sync::Arc;
 use tauri::{Emitter, State};
 
@@ -105,7 +105,7 @@ fn assemble_final_messages(
     final_messages
 }
 
-async fn get_db(state: &State<'_, AppState>) -> Result<Arc<crate::db::local::LocalDb>, String> {
+async fn get_db(state: &State<'_, SharedAppState>) -> Result<Arc<crate::db::local::LocalDb>, String> {
     let local_db = {
         let lock = state.local_db.lock().await;
         lock.clone()
@@ -151,7 +151,7 @@ fn emit_ai_error(
 
 #[tauri::command]
 pub async fn ai_list_providers(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
 ) -> Result<Vec<AiProviderPublic>, String> {
     let db = get_db(&state).await?;
     db.list_ai_providers_public().await
@@ -164,7 +164,7 @@ pub async fn ai_list_providers_direct(state: &AppState) -> Result<Vec<AiProvider
 
 #[tauri::command]
 pub async fn ai_create_provider(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     mut config: AiProviderForm,
 ) -> Result<AiProviderPublic, String> {
     normalize_provider_form(&mut config, Some("openai"))?;
@@ -185,7 +185,7 @@ pub async fn ai_create_provider_direct(
 
 #[tauri::command]
 pub async fn ai_update_provider(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     mut config: AiProviderForm,
 ) -> Result<AiProviderPublic, String> {
@@ -207,7 +207,7 @@ pub async fn ai_update_provider_direct(
 }
 
 #[tauri::command]
-pub async fn ai_delete_provider(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+pub async fn ai_delete_provider(state: State<'_, SharedAppState>, id: i64) -> Result<(), String> {
     let db = get_db(&state).await?;
     db.delete_ai_provider(id).await
 }
@@ -218,7 +218,7 @@ pub async fn ai_delete_provider_direct(state: &AppState, id: i64) -> Result<(), 
 }
 
 #[tauri::command]
-pub async fn ai_set_default_provider(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+pub async fn ai_set_default_provider(state: State<'_, SharedAppState>, id: i64) -> Result<(), String> {
     let db = get_db(&state).await?;
     db.set_default_ai_provider(id).await
 }
@@ -230,7 +230,7 @@ pub async fn ai_set_default_provider_direct(state: &AppState, id: i64) -> Result
 
 #[tauri::command]
 pub async fn ai_clear_provider_api_key(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     provider_type: String,
 ) -> Result<(), String> {
     let provider_type = normalize_provider_type(&provider_type)?;
@@ -250,7 +250,7 @@ pub async fn ai_clear_provider_api_key_direct(
 #[tauri::command]
 pub async fn ai_chat_start(
     app: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     request: AiChatRequest,
 ) -> Result<AiStartResponse, String> {
     run_chat(app, state, request, true).await
@@ -259,7 +259,7 @@ pub async fn ai_chat_start(
 #[tauri::command]
 pub async fn ai_chat_continue(
     app: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     request: AiChatRequest,
 ) -> Result<AiStartResponse, String> {
     run_chat(app, state, request, false).await
@@ -267,7 +267,7 @@ pub async fn ai_chat_continue(
 
 async fn run_chat(
     app: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     request: AiChatRequest,
     create_if_missing: bool,
 ) -> Result<AiStartResponse, String> {
@@ -676,7 +676,7 @@ pub async fn ai_chat_continue_direct(
 
 #[tauri::command]
 pub async fn ai_list_conversations(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     connection_id: Option<i64>,
     database: Option<String>,
 ) -> Result<Vec<AiConversation>, String> {
@@ -695,7 +695,7 @@ pub async fn ai_list_conversations_direct(
 
 #[tauri::command]
 pub async fn ai_get_conversation(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     conversation_id: i64,
 ) -> Result<AiConversationDetail, String> {
     let db = get_db(&state).await?;
@@ -722,7 +722,7 @@ pub async fn ai_get_conversation_direct(
 
 #[tauri::command]
 pub async fn ai_delete_conversation(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     conversation_id: i64,
 ) -> Result<(), String> {
     let db = get_db(&state).await?;

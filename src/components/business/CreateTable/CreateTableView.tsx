@@ -217,12 +217,7 @@ export function CreateTableView({
     setErrors([]);
     setIsExecuting(true);
     try {
-      await api.query.execute(
-        connectionId,
-        generatedSQL,
-        database,
-        "sql_editor",
-      );
+      await api.query.executeFederated(generatedSQL, "sql_editor");
       toast.success(
         t("createTable.toast.success", { table: tableName.trim() }),
       );

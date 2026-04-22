@@ -1,5 +1,5 @@
 use crate::models::{ConnectionForm, QueryResult, SqlExecutionLog, TableDataResponse};
-use crate::state::AppState;
+use crate::state::{AppState, SharedAppState};
 use crate::db::drivers::calcite::CalciteDriver;
 use crate::db::drivers::DatabaseDriver;
 use std::collections::{HashMap, HashSet};
@@ -589,7 +589,7 @@ fn maybe_apply_default_limit(sql: &str, driver: Option<&str>) -> String {
     append_limit_1000(normalized)
 }
 
-async fn resolve_driver(state: &State<'_, AppState>, id: i64) -> Option<String> {
+async fn resolve_driver(state: &State<'_, SharedAppState>, id: i64) -> Option<String> {
     let db = {
         let lock = state.local_db.lock().await;
         lock.clone()
@@ -627,7 +627,7 @@ async fn is_running_query(connection_id: i64, query_id: &str) -> bool {
 }
 
 async fn append_sql_execution_log(
-    state: &State<'_, AppState>,
+    state: &State<'_, SharedAppState>,
     sql: String,
     source: Option<String>,
     connection_id: Option<i64>,
@@ -702,7 +702,7 @@ pub async fn get_table_data_by_conn(
 #[tauri::command]
 pub async fn execute_query(
     app_handle: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     query: String,
     database: Option<String>,
@@ -792,7 +792,7 @@ pub async fn execute_query(
 #[tauri::command]
 pub async fn execute_federated_query(
     app_handle: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     query: String,
     source: Option<String>,
 ) -> Result<QueryResult, String> {
@@ -960,9 +960,112 @@ pub async fn execute_by_conn_direct(
     driver.execute_query_with_id(guarded_sql, None).await
 }
 
+pub async fn execute_federated_query_direct(
+    state: &AppState,
+    query: String,
+    source: Option<String>,
+) -> Result<QueryResult, String> {
+    let local_db = {
+        let lock = state.local_db.lock().await;
+        lock.clone()
+    };
+    
+    if local_db.is_none() {
+        return Err("[FEDERATED_ERROR] Local DB not initialized. Cannot execute federated query.".to_string());
+    }
+    
+    let calcite_driver = crate::db::drivers::calcite::CalciteDriver::connect(&ConnectionForm {
+        driver: "calcite".to_string(),
+        name: Some("Calcite Federated Engine".to_string()),
+        host: None,
+        port: None,
+        database: None,
+        schema: None,
+        username: None,
+        password: None,
+        ssl: None,
+        ssl_mode: None,
+        ssl_ca_cert: None,
+        file_path: None,
+        ssh_enabled: None,
+        ssh_host: None,
+        ssh_port: None,
+        ssh_username: None,
+        ssh_password: None,
+        ssh_key_path: None,
+    }).await?;
+    
+    let driver = calcite_driver.with_local_db(local_db);
+    
+    let result = driver.execute_query(query.clone()).await;
+    
+    if result.is_ok() {
+        append_sql_execution_log_direct(
+            state,
+            query.clone(),
+            source,
+            None,
+            None,
+            true,
+            None,
+        ).await;
+    } else if let Err(err) = &result {
+        append_sql_execution_log_direct(
+            state,
+            query.clone(),
+            source,
+            None,
+            None,
+            false,
+            Some(err.clone()),
+        ).await;
+    }
+    
+    result
+}
+
+pub async fn get_table_data_by_conn_direct_wrapper(
+    state: &AppState,
+    id: i64,
+    database: Option<String>,
+    schema: String,
+    table: String,
+    page: i64,
+    limit: i64,
+    filter: Option<String>,
+    sort_column: Option<String>,
+    sort_direction: Option<String>,
+    order_by: Option<String>,
+) -> Result<TableDataResponse, String> {
+    validate_page_limit(page, limit)?;
+    super::execute_with_retry_from_app_state(state, id, database, |driver| {
+        let schema_clone = schema.clone();
+        let table_clone = table.clone();
+        let filter_clone = filter.clone();
+        let sort_col_clone = sort_column.clone();
+        let sort_dir_clone = sort_direction.clone();
+        let order_by_clone = order_by.clone();
+        async move {
+            driver
+                .get_table_data(
+                    schema_clone,
+                    table_clone,
+                    page,
+                    limit,
+                    sort_col_clone,
+                    sort_dir_clone,
+                    filter_clone,
+                    order_by_clone,
+                )
+                .await
+        }
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn get_table_data(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     id: i64,
     database: Option<String>,
     schema: String,
@@ -1002,7 +1105,7 @@ pub async fn get_table_data(
 
 #[tauri::command]
 pub async fn cancel_query(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     uuid: String,
     query_id: String,
 ) -> Result<bool, String> {
@@ -1037,7 +1140,7 @@ pub async fn cancel_query(
 #[tauri::command]
 pub async fn execute_by_conn(
     app_handle: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     form: ConnectionForm,
     sql: String,
 ) -> Result<QueryResult, String> {
@@ -1103,7 +1206,7 @@ fn clamp_sql_execution_logs_limit(limit: Option<i64>) -> i64 {
 
 #[tauri::command]
 pub async fn list_sql_execution_logs(
-    state: State<'_, AppState>,
+    state: State<'_, SharedAppState>,
     limit: Option<i64>,
 ) -> Result<Vec<SqlExecutionLog>, String> {
     let safe_limit = clamp_sql_execution_logs_limit(limit);

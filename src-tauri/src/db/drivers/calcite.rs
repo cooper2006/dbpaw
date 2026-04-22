@@ -90,16 +90,14 @@ impl CalciteDriver {
         
         let union_patterns = ["UNION ALL", "UNION", "EXCEPT", "MINUS", "INTERSECT"];
         
-        let mut search_pos = 0;
         let mut found_union_pos: Option<usize> = None;
         let mut found_pattern_len = 0;
         
         for pattern in &union_patterns {
-            let search_str = &sql_upper[search_pos..];
+            let search_str = &sql_upper;
             if let Some(pos) = search_str.find(pattern) {
-                let actual_pos = search_pos + pos;
-                if found_union_pos.is_none() || actual_pos < found_union_pos.unwrap() {
-                    found_union_pos = Some(actual_pos);
+                if found_union_pos.is_none() || pos < found_union_pos.unwrap() {
+                    found_union_pos = Some(pos);
                     found_pattern_len = pattern.len();
                 }
             }
@@ -159,7 +157,6 @@ impl CalciteDriver {
         // Group tables by their SQL part index (based on federated operators)
         let mut tables_by_part = vec![Vec::new(); sql_parts.len()];
         let mut current_part = 0;
-        let mut in_union = false;
         
         for (i, (alias, _, _, _)) in tables.iter().enumerate() {
             if i > 0 {
@@ -184,7 +181,7 @@ impl CalciteDriver {
             }
             
             // Use the first table's connection for this SQL part
-            let (alias, database, schema, table) = &part_tables[0];
+            let (alias, database, schema, _table) = &part_tables[0];
             
             let mut config = match self.get_connection_config(alias).await {
                 Ok(cfg) => cfg,

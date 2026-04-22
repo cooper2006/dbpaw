@@ -676,16 +676,16 @@ export default function App() {
     );
   };
 
-  const handleExecuteQuery = async (tabId: string, sql: string, isFederatedMode?: boolean) => {
+  const handleExecuteQuery = async (tabId: string, sql: string) => {
     const tab = tabs.find((t) => t.id === tabId);
-    if (!tab || !tab.connectionId) {
+    if (!tab) {
       // TODO: Prompt user to select connection if missing
       alert(t("app.error.selectConnectionFirst"));
       return;
     }
 
     const start = performance.now();
-    const queryId = `q-${tab.connectionId}-${Date.now()}-${Math.random()
+    const queryId = `q-${Date.now()}-${Math.random()
       .toString(36)
       .slice(2, 8)}`;
     setTabs((prev) =>
@@ -696,14 +696,7 @@ export default function App() {
       ),
     );
     try {
-      const result = await api.query.execute(
-        tab.connectionId,
-        sql,
-        tab.database,
-        "sql_editor",
-        queryId,
-        isFederatedMode,
-      );
+      const result = await api.query.executeFederated(sql, "sql_editor");
       const columns = (result.columns || []).map((c) => c.name);
       const execMs = Math.round(
         result.timeTakenMs ?? performance.now() - start,
@@ -720,7 +713,7 @@ export default function App() {
       );
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
-      console.error("execute_query failed:", errorMessage);
+      console.error("execute_federated_query failed:", errorMessage);
       setTabs((prev) =>
         prev.map((t) =>
           applyQueryCompletionToTab(t, tabId, queryId, {
@@ -1778,8 +1771,8 @@ export default function App() {
                             <SqlEditor
                               databaseName={tab.database}
                               availableDatabases={tab.availableDatabases}
-                              onExecute={(sql, isFederatedMode) =>
-                                handleExecuteQuery(tab.id, sql, isFederatedMode)
+                              onExecute={(sql) =>
+                                handleExecuteQuery(tab.id, sql)
                               }
                               onCancel={() =>
                                 tab.connectionId && tab.activeQueryId
