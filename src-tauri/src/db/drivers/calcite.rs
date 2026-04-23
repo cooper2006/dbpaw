@@ -192,8 +192,12 @@ impl CalciteDriver {
             };
             
             let is_mysql = config.driver.eq_ignore_ascii_case("mysql") || config.driver.eq_ignore_ascii_case("mariadb");
+            let is_postgres = config.driver.eq_ignore_ascii_case("postgres") || config.driver.eq_ignore_ascii_case("postgresql");
             
-            if !database.is_empty() {
+            if is_postgres && !database.is_empty() {
+                // For PostgreSQL, we don't want to override the database from the connection
+                // The database in the table reference is used as the schema prefix
+            } else if !database.is_empty() {
                 config.database = Some(database.clone());
             } else if is_mysql && !schema.is_empty() {
                 config.database = Some(schema.clone());

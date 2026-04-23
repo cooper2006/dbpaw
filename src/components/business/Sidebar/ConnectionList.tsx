@@ -1436,8 +1436,17 @@ export function ConnectionList({
 
   const handleGenerateTableSQL = (connection: Connection, database: DatabaseInfo, table: TableInfo) => {
     if (onCreateQuery) {
-      const schema = table.schema ? `${table.schema}.` : "";
-      const tableName = `${schema}${table.name}`;
+      const schema = table.schema || "";
+      let tableName: string;
+      
+      // Build federated table reference
+      if (connection.type === "postgres" || connection.type === "postgresql") {
+        // PostgreSQL format: connection.database.schema.table
+        tableName = `${connection.name}.${database.name}.${schema}.${table.name}`;
+      } else {
+        // MySQL format: connection.database.table
+        tableName = `${connection.name}.${database.name}.${table.name}`;
+      }
       
       // Generate sample SQL statements
       const selectSql = `SELECT * FROM ${tableName} LIMIT 100;`;
@@ -1459,8 +1468,19 @@ ${deleteSql}`;
 
   const handleViewTableData = (connection: Connection, database: DatabaseInfo, table: TableInfo) => {
     if (onCreateQuery) {
-      const schema = table.schema ? `${table.schema}.` : "";
-      const selectQuery = `SELECT * FROM ${schema}${table.name} LIMIT 100;`;
+      const schema = table.schema || "";
+      let tableName: string;
+      
+      // Build federated table reference
+      if (connection.type === "postgres" || connection.type === "postgresql") {
+        // PostgreSQL format: connection.database.schema.table
+        tableName = `${connection.name}.${database.name}.${schema}.${table.name}`;
+      } else {
+        // MySQL format: connection.database.table
+        tableName = `${connection.name}.${database.name}.${table.name}`;
+      }
+      
+      const selectQuery = `SELECT * FROM ${tableName} LIMIT 100;`;
       onCreateQuery(Number(connection.id), database.name, connection.type, selectQuery);
     }
   };

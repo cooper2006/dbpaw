@@ -181,6 +181,7 @@ export function TableView({
   const [pageInput, setPageInput] = useState(String(page));
   const [pageSizeInput, setPageSizeInput] = useState(String(pageSize));
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const [connections, setConnections] = useState<any[]>([]);
   const columnWidthsRef = useRef<Record<string, number>>({});
   columnWidthsRef.current = columnWidths;
   const headerClickStateRef = useRef<
@@ -196,6 +197,20 @@ export function TableView({
       prevColumnsRef.current = colsKey;
     }
   }, [columns]);
+
+  // Load connections list
+  useEffect(() => {
+    const loadConnections = async () => {
+      try {
+        const connList = await api.connections.list();
+        setConnections(connList);
+      } catch (e) {
+        console.error("Failed to load connections:", e);
+      }
+    };
+
+    loadConnections();
+  }, []);
 
   // Auto-calculate column widths based on content.
   // Read columnWidths via ref to avoid re-triggering the effect on every width update.
@@ -730,7 +745,25 @@ export function TableView({
     });
 
     const sqls: string[] = [];
-    const { schema, table, driver } = tableContext;
+    const { connectionId, database, schema, table, driver } = tableContext;
+
+    // Get connection name for federated query
+    const connection = connections.find(conn => conn.id === connectionId);
+    const connectionName = connection?.name || "";
+
+    // Build federated table reference
+    let tableName: string;
+    if (connectionName) {
+      // Federated query format: connection.database.schema.table
+      if (driver === "postgres") {
+        tableName = `${connectionName}.${database}.${schema}.${table}`;
+      } else {
+        tableName = `${connectionName}.${database}.${table}`;
+      }
+    } else {
+      // Fallback to regular table reference
+      tableName = getQualifiedTableName(driver, schema, table);
+    }
 
     changesByRow.forEach((changes, rowIndex) => {
       const row = data[rowIndex] ?? currentData[changes[0]?.rowIndex ?? -1];
@@ -759,8 +792,6 @@ export function TableView({
         return `${quoteIdent(tableContext.driver, pk)} = '${escapeSQL(String(pkValue))}'`;
       });
 
-      const tableName = getQualifiedTableName(driver, schema, table);
-
       const sql = buildUpdateStatement(
         driver,
         tableName,
@@ -778,15 +809,32 @@ export function TableView({
     pendingChanges,
     data,
     currentData,
+    connections,
   ]);
 
   const generateInsertSQL = useCallback(() => {
     if (!tableContext || !canInsert || !insertDraftRows.length) return [];
-    const tableName = getQualifiedTableName(
-      tableContext.driver,
-      tableContext.schema,
-      tableContext.table,
-    );
+
+    const { connectionId, database, schema, table, driver } = tableContext;
+
+    // Get connection name for federated query
+    const connection = connections.find(conn => conn.id === connectionId);
+    const connectionName = connection?.name || "";
+
+    // Build federated table reference
+    let tableName: string;
+    if (connectionName) {
+      // Federated query format: connection.database.schema.table
+      if (driver === "postgres") {
+        tableName = `${connectionName}.${database}.${schema}.${table}`;
+      } else {
+        tableName = `${connectionName}.${database}.${table}`;
+      }
+    } else {
+      // Fallback to regular table reference
+      tableName = getQualifiedTableName(driver, schema, table);
+    }
+
     const metadataByName = new Map(tableColumns.map((col) => [col.name, col]));
     const sqls: string[] = [];
 
@@ -829,7 +877,7 @@ export function TableView({
     });
 
     return sqls;
-  }, [tableContext, canInsert, insertDraftRows, tableColumns, columns]);
+  }, [tableContext, canInsert, insertDraftRows, tableColumns, columns, connections]);
 
   const buildDeleteSQL = useCallback(() => {
     if (
@@ -839,6 +887,26 @@ export function TableView({
       primaryKeys.length === 0
     ) {
       return "";
+    }
+
+    const { connectionId, database, schema, table, driver } = tableContext;
+
+    // Get connection name for federated query
+    const connection = connections.find(conn => conn.id === connectionId);
+    const connectionName = connection?.name || "";
+
+    // Build federated table reference
+    let tableName: string;
+    if (connectionName) {
+      // Federated query format: connection.database.schema.table
+      if (driver === "postgres") {
+        tableName = `${connectionName}.${database}.${schema}.${table}`;
+      } else {
+        tableName = `${connectionName}.${database}.${table}`;
+      }
+    } else {
+      // Fallback to regular table reference
+      tableName = getQualifiedTableName(driver, schema, table);
     }
 
     const selectedIndexes = Array.from(selectedRows).sort((a, b) => a - b);
@@ -862,17 +930,12 @@ export function TableView({
 
     if (!rowClauses.length) return "";
 
-    const tableName = getQualifiedTableName(
-      tableContext.driver,
-      tableContext.schema,
-      tableContext.table,
-    );
     return buildDeleteStatement(
       tableContext.driver,
       tableName,
       rowClauses.join(" OR "),
     );
-  }, [tableContext, canUpdateDelete, selectedRows, primaryKeys, currentData]);
+  }, [tableContext, canUpdateDelete, selectedRows, primaryKeys, currentData, connections]);
 
   const handleAddDraftRow = useCallback(() => {
     if (!canInsert) return;
@@ -1160,8 +1223,26 @@ export function TableView({
     (rowIndexes: number[]) => {
       if (!tableContext) return "";
       const orderedRows = [...rowIndexes].sort((a, b) => a - b);
-      const { schema, table, driver } = tableContext;
-      const tableName = getQualifiedTableName(driver, schema, table);
+      const { connectionId, database, schema, table, driver } = tableContext;
+      
+      // Get connection name for federated query
+      const connection = connections.find(conn => conn.id === connectionId);
+      const connectionName = connection?.name || "";
+      
+      // Build federated table reference
+      let tableName: string;
+      if (connectionName) {
+        // Federated query format: connection.database.schema.table
+        if (driver === "postgres") {
+          tableName = `${connectionName}.${database}.${schema}.${table}`;
+        } else {
+          tableName = `${connectionName}.${database}.${table}`;
+        }
+      } else {
+        // Fallback to regular table reference
+        tableName = getQualifiedTableName(driver, schema, table);
+      }
+      
       const cols = columns.map((c) => quoteIdent(driver, c)).join(", ");
 
       return orderedRows
@@ -1184,7 +1265,7 @@ export function TableView({
         .filter((line) => line.length > 0)
         .join("\n");
     },
-    [columns, currentData, getCellDisplayValue, tableContext],
+    [columns, currentData, getCellDisplayValue, tableContext, connections],
   );
 
   const buildRowsUpdateSQL = useCallback(
@@ -1192,8 +1273,25 @@ export function TableView({
       if (!tableContext || !canUpdateDelete || primaryKeys.length === 0)
         return "";
       const orderedRows = [...rowIndexes].sort((a, b) => a - b);
-      const { schema, table, driver } = tableContext;
-      const tableName = getQualifiedTableName(driver, schema, table);
+      const { connectionId, database, schema, table, driver } = tableContext;
+      
+      // Get connection name for federated query
+      const connection = connections.find(conn => conn.id === connectionId);
+      const connectionName = connection?.name || "";
+      
+      // Build federated table reference
+      let tableName: string;
+      if (connectionName) {
+        // Federated query format: connection.database.schema.table
+        if (driver === "postgres") {
+          tableName = `${connectionName}.${database}.${schema}.${table}`;
+        } else {
+          tableName = `${connectionName}.${database}.${table}`;
+        }
+      } else {
+        // Fallback to regular table reference
+        tableName = getQualifiedTableName(driver, schema, table);
+      }
 
       return orderedRows
         .map((rowIndex) => {
@@ -1234,6 +1332,7 @@ export function TableView({
       canUpdateDelete,
       primaryKeys,
       tableContext,
+      connections,
     ],
   );
 
