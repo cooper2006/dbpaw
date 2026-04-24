@@ -240,7 +240,16 @@ impl CalciteDriver {
             if let Some(e) = last_error {
                 return Err(e);
             }
-            return Err("[FEDERATED_ERROR] No data retrieved from any data source".to_string());
+            // Return empty result set instead of error when no data is retrieved
+            let execution_time_ms = start_time.elapsed().as_millis() as i64;
+            return Ok(QueryResult {
+                columns: all_columns,
+                data: all_data,
+                success: true,
+                error: None,
+                row_count: 0,
+                time_taken_ms: execution_time_ms,
+            });
         }
 
         let execution_time_ms = start_time.elapsed().as_millis() as i64;
@@ -257,38 +266,54 @@ impl CalciteDriver {
     }
 
     fn generate_query(&self, sql: &str, alias: &str, database: &str, schema: &str, table: &str, driver_type: &str) -> String {
+        let is_mysql = driver_type.eq_ignore_ascii_case("mysql") || driver_type.eq_ignore_ascii_case("mariadb");
+        let is_postgres = driver_type.eq_ignore_ascii_case("postgres") || driver_type.eq_ignore_ascii_case("postgresql");
+        
+        let sql_lower = sql.to_lowercase();
+        let alias_lower = alias.to_lowercase();
+        let database_lower = database.to_lowercase();
+        let schema_lower = schema.to_lowercase();
+        let table_lower = table.to_lowercase();
+        
         let patterns = vec![
-            format!("{}.{}.{}.{}", alias, database, schema, table),
-            format!("{}.{}.{}", alias, database, table),
-            format!("{}.{}.{}", alias, schema, table),
-            format!("{}.{}", alias, table),
+            format!("{}.{}.{}.{}", alias_lower, database_lower, schema_lower, table_lower),
+            format!("{}.{}.{}", alias_lower, database_lower, table_lower),
+            format!("{}.{}.{}", alias_lower, schema_lower, table_lower),
+            format!("{}.{}", alias_lower, table_lower),
         ];
         
-        for pattern in patterns {
-            if sql.contains(&pattern) {
-                let is_mysql = driver_type.eq_ignore_ascii_case("mysql") || driver_type.eq_ignore_ascii_case("mariadb");
-                let is_postgres = driver_type.eq_ignore_ascii_case("postgres") || driver_type.eq_ignore_ascii_case("postgresql");
+        for (i, pattern) in patterns.iter().enumerate() {
+            if sql_lower.contains(pattern) {
+                // 找到原始模式在 SQL 中的位置
+                // 使用正则表达式来匹配原始模式，忽略大小写
+                let regex_pattern = pattern.replace('.', "\\.");
+                let regex = Regex::new(&format!(r"(?i){}", regex_pattern)).unwrap();
                 
-                if is_mysql {
-                    let mysql_database = if !database.is_empty() { database } else { schema };
-                    if !mysql_database.is_empty() {
-                        return sql.replace(&pattern, &format!("`{}`.`{}`", mysql_database, table));
+                if let Some(captures) = regex.captures(&sql) {
+                    let original_pattern = captures.get(0).unwrap().as_str();
+                    
+                    // 生成替换后的 SQL
+                    if is_mysql {
+                        let mysql_database = if !database.is_empty() { database } else if !schema.is_empty() { schema } else { "" };
+                        if !mysql_database.is_empty() {
+                            return sql.replace(original_pattern, &format!("`{}`.`{}`", mysql_database, table));
+                        } else {
+                            return sql.replace(original_pattern, &format!("`{}`", table));
+                        }
+                    } else if is_postgres {
+                        if !database.is_empty() && !schema.is_empty() {
+                            return sql.replace(original_pattern, &format!("\"{}\".\"{}\".\"{}\"", database, schema, table));
+                        } else if !schema.is_empty() {
+                            return sql.replace(original_pattern, &format!("\"{}\".\"{}\"", schema, table));
+                        } else {
+                            return sql.replace(original_pattern, &format!("\"{}\"", table));
+                        }
                     } else {
-                        return sql.replace(&pattern, &format!("`{}`", table));
-                    }
-                } else if is_postgres {
-                    if !database.is_empty() && !schema.is_empty() {
-                        return sql.replace(&pattern, &format!("\"{}\".\"{}\".\"{}\"", database, schema, table));
-                    } else if !schema.is_empty() {
-                        return sql.replace(&pattern, &format!("\"{}\".\"{}\"", schema, table));
-                    } else {
-                        return sql.replace(&pattern, &format!("\"{}\"", table));
-                    }
-                } else {
-                    if !schema.is_empty() {
-                        return sql.replace(&pattern, &format!("\"{}\".\"{}\"", schema, table));
-                    } else {
-                        return sql.replace(&pattern, &format!("\"{}\"", table));
+                        if !schema.is_empty() {
+                            return sql.replace(original_pattern, &format!("\"{}\".\"{}\"", schema, table));
+                        } else {
+                            return sql.replace(original_pattern, &format!("\"{}\"", table));
+                        }
                     }
                 }
             }
