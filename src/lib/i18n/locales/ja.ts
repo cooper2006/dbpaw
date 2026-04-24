@@ -226,6 +226,7 @@ export const ja: Translations = {
         sshPassword: "SSH パスワード",
         sshKeyPath: "SSH キーパス",
         sqliteFilePath: "SQLite ファイルパス",
+        sqliteKey: "暗号化キー（SQLCipher）",
         duckdbFilePath: "DuckDB ファイルパス",
       },
       placeholders: {
@@ -238,6 +239,7 @@ export const ja: Translations = {
         sshPassword: "キー利用時は任意",
         sshKeyPath: "/path/to/private_key",
         sqlitePath: "/path/to/db.sqlite",
+        sqliteKey: "暗号化されていないデータベースは空欄のまま",
         duckdbPath: "/path/to/db.duckdb",
       },
       fileDialogTitle: "SQLite データベースファイルを選択",
@@ -592,6 +594,20 @@ export const ja: Translations = {
       columnTypeRequired: "列の型が必要です（行 {{index}}）",
       duplicateColumnName: "列名が重複しています: {{name}}",
       starrocksHashColumnsRequired: "HASH 分散には分散キー列が1つ以上必要です",
+      multipleAutoIncrement:
+        "AUTO_INCREMENTカラムは1テーブルに1つのみ許可されます",
+      varcharNeedsLength:
+        'カラム "{{name}}" はVARCHAR/CHAR型ですが長さが指定されていません — 例: VARCHAR(255)',
+      varcharZeroLength:
+        'カラム "{{name}}" の長さが0です。VARCHAR/CHARに0は指定できません',
+      decimalScaleExceedsPrecision:
+        'カラム "{{name}}" の小数点以下桁数が精度を超えています — 例: DECIMAL(2,5)は無効です',
+      indexTextColumn:
+        'カラム "{{col}}" はTEXT/BLOB型です — MySQLでこの型をインデックスに使用するにはプレフィックス長が必要です。VARCHARに変更するかインデックスから削除してください。',
+      indexDuplicateColumn:
+        'インデックス "{{index}}" にカラム "{{col}}" が重複しています',
+      autoIncrementNeedsKey:
+        'カラム "{{name}}" はAUTO_INCREMENTが設定されていますがPRIMARY KEYではありません — AUTO_INCREMENTカラムはキーである必要があります',
     },
     toast: {
       success: 'テーブル "{{table}}" を作成しました',
@@ -619,6 +635,23 @@ export const ja: Translations = {
       loadError: "テーブルのメタデータの読み込みに失敗しました",
       success: 'テーブル "{{table}}" を更新しました',
       error: "変更の適用に失敗しました",
+    },
+  },
+  manageIndexes: {
+    form: {
+      indexes: "インデックス",
+      addIndex: "インデックスを追加",
+      noIndexes: "インデックスがありません。",
+      indexName: "インデックス名",
+      unique: "ユニーク",
+      columns: "カラム",
+      method: "タイプ",
+      clustered: "クラスター化",
+      concurrently: "並行実行",
+    },
+    unsupported: {
+      message:
+        "このデータベースエンジンはインデックス管理をサポートしていません。",
     },
   },
 };

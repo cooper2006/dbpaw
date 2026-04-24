@@ -25,7 +25,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { api, ColumnInfo } from "@/services/api";
+import { api, ColumnInfo, IndexInfo } from "@/services/api";
 import {
   DbDriver,
   TYPE_PRESETS,
@@ -36,6 +36,23 @@ import {
   columnInfoToAlterDef,
   generateAlterTableSQL,
 } from "@/lib/sql-gen/alterTable";
+import {
+  IndexDef,
+  generateManageIndexSQL,
+  indexInfoToIndexDef,
+  newIndexId,
+  supportsIndexManagement,
+} from "@/lib/sql-gen/manageIndexes";
+import {
+  CUSTOM_TYPE_SENTINEL,
+  columnGridTemplate,
+  splitSqlStatements,
+} from "@/lib/sql-gen/ddlUtils";
+import {
+  validateColumns,
+  validateIndexDefs,
+} from "@/lib/sql-gen/tableValidation";
+import { IndexEditorSection } from "./IndexEditorSection";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -58,8 +75,6 @@ function defaultColumn(): AlterColumnDef {
     originalName: null,
   };
 }
-
-const CUSTOM_TYPE_SENTINEL = "__custom__";
 
 // ─── props ────────────────────────────────────────────────────────────────────
 
@@ -88,6 +103,8 @@ export function AlterTableView({
 
   const [columns, setColumns] = useState<AlterColumnDef[]>([]);
   const [originalCols, setOriginalCols] = useState<ColumnInfo[]>([]);
+  const [indexDefs, setIndexDefs] = useState<IndexDef[]>([]);
+  const [originalIndexes, setOriginalIndexes] = useState<IndexInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [sqlPreviewOpen, setSqlPreviewOpen] = useState(true);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -99,6 +116,7 @@ export function AlterTableView({
   const dbDriver = driver as DbDriver;
   const typePresets = TYPE_PRESETS[dbDriver] ?? TYPE_PRESETS["postgres"];
   const showAutoIncrement = supportsAutoIncrement(dbDriver);
+  const indexSupported = supportsIndexManagement(dbDriver);
 
   // ── load existing table metadata ─────────────────────────────────────────
 
@@ -109,9 +127,11 @@ export function AlterTableView({
       .getTableMetadata(connectionId, database, schema, table)
       .then((meta) => {
         if (cancelled) return;
-        const defs = meta.columns.map(columnInfoToAlterDef);
         setOriginalCols(meta.columns);
-        setColumns(defs);
+        setColumns(meta.columns.map(columnInfoToAlterDef));
+        const idxs = meta.indexes ?? [];
+        setOriginalIndexes(idxs);
+        setIndexDefs(idxs.map(indexInfoToIndexDef));
       })
       .catch(() => {
         if (cancelled) return;
@@ -129,59 +149,58 @@ export function AlterTableView({
   // ── derived SQL ─────────────────────────────────────────────────────────────
 
   const { sql: generatedSQL, unsupportedOps } = useMemo(() => {
-    if (loading || originalCols.length === 0) {
+    if (loading || originalCols.length === 0)
       return { sql: "", unsupportedOps: [] };
-    }
-    return generateAlterTableSQL(
+    const colResult = generateAlterTableSQL(
       schema,
       table,
       originalCols,
       columns,
       dbDriver,
     );
-  }, [loading, schema, table, originalCols, columns, dbDriver]);
+    const idxResult = indexSupported
+      ? generateManageIndexSQL(
+          schema,
+          table,
+          originalIndexes,
+          indexDefs,
+          dbDriver,
+        )
+      : { sql: "", statements: [] };
+    const parts = [colResult.sql, idxResult.sql].filter(Boolean);
+    return { sql: parts.join("\n"), unsupportedOps: colResult.unsupportedOps };
+  }, [
+    loading,
+    schema,
+    table,
+    originalCols,
+    columns,
+    dbDriver,
+    indexSupported,
+    originalIndexes,
+    indexDefs,
+  ]);
 
   // ── validation ──────────────────────────────────────────────────────────────
 
   const validate = useCallback(() => {
-    const errs: string[] = [];
-
     const filledCols = columns.filter(
       (c) => c.name.trim() || c.dataType.trim(),
     );
-
-    filledCols.forEach((col, i) => {
-      if (!col.name.trim()) {
-        errs.push(
-          t("createTable.validation.columnNameRequired", { index: i + 1 }),
-        );
-      }
-      if (!col.dataType.trim()) {
-        errs.push(
-          t("createTable.validation.columnTypeRequired", { index: i + 1 }),
-        );
-      }
-    });
-
-    const names = filledCols.map((c) => c.name.trim().toLowerCase());
-    names.forEach((name, i) => {
-      if (name && names.indexOf(name) !== i) {
-        errs.push(
-          t("createTable.validation.duplicateColumnName", {
-            name: filledCols[i].name.trim(),
-          }),
-        );
-      }
-    });
-
-    return errs;
-  }, [columns, t]);
+    const colTypeMap = new Map(originalCols.map((c) => [c.name, c.type]));
+    return [
+      ...validateColumns(filledCols, {
+        driver: dbDriver,
+        showAutoIncrement,
+        t,
+      }),
+      ...validateIndexDefs(indexDefs, colTypeMap, { driver: dbDriver, t }),
+    ];
+  }, [columns, t, showAutoIncrement, dbDriver, indexDefs, originalCols]);
 
   // ── column mutations ─────────────────────────────────────────────────────────
 
-  const addColumn = () => {
-    setColumns((prev) => [...prev, defaultColumn()]);
-  };
+  const addColumn = () => setColumns((prev) => [...prev, defaultColumn()]);
 
   const removeColumn = (id: string) => {
     setColumns((prev) => prev.filter((c) => c.id !== id));
@@ -192,11 +211,10 @@ export function AlterTableView({
     });
   };
 
-  const updateColumn = (id: string, patch: Partial<AlterColumnDef>) => {
+  const updateColumn = (id: string, patch: Partial<AlterColumnDef>) =>
     setColumns((prev) =>
       prev.map((c) => (c.id === id ? { ...c, ...patch } : c)),
     );
-  };
 
   const moveColumn = (id: string, direction: -1 | 1) => {
     setColumns((prev) => {
@@ -210,11 +228,48 @@ export function AlterTableView({
     });
   };
 
+  // ── index mutations ──────────────────────────────────────────────────────────
+
+  const tableColumnNames = originalCols.map((c) => c.name);
+
+  const addIndexDef = () =>
+    setIndexDefs((prev) => [
+      ...prev,
+      {
+        id: newIndexId(),
+        originalName: null,
+        name: "",
+        unique: false,
+        columns: [],
+        indexMethod: "",
+        clustered: false,
+        concurrently: false,
+      },
+    ]);
+
+  const removeIndexDef = (id: string) =>
+    setIndexDefs((prev) => prev.filter((d) => d.id !== id));
+
+  const updateIndexDef = (id: string, patch: Partial<IndexDef>) =>
+    setIndexDefs((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, ...patch } : d)),
+    );
+
+  const toggleIndexColumn = (defId: string, colName: string) =>
+    setIndexDefs((prev) =>
+      prev.map((d) => {
+        if (d.id !== defId) return d;
+        const cols = d.columns.includes(colName)
+          ? d.columns.filter((c) => c !== colName)
+          : [...d.columns, colName];
+        return { ...d, columns: cols };
+      }),
+    );
+
   // ── execute ──────────────────────────────────────────────────────────────────
 
   const handleExecute = async () => {
     if (!generatedSQL.trim()) return;
-
     const errs = validate();
     if (errs.length > 0) {
       setErrors(errs);
@@ -223,7 +278,9 @@ export function AlterTableView({
     setErrors([]);
     setIsExecuting(true);
     try {
-      await api.query.executeFederated(generatedSQL, "sql_editor");
+      for (const stmt of splitSqlStatements(generatedSQL)) {
+        await api.query.execute(connectionId, stmt, database, "sql_editor");
+      }
       toast.success(t("alterTable.toast.success", { table }));
       onSuccess();
     } catch (e) {
@@ -364,7 +421,6 @@ export function AlterTableView({
                         columnGridTemplate(showAutoIncrement),
                     }}
                   >
-                    {/* Move up/down */}
                     <div className="flex flex-col gap-0.5 items-center">
                       <button
                         className="text-muted-foreground hover:text-foreground disabled:opacity-30"
@@ -380,7 +436,6 @@ export function AlterTableView({
                       </button>
                     </div>
 
-                    {/* Name */}
                     <Input
                       className="h-7 text-xs px-2 font-mono"
                       value={col.name}
@@ -390,7 +445,6 @@ export function AlterTableView({
                       placeholder={t("createTable.form.columnName")}
                     />
 
-                    {/* Type */}
                     <div className="flex gap-1">
                       <Select
                         value={selectValue}
@@ -456,7 +510,6 @@ export function AlterTableView({
                       )}
                     </div>
 
-                    {/* Length */}
                     <Input
                       className="h-7 text-xs px-2 font-mono"
                       value={col.length}
@@ -466,7 +519,6 @@ export function AlterTableView({
                       placeholder="—"
                     />
 
-                    {/* Not Null */}
                     <div className="flex justify-center">
                       <Checkbox
                         checked={col.notNull}
@@ -476,7 +528,6 @@ export function AlterTableView({
                       />
                     </div>
 
-                    {/* Primary Key */}
                     <div className="flex justify-center">
                       <Checkbox
                         checked={col.primaryKey}
@@ -486,7 +537,6 @@ export function AlterTableView({
                       />
                     </div>
 
-                    {/* Auto Increment */}
                     {showAutoIncrement && (
                       <div className="flex justify-center">
                         <Checkbox
@@ -498,7 +548,6 @@ export function AlterTableView({
                       </div>
                     )}
 
-                    {/* Default value */}
                     <Input
                       className="h-7 text-xs px-2 font-mono"
                       value={col.defaultValue}
@@ -508,7 +557,6 @@ export function AlterTableView({
                       placeholder="—"
                     />
 
-                    {/* Comment */}
                     <Input
                       className="h-7 text-xs px-2"
                       value={col.comment}
@@ -518,7 +566,6 @@ export function AlterTableView({
                       placeholder="—"
                     />
 
-                    {/* Actions */}
                     <div className="flex items-center justify-end gap-1">
                       <button
                         className="text-muted-foreground hover:text-foreground disabled:opacity-30"
@@ -544,6 +591,18 @@ export function AlterTableView({
             </div>
           )}
         </div>
+
+        {/* Index editor */}
+        <IndexEditorSection
+          defs={indexDefs}
+          tableColumns={tableColumnNames}
+          driver={dbDriver}
+          highlightNew
+          onAdd={addIndexDef}
+          onRemove={removeIndexDef}
+          onUpdate={updateIndexDef}
+          onToggleColumn={toggleIndexColumn}
+        />
 
         {/* Validation errors */}
         {errors.length > 0 && (
@@ -615,13 +674,4 @@ export function AlterTableView({
       </div>
     </div>
   );
-}
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-function columnGridTemplate(showAutoIncrement: boolean): string {
-  // grip | name | type | length | NN | PK | [AI] | default | comment | actions
-  return showAutoIncrement
-    ? "20px 1fr 1.4fr 80px 56px 40px 40px 100px 120px 64px"
-    : "20px 1fr 1.4fr 80px 56px 40px 100px 120px 64px";
 }

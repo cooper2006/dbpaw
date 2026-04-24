@@ -224,6 +224,7 @@ export const en = {
         sshPassword: "SSH Password",
         sshKeyPath: "SSH Key Path",
         sqliteFilePath: "SQLite File Path",
+        sqliteKey: "Encryption Key (SQLCipher)",
         duckdbFilePath: "DuckDB File Path",
       },
       placeholders: {
@@ -236,6 +237,7 @@ export const en = {
         sshPassword: "Optional if using key",
         sshKeyPath: "/path/to/private_key",
         sqlitePath: "/path/to/db.sqlite",
+        sqliteKey: "Leave empty for unencrypted databases",
         duckdbPath: "/path/to/db.duckdb",
       },
       fileDialogTitle: "Select SQLite Database File",
@@ -587,6 +589,20 @@ export const en = {
       duplicateColumnName: "Duplicate column name: {{name}}",
       starrocksHashColumnsRequired:
         "HASH distribution requires at least one distribution column",
+      multipleAutoIncrement:
+        "Only one AUTO_INCREMENT column is allowed per table",
+      varcharNeedsLength:
+        'Column "{{name}}" is VARCHAR/CHAR but has no length specified — e.g. VARCHAR(255)',
+      varcharZeroLength:
+        'Column "{{name}}" has a length of 0, which is not allowed for VARCHAR/CHAR',
+      decimalScaleExceedsPrecision:
+        'Column "{{name}}" has scale greater than precision — e.g. DECIMAL(2,5) is invalid',
+      indexTextColumn:
+        'Column "{{col}}" is a TEXT/BLOB type — MySQL requires a prefix length to index it. Use VARCHAR instead or remove it from the index.',
+      indexDuplicateColumn:
+        'Index "{{index}}" contains duplicate column "{{col}}"',
+      autoIncrementNeedsKey:
+        'Column "{{name}}" has AUTO_INCREMENT but is not a PRIMARY KEY — AUTO_INCREMENT columns must be a key',
     },
     toast: {
       success: 'Table "{{table}}" created successfully',
@@ -614,6 +630,22 @@ export const en = {
       loadError: "Failed to load table metadata",
       success: 'Table "{{table}}" updated successfully',
       error: "Failed to apply changes",
+    },
+  },
+  manageIndexes: {
+    form: {
+      indexes: "Indexes",
+      addIndex: "Add Index",
+      noIndexes: "No indexes defined.",
+      indexName: "Index Name",
+      unique: "Unique",
+      columns: "Columns",
+      method: "Method",
+      clustered: "Clustered",
+      concurrently: "Concurrently",
+    },
+    unsupported: {
+      message: "Index management is not supported for this database engine.",
     },
   },
 } as const;

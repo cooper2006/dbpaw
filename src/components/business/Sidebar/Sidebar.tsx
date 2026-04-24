@@ -25,6 +25,19 @@ interface SidebarProps {
     driver: string,
     schema?: string,
   ) => void;
+  onRedisKeySelect?: (
+    connection: string,
+    database: string,
+    redisKey: string,
+    connectionId: number,
+    driver: string,
+  ) => void;
+  onOpenRedisConsole?: (
+    connection: string,
+    database: string,
+    connectionId: number,
+    driver: string,
+  ) => void;
   onConnect?: (form: ConnectionForm) => void;
   onCreateQuery?: (
     connectionId: number,
@@ -74,10 +87,17 @@ interface SidebarProps {
   activeTableTarget?: ActiveTableTarget;
   sidebarRevealRequest?: SidebarRevealRequest;
   layoutMode?: "tabs" | "tree";
+  redisRefreshRequest?: {
+    id: number;
+    connectionId: number;
+    database: string;
+  };
 }
 
 export function Sidebar({
   onTableSelect,
+  onRedisKeySelect,
+  onOpenRedisConsole,
   onConnect,
   onCreateQuery,
   onExportTable,
@@ -90,6 +110,7 @@ export function Sidebar({
   activeTableTarget,
   sidebarRevealRequest,
   layoutMode = "tabs",
+  redisRefreshRequest,
 }: SidebarProps) {
   const { t } = useTranslation();
   const [sidebarTab, setSidebarTab] = useState<"connections" | "queries">(
@@ -106,6 +127,8 @@ export function Sidebar({
       <div className="h-full flex flex-col bg-background border-r border-border">
         <ConnectionList
           onTableSelect={onTableSelect}
+          onRedisKeySelect={onRedisKeySelect}
+          onOpenRedisConsole={onOpenRedisConsole}
           onConnect={onConnect}
           onCreateQuery={onCreateQuery}
           onExportTable={onExportTable}
@@ -118,6 +141,7 @@ export function Sidebar({
           onSelectSavedQuery={onSelectSavedQuery}
           lastUpdated={lastUpdated}
           showSavedQueriesInTree
+          redisRefreshRequest={redisRefreshRequest}
         />
       </div>
     );
@@ -151,6 +175,8 @@ export function Sidebar({
           >
             <ConnectionList
               onTableSelect={onTableSelect}
+              onRedisKeySelect={onRedisKeySelect}
+              onOpenRedisConsole={onOpenRedisConsole}
               onConnect={onConnect}
               onCreateQuery={onCreateQuery}
               onExportTable={onExportTable}
@@ -160,6 +186,7 @@ export function Sidebar({
               onViewTableMetadata={onViewTableMetadata}
               activeTableTarget={activeTableTarget}
               sidebarRevealRequest={sidebarRevealRequest}
+              redisRefreshRequest={redisRefreshRequest}
             />
           </TabsContent>
           <TabsContent

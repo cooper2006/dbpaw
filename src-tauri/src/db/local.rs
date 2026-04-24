@@ -216,8 +216,7 @@ impl LocalDb {
         }
 
         let mut key = [0u8; 32];
-        let mut rng = rand::rng();
-        rng.fill_bytes(&mut key);
+        rand::rng().fill_bytes(&mut key);
         fs::write(&key_path, &key).map_err(|e| format!("[AI_MASTER_KEY_WRITE] {e}"))?;
         #[cfg(unix)]
         {
@@ -232,8 +231,7 @@ impl LocalDb {
         let cipher =
             Aes256Gcm::new_from_slice(master_key).map_err(|e| format!("[AI_KEY_CIPHER] {e}"))?;
         let mut nonce_bytes = [0u8; 12];
-        let mut rng = rand::rng();
-        rng.fill_bytes(&mut nonce_bytes);
+        rand::rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher
             .encrypt(nonce, plaintext.as_bytes())
@@ -290,7 +288,7 @@ impl LocalDb {
         }
 
         let id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO connections (uuid, type, name, host, port, database, username, password, ssl, ssl_mode, ssl_ca_cert, file_path, ssh_enabled, ssh_host, ssh_port, ssh_username, ssh_password, ssh_key_path) 
+            "INSERT INTO connections (uuid, type, name, host, port, database, username, password, ssl, ssl_mode, ssl_ca_cert, file_path, ssh_enabled, ssh_host, ssh_port, ssh_username, ssh_password, ssh_key_path)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"
         )
         .bind(&uuid)
@@ -362,11 +360,11 @@ impl LocalDb {
 
     pub async fn list_connections(&self) -> Result<Vec<Connection>, String> {
         let rows = sqlx::query_as::<_, Connection>(
-            r#"SELECT 
-                id, uuid, name, type as db_type, host, port, database, username, password, ssl, ssl_mode, ssl_ca_cert, file_path, 
+            r#"SELECT
+                id, uuid, name, type as db_type, host, port, database, username, password, ssl, ssl_mode, ssl_ca_cert, file_path,
                 ssh_enabled, ssh_host, ssh_port, ssh_username, ssh_password, ssh_key_path,
-                created_at, updated_at 
-               FROM connections 
+                created_at, updated_at
+               FROM connections
                ORDER BY created_at DESC, id DESC"#,
         )
         .fetch_all(&self.pool)
@@ -377,11 +375,11 @@ impl LocalDb {
 
     pub async fn get_connection_by_id(&self, id: i64) -> Result<Connection, String> {
         sqlx::query_as::<_, Connection>(
-            r#"SELECT 
-                id, uuid, name, type as db_type, host, port, database, username, password, ssl, ssl_mode, ssl_ca_cert, file_path, 
+            r#"SELECT
+                id, uuid, name, type as db_type, host, port, database, username, password, ssl, ssl_mode, ssl_ca_cert, file_path,
                 ssh_enabled, ssh_host, ssh_port, ssh_username, ssh_password, ssh_key_path,
-                created_at, updated_at 
-               FROM connections 
+                created_at, updated_at
+               FROM connections
                WHERE id = ?"#,
         )
         .bind(id)
@@ -939,8 +937,12 @@ mod tests {
         }
 
         let mut ai_master_key = [0u8; 32];
+<<<<<<< HEAD
         let mut rng = rand::rng();
         rng.fill_bytes(&mut ai_master_key);
+=======
+        rand::rng().fill_bytes(&mut ai_master_key);
+>>>>>>> 182c8e2af7df5a366d93e6d35b2ab63d0586c558
 
         LocalDb {
             pool,
@@ -970,8 +972,7 @@ mod tests {
     #[test]
     fn api_key_encrypt_decrypt_round_trip_and_format_validation() {
         let mut key = [0u8; 32];
-        let mut rng = rand::rng();
-        rng.fill_bytes(&mut key);
+        rand::rng().fill_bytes(&mut key);
         let encrypted = LocalDb::encrypt_ai_api_key_raw(&key, "secret-123").unwrap();
         assert!(LocalDb::has_encrypted_ai_api_key(&encrypted));
         let decrypted = LocalDb::decrypt_ai_api_key_raw(&key, &encrypted).unwrap();

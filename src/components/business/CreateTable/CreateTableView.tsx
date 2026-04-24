@@ -33,6 +33,22 @@ import {
   generateCreateTableSQL,
   supportsAutoIncrement,
 } from "@/lib/sql-gen/createTable";
+import {
+  IndexDef,
+  generateManageIndexSQL,
+  newIndexId,
+  supportsIndexManagement,
+} from "@/lib/sql-gen/manageIndexes";
+import {
+  CUSTOM_TYPE_SENTINEL,
+  columnGridTemplate,
+  splitSqlStatements,
+} from "@/lib/sql-gen/ddlUtils";
+import {
+  validateColumns,
+  validateIndexDefs,
+} from "@/lib/sql-gen/tableValidation";
+import { IndexEditorSection } from "./IndexEditorSection";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,8 +70,6 @@ function defaultColumn(): ColumnDef {
     comment: "",
   };
 }
-
-const CUSTOM_TYPE_SENTINEL = "__custom__";
 
 // ─── props ────────────────────────────────────────────────────────────────────
 
@@ -95,12 +109,15 @@ export function CreateTableView({
   const [srDistColumns, setSrDistColumns] = useState<string[]>([]);
   const [srBuckets, setSrBuckets] = useState("10");
 
+  const [indexDefs, setIndexDefs] = useState<IndexDef[]>([]);
+
   const dbDriver = driver as DbDriver;
   const isStarRocks = dbDriver === "starrocks";
   const typePresets = TYPE_PRESETS[dbDriver] ?? TYPE_PRESETS["postgres"];
+  const indexSupported = supportsIndexManagement(dbDriver);
   const showAutoIncrement = supportsAutoIncrement(dbDriver);
 
-  // Sync removed column names out of srDistColumns
+  // Named columns for StarRocks distribution and index column picker
   const namedColumns = columns.map((c) => c.name.trim()).filter(Boolean);
 
   // ── derived SQL ─────────────────────────────────────────────────────────────
@@ -110,10 +127,19 @@ export function CreateTableView({
     : undefined;
 
   const generatedSQL = useMemo(() => {
-    return generateCreateTableSQL(
+    const createSQL = generateCreateTableSQL(
       { tableName, schema, columns, starrocksDistribution },
       dbDriver,
     );
+    if (!createSQL || !indexSupported) return createSQL;
+    const { sql: idxSQL } = generateManageIndexSQL(
+      schema,
+      tableName.trim(),
+      [],
+      indexDefs,
+      dbDriver,
+    );
+    return [createSQL, idxSQL].filter(Boolean).join("\n");
     // starrocksDistribution is derived from srDistType/srDistColumns/srBuckets
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -124,6 +150,8 @@ export function CreateTableView({
     srDistType,
     srDistColumns,
     srBuckets,
+    indexDefs,
+    indexSupported,
   ]);
 
   // ── validation ──────────────────────────────────────────────────────────────
@@ -131,53 +159,49 @@ export function CreateTableView({
   const validate = useCallback(() => {
     const errs: string[] = [];
 
-    if (!tableName.trim()) {
+    if (!tableName.trim())
       errs.push(t("createTable.validation.tableNameRequired"));
-    }
 
     const filledCols = columns.filter(
       (c) => c.name.trim() || c.dataType.trim(),
     );
-    if (filledCols.length === 0) {
+    if (filledCols.length === 0)
       errs.push(t("createTable.validation.noColumns"));
-    }
 
-    filledCols.forEach((col, i) => {
-      if (!col.name.trim()) {
-        errs.push(
-          t("createTable.validation.columnNameRequired", { index: i + 1 }),
-        );
-      }
-      if (!col.dataType.trim()) {
-        errs.push(
-          t("createTable.validation.columnTypeRequired", { index: i + 1 }),
-        );
-      }
-    });
+    errs.push(
+      ...validateColumns(filledCols, {
+        driver: dbDriver,
+        showAutoIncrement,
+        t,
+      }),
+    );
 
-    const names = filledCols.map((c) => c.name.trim().toLowerCase());
-    names.forEach((name, i) => {
-      if (name && names.indexOf(name) !== i) {
-        errs.push(
-          t("createTable.validation.duplicateColumnName", {
-            name: filledCols[i].name.trim(),
-          }),
-        );
-      }
-    });
-
-    if (isStarRocks && srDistType === "hash" && srDistColumns.length === 0) {
+    if (isStarRocks && srDistType === "hash" && srDistColumns.length === 0)
       errs.push(t("createTable.validation.starrocksHashColumnsRequired"));
-    }
+
+    const colTypeMap = new Map(
+      filledCols.map((c) => [c.name.trim(), c.dataType]),
+    );
+    errs.push(
+      ...validateIndexDefs(indexDefs, colTypeMap, { driver: dbDriver, t }),
+    );
 
     return errs;
-  }, [tableName, columns, t, isStarRocks, srDistType, srDistColumns]);
+  }, [
+    tableName,
+    columns,
+    t,
+    isStarRocks,
+    srDistType,
+    srDistColumns,
+    showAutoIncrement,
+    dbDriver,
+    indexDefs,
+  ]);
 
   // ── column mutations ─────────────────────────────────────────────────────────
 
-  const addColumn = () => {
-    setColumns((prev) => [...prev, defaultColumn()]);
-  };
+  const addColumn = () => setColumns((prev) => [...prev, defaultColumn()]);
 
   const removeColumn = (id: string) => {
     setColumns((prev) => prev.filter((c) => c.id !== id));
@@ -188,11 +212,10 @@ export function CreateTableView({
     });
   };
 
-  const updateColumn = (id: string, patch: Partial<ColumnDef>) => {
+  const updateColumn = (id: string, patch: Partial<ColumnDef>) =>
     setColumns((prev) =>
       prev.map((c) => (c.id === id ? { ...c, ...patch } : c)),
     );
-  };
 
   const moveColumn = (id: string, direction: -1 | 1) => {
     setColumns((prev) => {
@@ -206,6 +229,42 @@ export function CreateTableView({
     });
   };
 
+  // ── index mutations ──────────────────────────────────────────────────────────
+
+  const addIndexDef = () =>
+    setIndexDefs((prev) => [
+      ...prev,
+      {
+        id: newIndexId(),
+        originalName: null,
+        name: "",
+        unique: false,
+        columns: [],
+        indexMethod: "",
+        clustered: false,
+        concurrently: false,
+      },
+    ]);
+
+  const removeIndexDef = (id: string) =>
+    setIndexDefs((prev) => prev.filter((d) => d.id !== id));
+
+  const updateIndexDef = (id: string, patch: Partial<IndexDef>) =>
+    setIndexDefs((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, ...patch } : d)),
+    );
+
+  const toggleIndexColumn = (defId: string, colName: string) =>
+    setIndexDefs((prev) =>
+      prev.map((d) => {
+        if (d.id !== defId) return d;
+        const cols = d.columns.includes(colName)
+          ? d.columns.filter((c) => c !== colName)
+          : [...d.columns, colName];
+        return { ...d, columns: cols };
+      }),
+    );
+
   // ── execute ──────────────────────────────────────────────────────────────────
 
   const handleExecute = async () => {
@@ -217,7 +276,9 @@ export function CreateTableView({
     setErrors([]);
     setIsExecuting(true);
     try {
-      await api.query.executeFederated(generatedSQL, "sql_editor");
+      for (const stmt of splitSqlStatements(generatedSQL)) {
+        await api.query.execute(connectionId, stmt, database, "sql_editor");
+      }
       toast.success(
         t("createTable.toast.success", { table: tableName.trim() }),
       );
@@ -321,7 +382,6 @@ export function CreateTableView({
                   (col.dataType !== "" &&
                     !typePresets.includes(col.dataType) &&
                     col.dataType !== CUSTOM_TYPE_SENTINEL);
-
                 const selectValue = isCustom
                   ? CUSTOM_TYPE_SENTINEL
                   : col.dataType || "";
@@ -335,7 +395,6 @@ export function CreateTableView({
                         columnGridTemplate(showAutoIncrement),
                     }}
                   >
-                    {/* Drag handle / row indicator */}
                     <div className="flex flex-col gap-0.5 items-center">
                       <button
                         className="text-muted-foreground hover:text-foreground disabled:opacity-30"
@@ -351,7 +410,6 @@ export function CreateTableView({
                       </button>
                     </div>
 
-                    {/* Name */}
                     <Input
                       className="h-7 text-xs px-2 font-mono"
                       value={col.name}
@@ -361,7 +419,6 @@ export function CreateTableView({
                       placeholder={t("createTable.form.columnName")}
                     />
 
-                    {/* Type — preset select + optional custom input */}
                     <div className="flex gap-1">
                       <Select
                         value={selectValue}
@@ -427,7 +484,6 @@ export function CreateTableView({
                       )}
                     </div>
 
-                    {/* Length */}
                     <Input
                       className="h-7 text-xs px-2 font-mono"
                       value={col.length}
@@ -437,7 +493,6 @@ export function CreateTableView({
                       placeholder="—"
                     />
 
-                    {/* Not Null */}
                     <div className="flex justify-center">
                       <Checkbox
                         checked={col.notNull}
@@ -447,7 +502,6 @@ export function CreateTableView({
                       />
                     </div>
 
-                    {/* Primary Key */}
                     <div className="flex justify-center">
                       <Checkbox
                         checked={col.primaryKey}
@@ -457,7 +511,6 @@ export function CreateTableView({
                       />
                     </div>
 
-                    {/* Auto Increment */}
                     {showAutoIncrement && (
                       <div className="flex justify-center">
                         <Checkbox
@@ -469,7 +522,6 @@ export function CreateTableView({
                       </div>
                     )}
 
-                    {/* Default value */}
                     <Input
                       className="h-7 text-xs px-2 font-mono"
                       value={col.defaultValue}
@@ -479,7 +531,6 @@ export function CreateTableView({
                       placeholder="—"
                     />
 
-                    {/* Comment */}
                     <Input
                       className="h-7 text-xs px-2"
                       value={col.comment}
@@ -489,7 +540,6 @@ export function CreateTableView({
                       placeholder="—"
                     />
 
-                    {/* Actions */}
                     <div className="flex items-center justify-end gap-1">
                       <button
                         className="text-muted-foreground hover:text-foreground disabled:opacity-30"
@@ -523,7 +573,6 @@ export function CreateTableView({
               {t("createTable.starrocks.distributionTitle")}
             </span>
             <div className="border rounded-md p-3 space-y-3">
-              {/* Distribution type */}
               <div className="flex items-center gap-4">
                 <span className="text-xs text-muted-foreground w-28 shrink-0">
                   {t("createTable.starrocks.distributionType")}
@@ -550,7 +599,6 @@ export function CreateTableView({
                 </div>
               </div>
 
-              {/* Distribution columns (HASH only) */}
               {srDistType === "hash" && (
                 <div className="flex items-start gap-4">
                   <span className="text-xs text-muted-foreground w-28 shrink-0 pt-1">
@@ -595,7 +643,6 @@ export function CreateTableView({
                 </div>
               )}
 
-              {/* Buckets */}
               <div className="flex items-center gap-4">
                 <span className="text-xs text-muted-foreground w-28 shrink-0">
                   {t("createTable.starrocks.distributionBuckets")}
@@ -612,6 +659,17 @@ export function CreateTableView({
             </div>
           </div>
         )}
+
+        {/* Index editor */}
+        <IndexEditorSection
+          defs={indexDefs}
+          tableColumns={namedColumns}
+          driver={dbDriver}
+          onAdd={addIndexDef}
+          onRemove={removeIndexDef}
+          onUpdate={updateIndexDef}
+          onToggleColumn={toggleIndexColumn}
+        />
 
         {/* Validation errors */}
         {errors.length > 0 && (
@@ -680,13 +738,4 @@ export function CreateTableView({
       </div>
     </div>
   );
-}
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-function columnGridTemplate(showAutoIncrement: boolean): string {
-  // grip | name | type | length | NN | PK | [AI] | default | comment | actions
-  return showAutoIncrement
-    ? "20px 1fr 1.4fr 80px 56px 40px 40px 100px 120px 64px"
-    : "20px 1fr 1.4fr 80px 56px 40px 100px 120px 64px";
 }

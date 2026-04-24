@@ -20,9 +20,9 @@ import { TableView } from "@/components/business/DataGrid/TableView";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { TableMetadataView } from "@/components/business/Metadata/TableMetadataView";
 import { SqlExecutionLogsDropdown } from "@/components/business/SqlLogs/SqlExecutionLogsDialog";
-import { FileCode, Table, X, Settings, Sparkles } from "lucide-react";
+import { FileCode, KeyRound, Table, X, Settings, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { isMysqlFamilyDriver } from "@/lib/driver-registry";
+import { isMysqlFamilyDriver, isKeyValueDriver } from "@/lib/driver-registry";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -69,12 +69,21 @@ import { getSetting } from "@/services/store";
 
 interface TabItem {
   id: string;
-  type: "editor" | "table" | "ddl" | "create-table" | "alter-table" | "metadata";
+  type:
+    | "editor"
+    | "table"
+    | "ddl"
+    | "create-table"
+    | "alter-table"
+    | "metadata"
+    | "redis-key"
+    | "redis-console";
   title: string;
   connection?: string;
   database?: string;
   schema?: string;
   tableName?: string;
+  redisKey?: string;
   data?: any[];
   columns?: string[];
   total?: number;
@@ -153,6 +162,16 @@ const CreateTableView = lazy(async () => {
 const AlterTableView = lazy(async () => {
   const mod = await import("@/components/business/CreateTable/AlterTableView");
   return { default: mod.AlterTableView };
+});
+
+const RedisKeyView = lazy(async () => {
+  const mod = await import("@/components/business/Redis/RedisKeyView");
+  return { default: mod.RedisKeyView };
+});
+
+const RedisConsole = lazy(async () => {
+  const mod = await import("@/components/business/Redis/RedisConsole");
+  return { default: mod.RedisConsole };
 });
 
 function LazyPanelFallback({
@@ -249,6 +268,12 @@ export default function App() {
   const unsavedConfirmActionRef = useRef<"save" | "discard" | null>(null);
   const schemaOverviewRequestKeysRef = useRef<Map<string, string>>(new Map());
   const sidebarRevealRequestIdRef = useRef(0);
+  const redisRefreshIdRef = useRef(0);
+  const [redisRefreshRequest, setRedisRefreshRequest] = useState<{
+    id: number;
+    connectionId: number;
+    database: string;
+  } | undefined>(undefined);
 
   const revealSidebarForTab = useCallback(
     (tabId: string, sourceTabs = tabs) => {
@@ -306,6 +331,8 @@ export default function App() {
   const handleWindowDragStart = (event: MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
+    // React portal events bubble through the React tree, not the DOM — target lands outside this element.
+    if (!event.currentTarget.contains(target)) return;
     if (target.closest('[data-no-drag="true"]')) return;
     getCurrentWindow()
       .startDragging()
@@ -412,6 +439,10 @@ export default function App() {
     driver: string,
     sqlContent?: string,
   ) => {
+    if (isKeyValueDriver(driver as any)) {
+      toast.info("Redis connections don't support SQL queries. Use the Redis key view to browse and edit keys.");
+      return;
+    }
     const normalizedDatabaseName = databaseName.trim();
     const fallbackDatabaseLabel = t("app.tab.defaultDatabase");
     const initialDatabase = normalizedDatabaseName || undefined;
@@ -820,6 +851,62 @@ export default function App() {
         description: errorMessage,
       });
     }
+  };
+
+  const handleRedisKeySelect = (
+    connection: string,
+    database: string,
+    redisKey: string,
+    connectionId: number,
+    driver: string,
+  ) => {
+    const tabId = `redis-${connectionId}-${database}-${redisKey}`;
+    const existingTab = tabs.find((t) => t.id === tabId);
+    if (existingTab) {
+      setActiveTab(tabId);
+      return;
+    }
+    setTabs((prev) => [
+      ...prev,
+      {
+        id: tabId,
+        type: "redis-key",
+        title: redisKey || "New Redis key",
+        connection,
+        database,
+        redisKey,
+        connectionId,
+        driver,
+      },
+    ]);
+    setActiveTab(tabId);
+  };
+
+  const handleOpenRedisConsole = (
+    connection: string,
+    database: string,
+    connectionId: number,
+    driver: string,
+  ) => {
+    const tabId = `redis-console-${connectionId}-${database}`;
+    const existingTab = tabs.find((t) => t.id === tabId);
+    if (existingTab) {
+      setActiveTab(tabId);
+      return;
+    }
+    setTabs((prev) => [
+      ...prev,
+      {
+        id: tabId,
+        type: "redis-console",
+        title: `Console · ${database}`,
+        connection,
+        database,
+        connectionId,
+        driver,
+      },
+    ]);
+    setActiveTab(tabId);
   };
 
   const handleExportTableFromTree = async (
@@ -1614,6 +1701,8 @@ export default function App() {
           >
             <Sidebar
               onTableSelect={handleTableSelect}
+              onRedisKeySelect={handleRedisKeySelect}
+              onOpenRedisConsole={handleOpenRedisConsole}
               onConnect={() => {}}
               onCreateQuery={handleCreateQuery}
               onExportTable={handleExportTableFromTree}
@@ -1626,6 +1715,7 @@ export default function App() {
               activeTableTarget={activeTableTarget}
               sidebarRevealRequest={sidebarRevealRequest}
               layoutMode={sidebarLayout}
+              redisRefreshRequest={redisRefreshRequest}
             />
           </ResizablePanel>
 
@@ -1682,6 +1772,8 @@ export default function App() {
                                       <div className="relative inline-flex items-center gap-2 min-w-0">
                                         {tab.type === "table" ? (
                                           <Table className="w-4 h-4 text-accent" />
+                                        ) : tab.type === "redis-key" ? (
+                                          <KeyRound className="w-4 h-4 text-accent" />
                                         ) : (
                                           <FileCode className="w-4 h-4 text-accent" />
                                         )}
@@ -1874,6 +1966,56 @@ export default function App() {
                             }
                             showColumnComments={showColumnComments}
                           />
+                        ) : tab.type === "redis-key" &&
+                          tab.connectionId !== undefined &&
+                          tab.database &&
+                          tab.redisKey !== undefined ? (
+                          <Suspense
+                            fallback={
+                              <LazyPanelFallback label="Loading Redis key..." />
+                            }
+                          >
+                            <RedisKeyView
+                              connectionId={tab.connectionId}
+                              database={tab.database}
+                              redisKey={tab.redisKey}
+                              onSavedKeyChange={(key) => {
+                                setTabs((prev) =>
+                                  prev.map((item) =>
+                                    item.id === tab.id
+                                      ? { ...item, title: key, redisKey: key }
+                                      : item,
+                                  ),
+                                );
+                                setRedisRefreshRequest({
+                                  id: ++redisRefreshIdRef.current,
+                                  connectionId: tab.connectionId!,
+                                  database: tab.database!,
+                                });
+                              }}
+                              onDeleted={() => {
+                                handleCloseTab(tab.id);
+                                setRedisRefreshRequest({
+                                  id: ++redisRefreshIdRef.current,
+                                  connectionId: tab.connectionId!,
+                                  database: tab.database!,
+                                });
+                              }}
+                            />
+                          </Suspense>
+                        ) : tab.type === "redis-console" &&
+                          tab.connectionId !== undefined &&
+                          tab.database ? (
+                          <Suspense
+                            fallback={
+                              <LazyPanelFallback label="Loading Redis Console..." />
+                            }
+                          >
+                            <RedisConsole
+                              connectionId={tab.connectionId}
+                              database={tab.database}
+                            />
+                          </Suspense>
                         ) : tab.type === "create-table" &&
                           tab.connectionId !== undefined &&
                           tab.database &&
