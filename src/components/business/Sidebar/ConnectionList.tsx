@@ -1613,21 +1613,10 @@ export function ConnectionList({
         tableName = `${connection.name}.${database.name}.${table.name}`;
       }
       
-      // Generate sample SQL statements
+      // Generate only SELECT statement
       const selectSql = `SELECT * FROM ${tableName} LIMIT 100;`;
-      const insertSql = `INSERT INTO ${tableName} VALUES ();`;
-      const deleteSql = `DELETE FROM ${tableName} WHERE id = ?;`;
       
-      const combinedSql = `-- Select sample data
-${selectSql}
-
--- Insert sample data
-${insertSql}
-
--- Delete sample data
-${deleteSql}`;
-      
-      onCreateQuery(Number(connection.id), database.name, connection.type, combinedSql);
+      onCreateQuery(Number(connection.id), database.name, connection.type, selectSql);
     }
   };
 
