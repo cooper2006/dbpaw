@@ -1,3 +1,6 @@
+// Import Tauri invoke function
+import { invoke } from "@tauri-apps/api/core";
+
 // Helper to check if running in Tauri
 export const isTauri = () => {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;

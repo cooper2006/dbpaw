@@ -937,12 +937,7 @@ mod tests {
         }
 
         let mut ai_master_key = [0u8; 32];
-<<<<<<< HEAD
-        let mut rng = rand::rng();
-        rng.fill_bytes(&mut ai_master_key);
-=======
         rand::rng().fill_bytes(&mut ai_master_key);
->>>>>>> 182c8e2af7df5a366d93e6d35b2ab63d0586c558
 
         LocalDb {
             pool,

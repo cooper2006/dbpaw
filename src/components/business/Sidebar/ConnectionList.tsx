@@ -3037,7 +3037,6 @@ ${deleteSql}`;
                                 </div>
                               </ContextMenuTrigger>
                               <ContextMenuContent>
-<<<<<<< HEAD
                                 <ContextMenuItem
                                   onClick={() =>
                                     handleCreateQueryFromContext(
@@ -3113,51 +3112,6 @@ ${deleteSql}`;
                                     {t("connection.menu.alterTable")}
                                   </ContextMenuItem>
                                 )}
-=======
-                                {connection.type !== "redis" ? (
-                                  <>
-                                    <ContextMenuItem
-                                      onClick={() =>
-                                        handleCreateQueryFromContext(
-                                          connection.id,
-                                          database.name,
-                                        )
-                                      }
-                                    >
-                                      <FileCode className="w-4 h-4 mr-2" />
-                                      {t("connection.menu.newQuery")}
-                                    </ContextMenuItem>
-                                    <ContextMenuItem
-                                      onClick={() =>
-                                        handleTableExportDialog(
-                                          connection,
-                                          database,
-                                          table,
-                                        )
-                                      }
-                                    >
-                                      <Download className="w-4 h-4 mr-2" />
-                                      {t("connection.menu.exportTable")}
-                                    </ContextMenuItem>
-                                    {onAlterTable && (
-                                      <ContextMenuItem
-                                        onClick={() =>
-                                          onAlterTable(
-                                            Number(connection.id),
-                                            database.name,
-                                            table.schema ?? "",
-                                            table.name,
-                                            connection.type,
-                                          )
-                                        }
-                                      >
-                                        <TableIcon className="w-4 h-4 mr-2" />
-                                        {t("connection.menu.alterTable")}
-                                      </ContextMenuItem>
-                                    )}
-                                  </>
-                                ) : null}
->>>>>>> 182c8e2af7df5a366d93e6d35b2ab63d0586c558
                               </ContextMenuContent>
                             </ContextMenu>
                           );
@@ -3353,7 +3307,6 @@ ${deleteSql}`;
                               </div>
                             </ContextMenuTrigger>
                             <ContextMenuContent>
-<<<<<<< HEAD
                               <ContextMenuItem
                                 onClick={() =>
                                   handleCreateQueryFromContext(
@@ -3429,51 +3382,6 @@ ${deleteSql}`;
                                   {t("connection.menu.alterTable")}
                                 </ContextMenuItem>
                               )}
-=======
-                              {connection.type !== "redis" ? (
-                                <>
-                                  <ContextMenuItem
-                                    onClick={() =>
-                                      handleCreateQueryFromContext(
-                                        connection.id,
-                                        database.name,
-                                      )
-                                    }
-                                  >
-                                    <FileCode className="w-4 h-4 mr-2" />
-                                    {t("connection.menu.newQuery")}
-                                  </ContextMenuItem>
-                                  <ContextMenuItem
-                                    onClick={() =>
-                                      handleTableExportDialog(
-                                        connection,
-                                        database,
-                                        table,
-                                      )
-                                    }
-                                  >
-                                    <Download className="w-4 h-4 mr-2" />
-                                    {t("connection.menu.exportTable")}
-                                  </ContextMenuItem>
-                                  {onAlterTable && (
-                                    <ContextMenuItem
-                                      onClick={() =>
-                                        onAlterTable(
-                                          Number(connection.id),
-                                          database.name,
-                                          table.schema ?? "",
-                                          table.name,
-                                          connection.type,
-                                        )
-                                      }
-                                    >
-                                      <TableIcon className="w-4 h-4 mr-2" />
-                                      {t("connection.menu.alterTable")}
-                                    </ContextMenuItem>
-                                  )}
-                                </>
-                              ) : null}
->>>>>>> 182c8e2af7df5a366d93e6d35b2ab63d0586c558
                             </ContextMenuContent>
                           </ContextMenu>
                         );
