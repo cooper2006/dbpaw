@@ -1,34 +1,39 @@
 use crate::commands::ai::{
-    ai_chat_continue_direct, ai_chat_start_direct, ai_clear_provider_api_key_direct,
-    ai_create_provider_direct, ai_delete_conversation_direct, ai_delete_provider_direct,
-    ai_get_conversation_direct, ai_list_conversations_direct, ai_list_providers_direct,
-    ai_set_default_provider_direct, ai_update_provider_direct, AiConversationDetail,
+  ai_chat_continue_direct, ai_chat_start_direct, ai_clear_provider_api_key_direct,
+  ai_create_provider_direct, ai_delete_conversation_direct, ai_delete_provider_direct,
+  ai_get_conversation_direct, ai_list_conversations_direct, ai_list_providers_direct,
+  ai_set_default_provider_direct, ai_update_provider_direct,
 };
 use crate::commands::connection::{
-    create_connection_direct, create_database_by_id_direct, delete_connection_direct,
-    get_connections_direct, get_mysql_charsets_by_id_direct, get_mysql_collations_by_id_direct,
-    list_databases_by_id_direct, update_connection_direct, CreateDatabasePayload,
+  create_connection_direct, create_database_by_id_direct, delete_connection_direct,
+  get_connections_direct, get_mysql_charsets_by_id_direct, get_mysql_collations_by_id_direct,
+  list_databases_by_id_direct, update_connection_direct, CreateDatabasePayload,
 };
 use crate::commands::metadata::{
-    get_schema_overview_direct, get_table_ddl_direct, get_table_metadata_direct,
-    get_table_structure_direct, list_tables,
+  get_schema_overview_direct, get_table_ddl_direct, get_table_metadata_direct,
+  get_table_structure_direct,
 };
 use crate::commands::query::{
-    cancel_query_direct, execute_by_conn_direct, execute_query_by_id_direct,
-    list_sql_execution_logs_direct,
+  cancel_query_direct, execute_by_conn_direct, execute_query_by_id_direct,
+  list_sql_execution_logs_direct,
 };
+use crate::commands::redis::{
+  redis_delete_key_direct, redis_execute_raw_direct, redis_get_key_direct,
+  redis_get_key_page_direct, redis_list_databases_direct, redis_rename_key_direct,
+  redis_scan_keys_direct, redis_set_key_direct, redis_set_ttl_direct, redis_update_key_direct,
+};
+use crate::datasources::redis::RedisSetKeyPayload;
 use crate::commands::storage::{
-    delete_saved_query_direct, get_saved_queries_direct, save_query_direct,
-    update_saved_query_direct,
+  delete_saved_query_direct, get_saved_queries_direct, save_query_direct,
+  update_saved_query_direct,
 };
 use crate::commands::transfer::{
-    export_database_sql_direct, export_query_result_direct, export_table_data_direct,
-    import_sql_file_direct, ExportFormat, ExportResult, ExportScope, ImportSqlResult,
+  export_database_sql_direct, export_query_result_direct, export_table_data_direct,
+  import_sql_file_direct, ExportFormat, ExportScope,
 };
 use crate::models::{
-    AiConversation, AiProviderForm, AiProviderPublic, Connection, ConnectionForm, QueryResult,
-    SavedQuery, SchemaOverview, SqlExecutionLog, TableDataResponse, TableInfo, TableMetadata,
-    TestConnectionResult,
+  AiProviderForm, ConnectionForm,
+  TestConnectionResult,
 };
 use crate::state::AppState;
 use axum::{
@@ -41,24 +46,6 @@ use axum::{
 use serde::Deserialize;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
-
-use std::sync::Mutex;
-
-static APP_STATE: Mutex<Option<Arc<AppState>>> = Mutex::new(None);
-
-pub fn set_shared_app_state(state: Arc<AppState>) {
-    let mut guard = APP_STATE.lock().unwrap();
-    *guard = Some(state);
-}
-
-fn app_state() -> Arc<AppState> {
-    let guard = APP_STATE.lock().unwrap();
-    if let Some(state) = guard.clone() {
-        state
-    } else {
-        Arc::new(AppState::new())
-    }
-}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -580,10 +567,181 @@ async fn ai_get_conversation_handler(
 }
 
 async fn ai_delete_conversation_handler(
-    AxumState(state): AxumState<Arc<AppState>>,
-    Path(id): Path<i64>,
+  AxumState(state): AxumState<Arc<AppState>>,
+  Path(id): Path<i64>,
 ) -> impl IntoResponse {
-    api_unit(ai_delete_conversation_direct(&state, id).await).await
+  api_unit(ai_delete_conversation_direct(&state, id).await).await
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RedisListDatabasesParams {
+  id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RedisScanKeysParams {
+  id: i64,
+  database: Option<String>,
+  cursor: Option<u64>,
+  pattern: Option<String>,
+  limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RedisKeyParams {
+  id: i64,
+  database: Option<String>,
+  key: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RedisSetKeyParams {
+  id: i64,
+  database: Option<String>,
+  payload: RedisSetKeyPayload,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RedisRenameKeyParams {
+  id: i64,
+  database: Option<String>,
+  old_key: String,
+  new_key: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RedisKeyPageParams {
+  id: i64,
+  database: Option<String>,
+  key: String,
+  offset: u64,
+  limit: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RedisSetTtlParams {
+  id: i64,
+  database: Option<String>,
+  key: String,
+  ttl_seconds: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RedisExecuteRawParams {
+  id: i64,
+  database: Option<String>,
+  command: String,
+}
+
+async fn redis_list_databases_handler(
+  AxumState(state): AxumState<Arc<AppState>>,
+  Query(params): Query<RedisListDatabasesParams>,
+) -> impl IntoResponse {
+  api_json(redis_list_databases_direct(&state, params.id).await).await
+}
+
+async fn redis_scan_keys_handler(
+  AxumState(state): AxumState<Arc<AppState>>,
+  Query(params): Query<RedisScanKeysParams>,
+) -> impl IntoResponse {
+  api_json(
+    redis_scan_keys_direct(
+      &state,
+      params.id,
+      params.database,
+      params.cursor,
+      params.pattern,
+      params.limit,
+    )
+    .await,
+  )
+  .await
+}
+
+async fn redis_get_key_handler(
+  AxumState(state): AxumState<Arc<AppState>>,
+  Query(params): Query<RedisKeyParams>,
+) -> impl IntoResponse {
+  api_json(redis_get_key_direct(&state, params.id, params.database, params.key).await).await
+}
+
+async fn redis_set_key_handler(
+  AxumState(state): AxumState<Arc<AppState>>,
+  Json(params): Json<RedisSetKeyParams>,
+) -> impl IntoResponse {
+  api_json(redis_set_key_direct(&state, params.id, params.database, params.payload).await).await
+}
+
+async fn redis_update_key_handler(
+  AxumState(state): AxumState<Arc<AppState>>,
+  Json(params): Json<RedisSetKeyParams>,
+) -> impl IntoResponse {
+  api_json(redis_update_key_direct(&state, params.id, params.database, params.payload).await).await
+}
+
+async fn redis_delete_key_handler(
+  AxumState(state): AxumState<Arc<AppState>>,
+  Query(params): Query<RedisKeyParams>,
+) -> impl IntoResponse {
+  api_json(redis_delete_key_direct(&state, params.id, params.database, params.key).await).await
+}
+
+async fn redis_rename_key_handler(
+  AxumState(state): AxumState<Arc<AppState>>,
+  Json(params): Json<RedisRenameKeyParams>,
+) -> impl IntoResponse {
+  api_json(
+    redis_rename_key_direct(&state, params.id, params.database, params.old_key, params.new_key)
+      .await,
+  )
+  .await
+}
+
+async fn redis_get_key_page_handler(
+  AxumState(state): AxumState<Arc<AppState>>,
+  Query(params): Query<RedisKeyPageParams>,
+) -> impl IntoResponse {
+  api_json(
+    redis_get_key_page_direct(
+      &state,
+      params.id,
+      params.database,
+      params.key,
+      params.offset,
+      params.limit,
+    )
+    .await,
+  )
+  .await
+}
+
+async fn redis_set_ttl_handler(
+  AxumState(state): AxumState<Arc<AppState>>,
+  Json(params): Json<RedisSetTtlParams>,
+) -> impl IntoResponse {
+  api_json(
+    redis_set_ttl_direct(&state, params.id, params.database, params.key, params.ttl_seconds)
+      .await,
+  )
+  .await
+}
+
+async fn redis_execute_raw_handler(
+  AxumState(state): AxumState<Arc<AppState>>,
+  Json(params): Json<RedisExecuteRawParams>,
+) -> impl IntoResponse {
+  api_json(
+    redis_execute_raw_direct(&state, params.id, params.database, params.command).await,
+  )
+  .await
 }
 
 fn build_router() -> Router<Arc<AppState>> {
@@ -625,7 +783,17 @@ fn build_router() -> Router<Arc<AppState>> {
         .route("/api/ai/chat/continue", post(ai_chat_continue_handler))
         .route("/api/ai/conversations", get(ai_list_conversations_handler))
         .route("/api/ai/conversations/{id}", get(ai_get_conversation_handler).delete(ai_delete_conversation_handler))
-        .layer(cors)
+    .route("/api/redis/databases", get(redis_list_databases_handler))
+    .route("/api/redis/scan", get(redis_scan_keys_handler))
+    .route("/api/redis/key", get(redis_get_key_handler))
+    .route("/api/redis/key", post(redis_set_key_handler))
+    .route("/api/redis/key", put(redis_update_key_handler))
+    .route("/api/redis/key", delete(redis_delete_key_handler))
+    .route("/api/redis/rename", post(redis_rename_key_handler))
+    .route("/api/redis/key-page", get(redis_get_key_page_handler))
+    .route("/api/redis/ttl", post(redis_set_ttl_handler))
+    .route("/api/redis/execute", post(redis_execute_raw_handler))
+    .layer(cors)
 }
 
 pub async fn start_server(state: Arc<AppState>, port: u16) {

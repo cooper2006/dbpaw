@@ -1,5 +1,5 @@
 use crate::db::local::LocalDb;
-use crate::state::{AppState, SharedAppState};
+use crate::state::SharedAppState;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 

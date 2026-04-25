@@ -1,6 +1,3 @@
-// Import Tauri invoke function
-import { invoke } from "@tauri-apps/api/core";
-
 // Helper to check if running in Tauri
 export const isTauri = () => {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -62,8 +59,15 @@ class HttpClient {
     return response.json();
   }
 
-  async delete<T>(path: string): Promise<T> {
+  async delete<T>(path: string, params?: Record<string, any>): Promise<T> {
     const url = new URL(path, API_BASE_URL);
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          url.searchParams.append(key, String(value));
+        }
+      });
+    }
     const response = await fetch(url.toString(), {
       method: "DELETE",
     });
@@ -567,41 +571,41 @@ export const api = {
   },
   redis: {
     listDatabases: (id: number) =>
-      invoke<RedisDatabaseInfo[]>("redis_list_databases", { id }),
+      http.get<RedisDatabaseInfo[]>("/api/redis/databases", { id }),
     scanKeys: (params: {
       id: number;
       database?: string;
       cursor?: number;
       pattern?: string;
       limit?: number;
-    }) => invoke<RedisScanResponse>("redis_scan_keys", params),
+    }) => http.get<RedisScanResponse>("/api/redis/scan", params),
     getKey: (id: number, database: string | undefined, key: string) =>
-      invoke<RedisKeyValue>("redis_get_key", { id, database, key }),
+      http.get<RedisKeyValue>("/api/redis/key", { id, database, key }),
     setKey: (
       id: number,
       database: string | undefined,
       payload: RedisSetKeyPayload,
     ) =>
-      invoke<RedisMutationResult>("redis_set_key", { id, database, payload }),
+      http.post<RedisMutationResult>("/api/redis/key", { id, database, payload }),
     updateKey: (
       id: number,
       database: string | undefined,
       payload: RedisSetKeyPayload,
     ) =>
-      invoke<RedisMutationResult>("redis_update_key", {
+      http.put<RedisMutationResult>("/api/redis/key", {
         id,
         database,
         payload,
       }),
     deleteKey: (id: number, database: string | undefined, key: string) =>
-      invoke<RedisMutationResult>("redis_delete_key", { id, database, key }),
+      http.delete<RedisMutationResult>("/api/redis/key", { id, database, key }),
     renameKey: (
       id: number,
       database: string | undefined,
       oldKey: string,
       newKey: string,
     ) =>
-      invoke<RedisMutationResult>("redis_rename_key", {
+      http.post<RedisMutationResult>("/api/redis/rename", {
         id,
         database,
         oldKey,
@@ -613,7 +617,7 @@ export const api = {
       key: string,
       ttlSeconds?: number | null,
     ) =>
-      invoke<RedisMutationResult>("redis_set_ttl", {
+      http.post<RedisMutationResult>("/api/redis/ttl", {
         id,
         database,
         key,
@@ -626,7 +630,7 @@ export const api = {
       offset: number,
       limit: number,
     ) =>
-      invoke<RedisKeyValue>("redis_get_key_page", {
+      http.get<RedisKeyValue>("/api/redis/key-page", {
         id,
         database,
         key,
@@ -634,7 +638,7 @@ export const api = {
         limit,
       }),
     executeRaw: (id: number, database: string | undefined, command: string) =>
-      invoke<RedisRawResult>("redis_execute_raw", { id, database, command }),
+      http.post<RedisRawResult>("/api/redis/execute", { id, database, command }),
   },
   queries: {
     list: () => http.get<SavedQuery[]>("/api/queries"),

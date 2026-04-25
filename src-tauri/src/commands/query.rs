@@ -3,7 +3,6 @@ use crate::state::{AppState, SharedAppState};
 use crate::db::drivers::calcite::CalciteDriver;
 use crate::db::drivers::DatabaseDriver;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use std::sync::OnceLock;
 use tauri::{Emitter, State};
 use tokio::sync::Mutex;
